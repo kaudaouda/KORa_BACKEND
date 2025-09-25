@@ -1,0 +1,102 @@
+from django.contrib import admin
+from .models import (
+    Nature, Categorie, Source, ActionType, Statut, 
+    EtatMiseEnOeuvre, Appreciation, Media, Preuve,
+    Direction, SousDirection, Service
+)
+
+
+@admin.register(Nature)
+class NatureAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(Categorie)
+class CategorieAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(Source)
+class SourceAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(ActionType)
+class ActionTypeAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(Statut)
+class StatutAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(EtatMiseEnOeuvre)
+class EtatMiseEnOeuvreAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(Appreciation)
+class AppreciationAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(Media)
+class MediaAdmin(admin.ModelAdmin):
+    list_display = ('uuid', 'url_fichier', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('url_fichier',)
+    readonly_fields = ('uuid', 'created_at')
+
+
+@admin.register(Preuve)
+class PreuveAdmin(admin.ModelAdmin):
+    list_display = ('uuid', 'description', 'media', 'created_at')
+    list_filter = ('created_at', 'media')
+    search_fields = ('description', 'media__url_fichier')
+    readonly_fields = ('uuid', 'created_at')
+
+
+@admin.register(Direction)
+class DirectionAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(SousDirection)
+class SousDirectionAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'direction', 'description', 'created_at')
+    list_filter = ('direction', 'created_at')
+    search_fields = ('nom', 'description', 'direction__nom')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'sous_direction', 'description', 'created_at')
+    list_filter = ('sous_direction__direction', 'sous_direction', 'created_at')
+    search_fields = ('nom', 'description', 'sous_direction__nom', 'sous_direction__direction__nom')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
