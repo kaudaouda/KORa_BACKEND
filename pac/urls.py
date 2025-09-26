@@ -13,15 +13,11 @@ urlpatterns = [
     path('auth/refresh/', views.refresh_token, name='refresh_token'),
     path('auth/recaptcha-config/', views.recaptcha_config, name='recaptcha_config'),
     
-    # ==================== API PROCESSUS ====================
-    path('pac/processus/', views.processus_list, name='processus_list'),
-    path('pac/processus/create/', views.processus_create, name='processus_create'),
-    path('pac/processus/<uuid:uuid>/', views.processus_detail, name='processus_detail'),
-    
     # ==================== API PAC ====================
     path('pac/', views.pac_list, name='pac_list'),
     path('pac/create/', views.pac_create, name='pac_create'),
     path('pac/<uuid:uuid>/', views.pac_detail, name='pac_detail'),
+    path('pac/<uuid:uuid>/update/', views.pac_update, name='pac_update'),
     
     # ==================== API TRAITEMENTS ====================
     path('pac/traitements/', views.traitement_list, name='traitement_list'),

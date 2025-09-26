@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
-    Direction, SousDirection, Service
+    Direction, SousDirection, Service, Processus
 )
 
 
@@ -99,4 +99,12 @@ class ServiceAdmin(admin.ModelAdmin):
     list_display = ('nom', 'sous_direction', 'description', 'created_at')
     list_filter = ('sous_direction__direction', 'sous_direction', 'created_at')
     search_fields = ('nom', 'description', 'sous_direction__nom', 'sous_direction__direction__nom')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(Processus)
+class ProcessusAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'cree_par', 'created_at')
+    list_filter = ('created_at', 'cree_par')
+    search_fields = ('nom', 'description', 'cree_par__username', 'cree_par__email')
     readonly_fields = ('uuid', 'created_at', 'updated_at')

@@ -40,6 +40,11 @@ urlpatterns = [
     path('appreciations/create/', views.appreciation_create, name='appreciation_create'),
     path('appreciations/<uuid:uuid>/', views.appreciation_detail, name='appreciation_detail'),
     
+    # ==================== PROCESSUS ====================
+    path('processus/', views.processus_list, name='processus_list'),
+    path('processus/create/', views.processus_create, name='processus_create'),
+    path('processus/<uuid:uuid>/', views.processus_detail, name='processus_detail'),
+    
     # ==================== DIRECTIONS ====================
     path('directions/', views.direction_list, name='direction_list'),
     path('directions/create/', views.direction_create, name='direction_create'),

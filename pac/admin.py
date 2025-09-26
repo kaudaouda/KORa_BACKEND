@@ -1,16 +1,12 @@
 from django.contrib import admin
 from django.contrib.auth.models import User
-from .models import Processus, Pac, Traitement, Suivi
+from .models import Pac, Traitement, Suivi
+from parametre.models import Processus
 
 # Utilisation de l'admin User par défaut de Django
 
 
-@admin.register(Processus)
-class ProcessusAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'cree_par', 'created_at')
-    list_filter = ('created_at', 'cree_par')
-    search_fields = ('nom', 'description', 'cree_par__username', 'cree_par__email')
-    readonly_fields = ('uuid', 'created_at', 'updated_at')
+# L'admin Processus est maintenant géré dans l'app parametre
 
 
 @admin.register(Pac)
