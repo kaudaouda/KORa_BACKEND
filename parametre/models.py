@@ -1,5 +1,6 @@
 from django.db import models
 import uuid
+from django.contrib.auth.models import User
 
 
 class Nature(models.Model):
@@ -212,6 +213,50 @@ class Service(models.Model):
     def __str__(self):
         return f"{self.sous_direction.direction.nom} - {self.sous_direction.nom} - {self.nom}"
 
+
+class Processus(models.Model):
+    """
+    Modèle pour les processus (déplacé depuis l'app pac)
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    numero_processus = models.CharField(max_length=10, unique=True, blank=True)
+    nom = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True, null=True)
+    cree_par = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='processus_crees'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'processus'
+        verbose_name = 'Processus'
+        verbose_name_plural = 'Processus'
+
+    def __str__(self):
+        return f"{self.numero_processus} - {self.nom}"
+
+    def save(self, *args, **kwargs):
+        if not self.numero_processus:
+            self.numero_processus = self.generate_numero_processus()
+        super().save(*args, **kwargs)
+
+    def generate_numero_processus(self):
+        """
+        Génère un numéro de processus unique (PRS01, PRS02, etc.)
+        """
+        # Compter les processus existants
+        count = Processus.objects.count()
+        numero = f"PRS{count + 1:02d}"
+
+        # Vérifier l'unicité
+        while Processus.objects.filter(numero_processus=numero).exists():
+            count += 1
+            numero = f"PRS{count + 1:02d}"
+
+        return numero
 
 class Preuve(models.Model):
     """

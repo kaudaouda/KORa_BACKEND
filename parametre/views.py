@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from django.http import JsonResponse
 from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
-    EtatMiseEnOeuvre, Appreciation, Direction, SousDirection
+    EtatMiseEnOeuvre, Appreciation, Direction, SousDirection, Processus
 )
 import logging
 
@@ -97,6 +97,17 @@ def serialize_sous_direction(sous_direction):
         'direction': str(sous_direction.direction.uuid),
         'created_at': sous_direction.created_at.isoformat(),
         'updated_at': sous_direction.updated_at.isoformat()
+    }
+
+def serialize_processus(processus):
+    return {
+        'uuid': str(processus.uuid),
+        'numero_processus': processus.numero_processus,
+        'nom': processus.nom,
+        'description': processus.description,
+        'cree_par': str(processus.cree_par.id),
+        'created_at': processus.created_at.isoformat(),
+        'updated_at': processus.updated_at.isoformat()
     }
 
 
@@ -558,6 +569,84 @@ def appreciation_detail(request, uuid):
         logger.error(f"Erreur lors de la récupération de l'appréciation: {str(e)}")
         return Response({
             'error': 'Impossible de récupérer l\'appréciation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== PROCESSUS ====================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def processus_list(request):
+    """Liste des processus"""
+    try:
+        processus = Processus.objects.all().order_by('numero_processus')
+        data = [serialize_processus(p) for p in processus]
+        return Response(data)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des processus: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer les processus'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def processus_create(request):
+    """Créer un nouveau processus"""
+    try:
+        from django.contrib.auth.models import User
+        
+        nom = request.data.get('nom')
+        description = request.data.get('description', '')
+        
+        if not nom:
+            return Response({
+                'error': 'Le nom est requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Récupérer le premier utilisateur comme créateur par défaut
+        user = User.objects.first()
+        if not user:
+            return Response({
+                'error': 'Aucun utilisateur trouvé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier si un processus avec ce nom existe déjà
+        processus, created = Processus.objects.get_or_create(
+            nom=nom,
+            defaults={
+                'description': description,
+                'cree_par': user
+            }
+        )
+        
+        if created:
+            return Response(serialize_processus(processus), status=status.HTTP_201_CREATED)
+        else:
+            return Response(serialize_processus(processus), status=status.HTTP_200_OK)
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du processus: {str(e)}")
+        return Response({
+            'error': 'Impossible de créer le processus'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def processus_detail(request, uuid):
+    """Détails d'un processus"""
+    try:
+        processus = Processus.objects.get(uuid=uuid)
+        return Response(serialize_processus(processus))
+    except Processus.DoesNotExist:
+        return Response({
+            'error': 'Processus non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du processus: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer le processus'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

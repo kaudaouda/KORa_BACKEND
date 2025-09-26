@@ -3,7 +3,8 @@ Serializers pour l'application PAC
 """
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Processus, Pac, Traitement, Suivi
+from .models import Pac, Traitement, Suivi
+from parametre.models import Processus
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -90,14 +91,47 @@ class PacCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pac
         fields = [
-            'numero_pac', 'processus', 'libelle', 'nature', 
+            'processus', 'libelle', 'nature', 
             'categorie', 'source', 'periode_de_realisation'
         ]
     
     def create(self, validated_data):
-        """Créer un PAC avec l'utilisateur connecté"""
+        """Créer un PAC avec l'utilisateur connecté et générer le numéro"""
         validated_data['cree_par'] = self.context['request'].user
+        
+        # Générer le numéro PAC automatiquement
+        validated_data['numero_pac'] = self.generate_numero_pac()
+        
         return super().create(validated_data)
+    
+    def generate_numero_pac(self):
+        """Générer un numéro PAC unique"""
+        from django.db.models import Count
+        count = Pac.objects.count()
+        numero = f"PAC{count + 1:04d}"
+        
+        # Vérifier l'unicité
+        while Pac.objects.filter(numero_pac=numero).exists():
+            count += 1
+            numero = f"PAC{count + 1:04d}"
+        
+        return numero
+
+
+class PacUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour de PACs"""
+    
+    class Meta:
+        model = Pac
+        fields = [
+            'processus', 'libelle', 'nature', 
+            'categorie', 'source', 'periode_de_realisation'
+        ]
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour un PAC"""
+        # Le numéro PAC et le créateur ne peuvent pas être modifiés
+        return super().update(instance, validated_data)
 
 
 class TraitementSerializer(serializers.ModelSerializer):

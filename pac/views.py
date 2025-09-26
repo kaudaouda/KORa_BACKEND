@@ -12,10 +12,11 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.utils import timezone
-from .models import Processus, Pac, Traitement, Suivi
+from .models import Pac, Traitement, Suivi
+from parametre.models import Processus
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
-    PacSerializer, PacCreateSerializer, TraitementSerializer, 
+    PacSerializer, PacCreateSerializer, PacUpdateSerializer, TraitementSerializer, 
     TraitementCreateSerializer, SuiviSerializer, SuiviCreateSerializer
 )
 from shared.authentication import AuthService
@@ -412,7 +413,9 @@ def processus_detail(request, uuid):
 def pac_list(request):
     """Liste des PACs de l'utilisateur connecté"""
     try:
-        pacs = Pac.objects.filter(cree_par=request.user).order_by('-created_at')
+        pacs = Pac.objects.filter(cree_par=request.user).select_related(
+            'processus', 'nature', 'categorie', 'source', 'cree_par'
+        ).order_by('-created_at')
         serializer = PacSerializer(pacs, many=True)
         return Response(serializer.data)
     except Exception as e:
@@ -455,6 +458,28 @@ def pac_detail(request, uuid):
         logger.error(f"Erreur lors de la récupération du PAC: {str(e)}")
         return Response({
             'error': 'Impossible de récupérer le PAC'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def pac_update(request, uuid):
+    """Mettre à jour un PAC"""
+    try:
+        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        serializer = PacUpdateSerializer(pac, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated_pac = serializer.save()
+            return Response(PacSerializer(updated_pac).data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Pac.DoesNotExist:
+        return Response({
+            'error': 'PAC non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du PAC: {str(e)}")
+        return Response({
+            'error': 'Impossible de mettre à jour le PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
