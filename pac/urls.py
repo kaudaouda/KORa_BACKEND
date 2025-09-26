@@ -22,6 +22,7 @@ urlpatterns = [
     # ==================== API TRAITEMENTS ====================
     path('pac/traitements/', views.traitement_list, name='traitement_list'),
     path('pac/traitements/create/', views.traitement_create, name='traitement_create'),
+    path('pac/<uuid:uuid>/traitements/', views.pac_traitements, name='pac_traitements'),
     
     # ==================== API SUIVIS ====================
     path('pac/suivis/', views.suivi_list, name='suivi_list'),

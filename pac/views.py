@@ -517,6 +517,29 @@ def traitement_create(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pac_traitements(request, uuid):
+    """Récupérer les traitements d'un PAC spécifique"""
+    try:
+        # Vérifier que le PAC appartient à l'utilisateur connecté
+        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        
+        # Récupérer les traitements du PAC
+        traitements = Traitement.objects.filter(pac=pac).order_by('-delai_realisation')
+        serializer = TraitementSerializer(traitements, many=True)
+        return Response(serializer.data)
+    except Pac.DoesNotExist:
+        return Response({
+            'error': 'PAC non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des traitements du PAC: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer les traitements'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # ==================== API SUIVIS ====================
 
 @api_view(['GET'])

@@ -70,6 +70,20 @@ class Traitement(models.Model):
         on_delete=models.CASCADE, 
         related_name='traitements'
     )
+    responsable_direction = models.ForeignKey(
+        'parametre.Direction',
+        on_delete=models.CASCADE,
+        related_name='traitements_responsables',
+        blank=True,
+        null=True
+    )
+    responsable_sous_direction = models.ForeignKey(
+        'parametre.SousDirection',
+        on_delete=models.CASCADE,
+        related_name='traitements_responsables',
+        blank=True,
+        null=True
+    )
     preuve = models.ForeignKey(
         'parametre.Preuve', 
         on_delete=models.CASCADE, 

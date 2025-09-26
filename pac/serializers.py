@@ -139,12 +139,16 @@ class TraitementSerializer(serializers.ModelSerializer):
     type_action_nom = serializers.CharField(source='type_action.nom', read_only=True)
     preuve_description = serializers.CharField(source='preuve.description', read_only=True)
     pac_numero = serializers.CharField(source='pac.numero_pac', read_only=True)
+    responsable_direction_nom = serializers.CharField(source='responsable_direction.nom', read_only=True)
+    responsable_sous_direction_nom = serializers.CharField(source='responsable_sous_direction.nom', read_only=True)
     
     class Meta:
         model = Traitement
         fields = [
             'uuid', 'pac', 'pac_numero', 'action', 'type_action', 
-            'type_action_nom', 'preuve', 'preuve_description', 'delai_realisation'
+            'type_action_nom', 'responsable_direction', 'responsable_direction_nom',
+            'responsable_sous_direction', 'responsable_sous_direction_nom',
+            'preuve', 'preuve_description', 'delai_realisation'
         ]
         read_only_fields = ['uuid']
 
@@ -154,7 +158,10 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Traitement
-        fields = ['pac', 'action', 'type_action', 'preuve', 'delai_realisation']
+        fields = [
+            'pac', 'action', 'type_action', 'responsable_direction', 
+            'responsable_sous_direction', 'preuve', 'delai_realisation'
+        ]
 
 
 class SuiviSerializer(serializers.ModelSerializer):
