@@ -22,6 +22,8 @@ urlpatterns = [
     # ==================== API TRAITEMENTS ====================
     path('pac/traitements/', views.traitement_list, name='traitement_list'),
     path('pac/traitements/create/', views.traitement_create, name='traitement_create'),
+    path('pac/traitements/<uuid:uuid>/', views.traitement_detail, name='traitement_detail'),
+    path('pac/traitements/<uuid:uuid>/update/', views.traitement_update, name='traitement_update'),
     path('pac/<uuid:uuid>/traitements/', views.pac_traitements, name='pac_traitements'),
     
     # ==================== API SUIVIS ====================
