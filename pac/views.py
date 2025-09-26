@@ -17,7 +17,7 @@ from parametre.models import Processus
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
     PacSerializer, PacCreateSerializer, PacUpdateSerializer, TraitementSerializer, 
-    TraitementCreateSerializer, SuiviSerializer, SuiviCreateSerializer
+    TraitementCreateSerializer, TraitementUpdateSerializer, SuiviSerializer, SuiviCreateSerializer
 )
 from shared.authentication import AuthService
 from shared.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
@@ -537,6 +537,61 @@ def pac_traitements(request, uuid):
         logger.error(f"Erreur lors de la récupération des traitements du PAC: {str(e)}")
         return Response({
             'error': 'Impossible de récupérer les traitements'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def traitement_detail(request, uuid):
+    """Récupérer un traitement spécifique"""
+    try:
+        traitement = Traitement.objects.get(uuid=uuid)
+        
+        # Vérifier que le PAC du traitement appartient à l'utilisateur connecté
+        if traitement.pac.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = TraitementSerializer(traitement)
+        return Response(serializer.data)
+    except Traitement.DoesNotExist:
+        return Response({
+            'error': 'Traitement non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du traitement: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer le traitement'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def traitement_update(request, uuid):
+    """Mettre à jour un traitement"""
+    try:
+        traitement = Traitement.objects.get(uuid=uuid)
+        
+        # Vérifier que le PAC du traitement appartient à l'utilisateur connecté
+        if traitement.pac.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = TraitementUpdateSerializer(traitement, data=request.data)
+        if serializer.is_valid():
+            traitement = serializer.save()
+            return Response(TraitementSerializer(traitement).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Traitement.DoesNotExist:
+        return Response({
+            'error': 'Traitement non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du traitement: {str(e)}")
+        return Response({
+            'error': 'Impossible de mettre à jour le traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
