@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-*foe8k7(-je5&p!2wgqiyjr^s3m2!3@fzqz$unr&7=d=nsk+d*
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 
 # Application definition
@@ -152,6 +152,16 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
+# Configuration des cookies pour le développement
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = False  # True en production avec HTTPS
+
+# Configuration CSRF
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE = False  # True en production avec HTTPS
+
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -203,6 +213,34 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration reCAPTCHA
-RECAPTCHA_SECRET_KEY = os.getenv('RECAPTCHA_SECRET_KEY')  
-RECAPTCHA_SITE_KEY = os.getenv('RECAPTCHA_SITE_KEY')    
+RECAPTCHA_SECRET_KEY = os.getenv('RECAPTCHA_SECRET_KEY', None)  
+RECAPTCHA_SITE_KEY = os.getenv('RECAPTCHA_SITE_KEY', None)    
 RECAPTCHA_MIN_SCORE = float(os.getenv('RECAPTCHA_MIN_SCORE', '0.5'))
+
+# Désactiver reCAPTCHA temporairement pour le développement
+if not RECAPTCHA_SECRET_KEY or not RECAPTCHA_SITE_KEY:
+    RECAPTCHA_SECRET_KEY = None
+    RECAPTCHA_SITE_KEY = None
+
+# Configuration de logging pour le debug
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'shared.authentication': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'pac.views': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}

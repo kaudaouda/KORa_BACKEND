@@ -271,22 +271,32 @@ def logout(request):
 def refresh_token(request):
     """Rafraîchir le token d'accès"""
     try:
+        if request.user.is_anonymous and not request.COOKIES.get('refresh_token'):
+            logger.info("refresh_token: aucun refresh token trouvé, retour 200")
+            response = Response({
+                'authenticated': False,
+            }, status=status.HTTP_200_OK)
+            response.delete_cookie('access_token')
+            response.delete_cookie('refresh_token')
+            return response
+
         refresh_token_value = request.COOKIES.get('refresh_token')
-        
+
         if not refresh_token_value:
             return Response({
-                'error': 'Token de rafraîchissement manquant'
+                'error': 'Token de rafraîchissement manquant',
+                'code': 'REFRESH_TOKEN_MISSING'
             }, status=status.HTTP_401_UNAUTHORIZED)
-        
+
         try:
             refresh = RefreshToken(refresh_token_value)
             new_access_token = refresh.access_token
-            
+
             # Créer la réponse avec le nouveau token
             response = Response({
                 'message': 'Token rafraîchi avec succès'
             }, status=status.HTTP_200_OK)
-            
+
             # Mettre à jour le cookie access_token
             response.set_cookie(
                 'access_token',
@@ -297,75 +307,11 @@ def refresh_token(request):
                 samesite='Lax',
                 path='/'
             )
-            
+
             return response
-            
+
         except (InvalidToken, TokenError) as e:
             logger.warning(f"Refresh token invalide: {str(e)}")
-            return Response({
-                'error': 'Token de rafraîchissement invalide'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-            
-    except Exception as e:
-        logger.error(f"Erreur lors du rafraîchissement du token: {str(e)}")
-        return Response({
-            'error': 'Erreur lors du rafraîchissement du token',
-            'code': 'REFRESH_FAILED'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def user_profile(request):
-    """Récupérer le profil de l'utilisateur connecté"""
-    try:
-        serializer = UserSerializer(request.user)
-        return Response({
-            'user': serializer.data
-        }, status=status.HTTP_200_OK)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération du profil: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer le profil',
-            'code': 'PROFILE_FAILED'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def refresh_token(request):
-    """Rafraîchir le token d'accès"""
-    try:
-        refresh_token = request.COOKIES.get('refresh_token')
-        
-        if not refresh_token:
-            return Response({
-                'error': 'Refresh token manquant',
-                'code': 'REFRESH_TOKEN_MISSING'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
-        try:
-            refresh = RefreshToken(refresh_token)
-            access_token = refresh.access_token
-
-            # Créer la réponse
-            response = Response({
-                'message': 'Token rafraîchi avec succès'
-            }, status=status.HTTP_200_OK)
-
-            # Mettre à jour le cookie access_token
-            response.set_cookie(
-                'access_token',
-                str(access_token),
-                max_age=60 * 60,  # 1 heure
-                httponly=True,
-                secure=False,  # True en production avec HTTPS
-                samesite='Lax'
-            )
-
-            return response
-
-        except Exception as e:
             return Response({
                 'error': 'Refresh token invalide',
                 'details': str(e),
@@ -381,18 +327,58 @@ def refresh_token(request):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    """Récupérer le profil de l'utilisateur connecté"""
+    try:
+        if request.user.is_anonymous:
+            logger.info("user_profile: utilisateur anonyme - retour profil vide")
+            response = Response({
+                'authenticated': False,
+            }, status=status.HTTP_200_OK)
+            response.delete_cookie('access_token')
+            response.delete_cookie('refresh_token')
+            return response
+
+        logger.debug(f"user_profile appelé pour user: {request.user}")
+        serializer = UserSerializer(request.user)
+        return Response({
+            'user': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du profil: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer le profil',
+            'code': 'PROFILE_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
 @permission_classes([AllowAny])
 def recaptcha_config(request):
     """Obtenir la configuration reCAPTCHA pour le frontend"""
     try:
         from django.conf import settings
         
+        # Nettoyer les cookies si l'utilisateur n'est pas authentifié mais les tokens existent
+        if request.user.is_anonymous and request.COOKIES.get('access_token'):
+            logger.warning("recaptcha_config: utilisateur anonyme avec access_token -> nettoyage cookies")
+            response = Response({
+                'enabled': recaptcha_service.is_enabled(),
+                'site_key': getattr(settings, 'RECAPTCHA_SITE_KEY', None),
+                'min_score': recaptcha_service.get_min_score(),
+            }, status=status.HTTP_200_OK)
+            response.delete_cookie('access_token')
+            response.delete_cookie('refresh_token')
+            return response
+
         config = {
             'enabled': recaptcha_service.is_enabled(),
             'site_key': getattr(settings, 'RECAPTCHA_SITE_KEY', None),
             'min_score': recaptcha_service.get_min_score(),
         }
         
+        logger.debug(f"recaptcha_config: {config}")
         return Response(config, status=status.HTTP_200_OK)
         
     except Exception as e:
