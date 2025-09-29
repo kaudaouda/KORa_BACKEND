@@ -60,14 +60,14 @@ class Traitement(models.Model):
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     pac = models.ForeignKey(
-        Pac, 
-        on_delete=models.CASCADE, 
+        Pac,
+        on_delete=models.CASCADE,
         related_name='traitements'
     )
     action = models.TextField()
     type_action = models.ForeignKey(
-        'parametre.ActionType', 
-        on_delete=models.CASCADE, 
+        'parametre.ActionType',
+        on_delete=models.CASCADE,
         related_name='traitements'
     )
     responsable_direction = models.ForeignKey(
@@ -85,8 +85,8 @@ class Traitement(models.Model):
         null=True
     )
     preuve = models.ForeignKey(
-        'parametre.Preuve', 
-        on_delete=models.CASCADE, 
+        'parametre.Preuve',
+        on_delete=models.SET_NULL,
         related_name='traitements',
         blank=True,
         null=True
@@ -113,19 +113,35 @@ class Suivi(models.Model):
         related_name='suivis'
     )
     etat_mise_en_oeuvre = models.ForeignKey(
-        'parametre.EtatMiseEnOeuvre', 
-        on_delete=models.CASCADE, 
+        'parametre.EtatMiseEnOeuvre',
+        on_delete=models.CASCADE,
         related_name='suivis'
     )
     resultat = models.TextField(blank=True, null=True)
     appreciation = models.ForeignKey(
-        'parametre.Appreciation', 
-        on_delete=models.CASCADE, 
+        'parametre.Appreciation',
+        on_delete=models.CASCADE,
         related_name='suivis'
     )
+    preuve = models.ForeignKey(
+        'parametre.Preuve',
+        on_delete=models.SET_NULL,
+        related_name='suivis',
+        blank=True,
+        null=True
+    )
+    statut = models.ForeignKey(
+        'parametre.Statut',
+        on_delete=models.SET_NULL,
+        related_name='suivis',
+        blank=True,
+        null=True
+    )
+    date_mise_en_oeuvre_effective = models.DateField(blank=True, null=True)
+    date_cloture = models.DateField(blank=True, null=True)
     cree_par = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
+        User,
+        on_delete=models.CASCADE,
         related_name='suivis_crees'
     )
     created_at = models.DateTimeField(auto_now_add=True)

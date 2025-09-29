@@ -13,11 +13,12 @@ from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.utils import timezone
 from .models import Pac, Traitement, Suivi
-from parametre.models import Processus
+from parametre.models import Processus, Media, Preuve
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
     PacSerializer, PacCreateSerializer, PacUpdateSerializer, TraitementSerializer, 
-    TraitementCreateSerializer, TraitementUpdateSerializer, SuiviSerializer, SuiviCreateSerializer
+    TraitementCreateSerializer, TraitementUpdateSerializer, SuiviSerializer, SuiviCreateSerializer,
+    SuiviUpdateSerializer
 )
 from shared.authentication import AuthService
 from shared.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
@@ -262,6 +263,54 @@ def logout(request):
         return Response({
             'error': 'Problème lors de la déconnexion',
             'code': 'LOGOUT_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def refresh_token(request):
+    """Rafraîchir le token d'accès"""
+    try:
+        refresh_token_value = request.COOKIES.get('refresh_token')
+        
+        if not refresh_token_value:
+            return Response({
+                'error': 'Token de rafraîchissement manquant'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            refresh = RefreshToken(refresh_token_value)
+            new_access_token = refresh.access_token
+            
+            # Créer la réponse avec le nouveau token
+            response = Response({
+                'message': 'Token rafraîchi avec succès'
+            }, status=status.HTTP_200_OK)
+            
+            # Mettre à jour le cookie access_token
+            response.set_cookie(
+                'access_token',
+                str(new_access_token),
+                max_age=60 * 60,  # 1 heure
+                httponly=True,
+                secure=False,  # True en production avec HTTPS
+                samesite='Lax',
+                path='/'
+            )
+            
+            return response
+            
+        except (InvalidToken, TokenError) as e:
+            logger.warning(f"Refresh token invalide: {str(e)}")
+            return Response({
+                'error': 'Token de rafraîchissement invalide'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+            
+    except Exception as e:
+        logger.error(f"Erreur lors du rafraîchissement du token: {str(e)}")
+        return Response({
+            'error': 'Erreur lors du rafraîchissement du token',
+            'code': 'REFRESH_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -612,6 +661,29 @@ def suivi_list(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def traitement_suivis(request, uuid):
+    """Récupérer les suivis d'un traitement"""
+    try:
+        # Charger les relations nécessaires pour éviter les requêtes N+1
+        suivis = Suivi.objects.filter(traitement__uuid=uuid).select_related(
+            'preuve__media',
+            'etat_mise_en_oeuvre',
+            'appreciation',
+            'statut',
+            'cree_par'
+        ).order_by('-created_at')
+        
+        serializer = SuiviSerializer(suivis, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des suivis du traitement: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer les suivis du traitement'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def suivi_create(request):
@@ -619,6 +691,13 @@ def suivi_create(request):
     try:
         serializer = SuiviCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
+            statut = serializer.validated_data.get('statut')
+            date_cloture = serializer.validated_data.get('date_cloture')
+            if statut and statut.nom and 'clôtur' in statut.nom.lower() and not date_cloture:
+                return Response({
+                    'date_cloture': 'La date de clôture est requise lorsque le statut indique une clôture.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             suivi = serializer.save()
             return Response(SuiviSerializer(suivi).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -627,3 +706,47 @@ def suivi_create(request):
         return Response({
             'error': 'Impossible de créer le suivi'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def suivi_detail(request, uuid):
+    """Récupérer le détail d'un suivi"""
+    try:
+        suivi = Suivi.objects.select_related(
+            'traitement', 'etat_mise_en_oeuvre', 'appreciation', 'preuve__media', 'statut'
+        ).get(uuid=uuid, cree_par=request.user)
+        return Response(SuiviSerializer(suivi).data)
+    except Suivi.DoesNotExist:
+        return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du suivi: {str(e)}")
+        return Response({'error': "Impossible de récupérer le suivi"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def suivi_update(request, uuid):
+    """Mettre à jour un suivi"""
+    try:
+        suivi = Suivi.objects.get(uuid=uuid)
+        if suivi.cree_par != request.user:
+            return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = SuiviUpdateSerializer(suivi, data=request.data, partial=True)
+        if serializer.is_valid():
+            statut = serializer.validated_data.get('statut', suivi.statut)
+            date_cloture = serializer.validated_data.get('date_cloture')
+            if statut and statut.nom and 'clôtur' in statut.nom.lower() and not (date_cloture or suivi.date_cloture):
+                return Response({
+                    'date_cloture': 'La date de clôture est requise lorsque le statut indique une clôture.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            suivi = serializer.save()
+            return Response(SuiviSerializer(suivi).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Suivi.DoesNotExist:
+        return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du suivi: {str(e)}")
+        return Response({'error': "Impossible de mettre à jour le suivi"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

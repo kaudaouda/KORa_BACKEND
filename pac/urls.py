@@ -29,4 +29,7 @@ urlpatterns = [
     # ==================== API SUIVIS ====================
     path('pac/suivis/', views.suivi_list, name='suivi_list'),
     path('pac/suivis/create/', views.suivi_create, name='suivi_create'),
+    path('pac/suivis/<uuid:uuid>/', views.suivi_detail, name='suivi_detail'),
+    path('pac/suivis/<uuid:uuid>/update/', views.suivi_update, name='suivi_update'),
+    path('pac/traitements/<uuid:uuid>/suivis/', views.traitement_suivis, name='traitement_suivis'),
 ]

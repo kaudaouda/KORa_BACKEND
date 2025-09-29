@@ -2,13 +2,15 @@
 Vues API pour l'application Paramètre
 """
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.http import JsonResponse
 from .models import (
-    Nature, Categorie, Source, ActionType, Statut, 
-    EtatMiseEnOeuvre, Appreciation, Direction, SousDirection, Processus
+    Nature, Categorie, Source, ActionType, Statut,
+    EtatMiseEnOeuvre, Appreciation, Direction, SousDirection,
+    Processus, Media, Preuve
 )
 import logging
 
@@ -108,6 +110,23 @@ def serialize_processus(processus):
         'cree_par': str(processus.cree_par.id),
         'created_at': processus.created_at.isoformat(),
         'updated_at': processus.updated_at.isoformat()
+    }
+
+
+def serialize_media(media):
+    return {
+        'uuid': str(media.uuid),
+        'url_fichier': media.get_url() if hasattr(media, 'get_url') else media.url_fichier,
+        'created_at': media.created_at.isoformat()
+    }
+
+
+def serialize_preuve(preuve):
+    return {
+        'uuid': str(preuve.uuid),
+        'description': preuve.description,
+        'media': serialize_media(preuve.media) if preuve.media else None,
+        'created_at': preuve.created_at.isoformat()
     }
 
 
@@ -734,3 +753,79 @@ def sous_direction_list(request, uuid):
         return Response({
             'error': 'Impossible de récupérer les sous-directions'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def media_list(request):
+    medias = Media.objects.all().order_by('-created_at')
+    data = [serialize_media(media) for media in medias]
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def media_create(request):
+    fiche = request.FILES.get('fichier')
+    url = request.data.get('url_fichier')
+
+    if not fiche and not url:
+        return Response({'error': 'Un fichier ou une URL doit être fourni'}, status=status.HTTP_400_BAD_REQUEST)
+
+    media = Media()
+    if fiche:
+        media.fichier = fiche
+    media.url_fichier = url
+    media.save()
+
+    return Response(serialize_media(media), status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def media_detail(request, uuid):
+    try:
+        media = Media.objects.get(uuid=uuid)
+        return Response(serialize_media(media))
+    except Media.DoesNotExist:
+        return Response({'error': 'Media non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def preuve_list(request):
+    preuves = Preuve.objects.select_related('media').order_by('-created_at')
+    data = [serialize_preuve(preuve) for preuve in preuves]
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def preuve_create(request):
+    description = request.data.get('description')
+    media_id = request.data.get('media')
+
+    if not description:
+        return Response({'error': 'La description est requise'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not media_id:
+        return Response({'error': 'Le média est requis'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        media = Media.objects.get(uuid=media_id)
+    except Media.DoesNotExist:
+        return Response({'error': 'Media non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+
+    preuve = Preuve.objects.create(description=description, media=media)
+
+    return Response(serialize_preuve(preuve), status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def preuve_detail(request, uuid):
+    try:
+        preuve = Preuve.objects.select_related('media').get(uuid=uuid)
+        return Response(serialize_preuve(preuve))
+    except Preuve.DoesNotExist:
+        return Response({'error': 'Preuve non trouvée'}, status=status.HTTP_404_NOT_FOUND)

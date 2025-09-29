@@ -15,10 +15,23 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.shortcuts import redirect
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+
+
+def root_view(request):
+    """Rediriger la racine vers l'interface d'administration comme auparavant."""
+    return redirect('admin:index')
 
 urlpatterns = [
+    path('', root_view, name='api_root'),
     path('admin/', admin.site.urls),
     path('api/', include('pac.urls')),  # API intégrée dans pac
     path('api/parametre/', include('parametre.urls')),  # API des paramètres
 ]
+
+# Servir les fichiers média en développement
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
