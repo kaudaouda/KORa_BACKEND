@@ -50,4 +50,14 @@ urlpatterns = [
     path('directions/create/', views.direction_create, name='direction_create'),
     path('directions/<uuid:uuid>/', views.direction_detail, name='direction_detail'),
     path('directions/<uuid:uuid>/sous-directions/', views.sous_direction_list, name='sous_direction_list'),
+
+    # ==================== MÉDIAS ====================
+    path('medias/', views.media_list, name='media_list'),
+    path('medias/create/', views.media_create, name='media_create'),
+    path('medias/<uuid:uuid>/', views.media_detail, name='media_detail'),
+
+    # ==================== PREUVES ====================
+    path('preuves/', views.preuve_list, name='preuve_list'),
+    path('preuves/create/', views.preuve_create, name='preuve_create'),
+    path('preuves/<uuid:uuid>/', views.preuve_detail, name='preuve_detail'),
 ]

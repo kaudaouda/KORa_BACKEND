@@ -138,6 +138,7 @@ class TraitementSerializer(serializers.ModelSerializer):
     """Serializer pour les traitements"""
     type_action_nom = serializers.CharField(source='type_action.nom', read_only=True)
     preuve_description = serializers.CharField(source='preuve.description', read_only=True)
+    preuve_media_url = serializers.SerializerMethodField()
     pac_numero = serializers.CharField(source='pac.numero_pac', read_only=True)
     pac_uuid = serializers.UUIDField(source='pac.uuid', read_only=True)
     responsable_direction_nom = serializers.CharField(source='responsable_direction.nom', read_only=True)
@@ -149,9 +150,16 @@ class TraitementSerializer(serializers.ModelSerializer):
             'uuid', 'pac', 'pac_uuid', 'pac_numero', 'action', 'type_action', 
             'type_action_nom', 'responsable_direction', 'responsable_direction_nom',
             'responsable_sous_direction', 'responsable_sous_direction_nom',
-            'preuve', 'preuve_description', 'delai_realisation'
+            'preuve', 'preuve_description', 'preuve_media_url', 'delai_realisation'
         ]
         read_only_fields = ['uuid']
+
+    def get_preuve_media_url(self, obj):
+        if obj.preuve and obj.preuve.media:
+            if hasattr(obj.preuve.media, 'get_url'):
+                return obj.preuve.media.get_url()
+            return getattr(obj.preuve.media, 'url_fichier', None)
+        return None
 
 
 class TraitementCreateSerializer(serializers.ModelSerializer):
@@ -181,20 +189,32 @@ class SuiviSerializer(serializers.ModelSerializer):
     etat_nom = serializers.CharField(source='etat_mise_en_oeuvre.nom', read_only=True)
     appreciation_nom = serializers.CharField(source='appreciation.nom', read_only=True)
     traitement_action = serializers.CharField(source='traitement.action', read_only=True)
+    statut_nom = serializers.CharField(source='statut.nom', read_only=True)
+    preuve_description = serializers.CharField(source='preuve.description', read_only=True)
+    preuve_media_url = serializers.SerializerMethodField()
     createur_nom = serializers.SerializerMethodField()
     
     class Meta:
         model = Suivi
         fields = [
-            'uuid', 'traitement', 'traitement_action', 'etat_mise_en_oeuvre', 
+            'uuid', 'traitement', 'traitement_action', 'etat_mise_en_oeuvre',
             'etat_nom', 'resultat', 'appreciation', 'appreciation_nom',
-            'cree_par', 'createur_nom', 'created_at'
+            'preuve', 'preuve_description', 'preuve_media_url',
+            'statut', 'statut_nom', 'date_mise_en_oeuvre_effective',
+            'date_cloture', 'cree_par', 'createur_nom', 'created_at'
         ]
         read_only_fields = ['uuid', 'created_at']
     
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
         return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+
+    def get_preuve_media_url(self, obj):
+        if obj.preuve and obj.preuve.media:
+            if hasattr(obj.preuve.media, 'get_url'):
+                return obj.preuve.media.get_url()
+            return getattr(obj.preuve.media, 'url_fichier', None)
+        return None
 
 
 class SuiviCreateSerializer(serializers.ModelSerializer):
@@ -203,10 +223,22 @@ class SuiviCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Suivi
         fields = [
-            'traitement', 'etat_mise_en_oeuvre', 'resultat', 'appreciation'
+            'traitement', 'etat_mise_en_oeuvre', 'resultat', 'appreciation',
+            'preuve', 'statut', 'date_mise_en_oeuvre_effective', 'date_cloture'
         ]
     
     def create(self, validated_data):
         """Créer un suivi avec l'utilisateur connecté"""
         validated_data['cree_par'] = self.context['request'].user
         return super().create(validated_data)
+
+
+class SuiviUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour des suivis"""
+
+    class Meta:
+        model = Suivi
+        fields = [
+            'etat_mise_en_oeuvre', 'resultat', 'appreciation',
+            'preuve', 'statut', 'date_mise_en_oeuvre_effective', 'date_cloture'
+        ]

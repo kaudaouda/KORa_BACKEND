@@ -141,7 +141,8 @@ class Media(models.Model):
     Modèle pour les médias (fichiers)
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    url_fichier = models.URLField(max_length=500)
+    fichier = models.FileField(upload_to='medias/', blank=True, null=True)
+    url_fichier = models.URLField(max_length=500, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -151,6 +152,24 @@ class Media(models.Model):
 
     def __str__(self):
         return f"Média {self.uuid}"
+
+    @property
+    def fichier_url(self):
+        if self.fichier:
+            try:
+                return self.fichier.url
+            except ValueError:
+                return None
+        return None
+
+    def get_url(self):
+        if self.fichier_url:
+            # Éviter la duplication de /medias/ si l'URL commence déjà par /medias/
+            url = self.fichier_url
+            if url.startswith('/medias/medias/'):
+                return url.replace('/medias/medias/', '/medias/')
+            return url
+        return self.url_fichier
 
 
 class Direction(models.Model):
