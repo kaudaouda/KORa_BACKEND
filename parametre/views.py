@@ -125,7 +125,7 @@ def serialize_preuve(preuve):
     return {
         'uuid': str(preuve.uuid),
         'description': preuve.description,
-        'media': serialize_media(preuve.media) if preuve.media else None,
+        'medias': [serialize_media(media) for media in preuve.medias.all()],
         'created_at': preuve.created_at.isoformat()
     }
 
@@ -794,7 +794,7 @@ def media_detail(request, uuid):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def preuve_list(request):
-    preuves = Preuve.objects.select_related('media').order_by('-created_at')
+    preuves = Preuve.objects.prefetch_related('medias').order_by('-created_at')
     data = [serialize_preuve(preuve) for preuve in preuves]
     return Response(data)
 
@@ -803,22 +803,53 @@ def preuve_list(request):
 @permission_classes([IsAuthenticated])
 def preuve_create(request):
     description = request.data.get('description')
-    media_id = request.data.get('media')
+    medias_data = request.data.get('medias', [])
 
     if not description:
         return Response({'error': 'La description est requise'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if not media_id:
-        return Response({'error': 'Le média est requis'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        # Créer la preuve
+        preuve = Preuve.objects.create(description=description)
+        
+        # Ajouter les médias si fournis
+        if medias_data:
+            media_ids = [media_data.get('media') for media_data in medias_data if media_data.get('media')]
+            medias = Media.objects.filter(uuid__in=media_ids)
+            preuve.medias.set(medias)
+
+        return Response(serialize_preuve(preuve), status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la preuve: {str(e)}")
+        return Response({'error': 'Erreur lors de la création de la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def preuve_create_with_medias(request):
+    """Créer une preuve avec plusieurs médias"""
+    description = request.data.get('description')
+    medias_data = request.data.get('medias', [])
+
+    if not description:
+        return Response({'error': 'La description est requise'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not medias_data:
+        return Response({'error': 'Au moins un média est requis'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        media = Media.objects.get(uuid=media_id)
-    except Media.DoesNotExist:
-        return Response({'error': 'Media non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+        # Créer la preuve
+        preuve = Preuve.objects.create(description=description)
+        
+        # Ajouter tous les médias
+        media_ids = [media_data.get('media') for media_data in medias_data if media_data.get('media')]
+        medias = Media.objects.filter(uuid__in=media_ids)
+        preuve.medias.set(medias)
 
-    preuve = Preuve.objects.create(description=description, media=media)
-
-    return Response(serialize_preuve(preuve), status=status.HTTP_201_CREATED)
+        return Response(serialize_preuve(preuve), status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la preuve avec médias: {str(e)}")
+        return Response({'error': 'Erreur lors de la création de la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])

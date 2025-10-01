@@ -59,5 +59,6 @@ urlpatterns = [
     # ==================== PREUVES ====================
     path('preuves/', views.preuve_list, name='preuve_list'),
     path('preuves/create/', views.preuve_create, name='preuve_create'),
+    path('preuves/create-with-medias/', views.preuve_create_with_medias, name='preuve_create_with_medias'),
     path('preuves/<uuid:uuid>/', views.preuve_detail, name='preuve_detail'),
 ]
