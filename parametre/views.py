@@ -1,862 +1,642 @@
-"""
-Vues API pour l'application Paramètre
-"""
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes, parser_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from django.shortcuts import render
 from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.views import View
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+import json
+import logging
+
 from .models import (
     Nature, Categorie, Source, ActionType, Statut,
-    EtatMiseEnOeuvre, Appreciation, Direction, SousDirection,
-    Processus, Media, Preuve
+    EtatMiseEnOeuvre, Appreciation, Media, Direction, 
+    SousDirection, Service, Processus, Preuve, ActivityLog
 )
-import logging
+# Import supprimé - logique intégrée directement dans les vues
 
 logger = logging.getLogger(__name__)
 
 
-# ==================== SERIALIZERS SIMPLES ====================
-
-def serialize_nature(nature):
-    return {
-        'uuid': str(nature.uuid),
-        'nom': nature.nom,
-        'description': nature.description,
-        'created_at': nature.created_at.isoformat(),
-        'updated_at': nature.updated_at.isoformat()
-    }
-
-def serialize_categorie(categorie):
-    return {
-        'uuid': str(categorie.uuid),
-        'nom': categorie.nom,
-        'description': categorie.description,
-        'created_at': categorie.created_at.isoformat(),
-        'updated_at': categorie.updated_at.isoformat()
-    }
-
-def serialize_source(source):
-    return {
-        'uuid': str(source.uuid),
-        'nom': source.nom,
-        'description': source.description,
-        'created_at': source.created_at.isoformat(),
-        'updated_at': source.updated_at.isoformat()
-    }
-
-def serialize_action_type(action_type):
-    return {
-        'uuid': str(action_type.uuid),
-        'nom': action_type.nom,
-        'description': action_type.description,
-        'created_at': action_type.created_at.isoformat(),
-        'updated_at': action_type.updated_at.isoformat()
-    }
-
-def serialize_statut(statut):
-    return {
-        'uuid': str(statut.uuid),
-        'nom': statut.nom,
-        'description': statut.description,
-        'created_at': statut.created_at.isoformat(),
-        'updated_at': statut.updated_at.isoformat()
-    }
-
-def serialize_etat_mise_en_oeuvre(etat):
-    return {
-        'uuid': str(etat.uuid),
-        'nom': etat.nom,
-        'description': etat.description,
-        'created_at': etat.created_at.isoformat(),
-        'updated_at': etat.updated_at.isoformat()
-    }
-
-def serialize_appreciation(appreciation):
-    return {
-        'uuid': str(appreciation.uuid),
-        'nom': appreciation.nom,
-        'description': appreciation.description,
-        'created_at': appreciation.created_at.isoformat(),
-        'updated_at': appreciation.updated_at.isoformat()
-    }
-
-def serialize_direction(direction):
-    return {
-        'uuid': str(direction.uuid),
-        'nom': direction.nom,
-        'description': direction.description,
-        'created_at': direction.created_at.isoformat(),
-        'updated_at': direction.updated_at.isoformat()
-    }
-
-def serialize_sous_direction(sous_direction):
-    return {
-        'uuid': str(sous_direction.uuid),
-        'nom': sous_direction.nom,
-        'description': sous_direction.description,
-        'direction': str(sous_direction.direction.uuid),
-        'created_at': sous_direction.created_at.isoformat(),
-        'updated_at': sous_direction.updated_at.isoformat()
-    }
-
-def serialize_processus(processus):
-    return {
-        'uuid': str(processus.uuid),
-        'numero_processus': processus.numero_processus,
-        'nom': processus.nom,
-        'description': processus.description,
-        'cree_par': str(processus.cree_par.id),
-        'created_at': processus.created_at.isoformat(),
-        'updated_at': processus.updated_at.isoformat()
-    }
+def get_client_ip(request):
+    """
+    Récupère l'adresse IP du client
+    """
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
 
 
-def serialize_media(media):
-    return {
-        'uuid': str(media.uuid),
-        'url_fichier': media.get_url() if hasattr(media, 'get_url') else media.url_fichier,
-        'created_at': media.created_at.isoformat()
-    }
+def log_activity(user, action, entity_type, entity_id=None, entity_name=None, description=None, ip_address=None, user_agent=None):
+    """
+    Enregistre une activité utilisateur
+    """
+    try:
+        activity_log = ActivityLog.objects.create(
+            user=user,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            description=description or f"{user.username} a {action} {entity_type}",
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        logger.info(f"Activité enregistrée: {activity_log}")
+        return activity_log
+    except Exception as e:
+        logger.error(f"Erreur lors de l'enregistrement de l'activité: {e}")
+        return None
 
 
-def serialize_preuve(preuve):
-    return {
-        'uuid': str(preuve.uuid),
-        'description': preuve.description,
-        'medias': [serialize_media(media) for media in preuve.medias.all()],
-        'created_at': preuve.created_at.isoformat()
-    }
+def log_pac_creation(user, pac, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un PAC
+    """
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='pac',
+        entity_id=str(pac.uuid),
+        entity_name=f"PAC {pac.numero_pac}",
+        description=f"Création du PAC {pac.numero_pac}: {pac.libelle}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
 
 
-# ==================== NATURES ====================
+def log_pac_update(user, pac, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la modification d'un PAC
+    """
+    return log_activity(
+        user=user,
+        action='update',
+        entity_type='pac',
+        entity_id=str(pac.uuid),
+        entity_name=f"PAC {pac.numero_pac}",
+        description=f"Modification du PAC {pac.numero_pac}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_traitement_creation(user, traitement, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un traitement
+    """
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='traitement',
+        entity_id=str(traitement.uuid),
+        entity_name=f"Traitement pour PAC {traitement.pac.numero_pac}",
+        description=f"Création d'un traitement: {traitement.action[:50]}...",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_suivi_creation(user, suivi, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un suivi
+    """
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='suivi',
+        entity_id=str(suivi.uuid),
+        entity_name=f"Suivi pour PAC {suivi.traitement.pac.numero_pac}",
+        description=f"Création d'un suivi: {suivi.etat_mise_en_oeuvre.nom}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_user_login(user, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la connexion utilisateur
+    """
+    return log_activity(
+        user=user,
+        action='login',
+        entity_type='user',
+        entity_id=str(user.id),
+        entity_name=user.username,
+        description=f"Connexion de {user.username}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_user_logout(user, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la déconnexion utilisateur
+    """
+    return log_activity(
+        user=user,
+        action='logout',
+        entity_type='user',
+        entity_id=str(user.id),
+        entity_name=user.username,
+        description=f"Déconnexion de {user.username}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def nature_list(request):
-    """Liste des natures"""
+@permission_classes([IsAuthenticated])
+def recent_activities(request):
+    """
+    API pour récupérer les activités récentes
+    """
+    try:
+        limit = int(request.GET.get('limit', 10))
+        user_specific = request.GET.get('user_only', 'false').lower() == 'true'
+        
+        # Récupération des activités directement
+        queryset = ActivityLog.objects.select_related('user')
+        
+        if user_specific:
+            queryset = queryset.filter(user=request.user)
+        
+        activities = queryset.order_by('-created_at')[:limit]
+        
+        # Formatage des données
+        data = []
+        for activity in activities:
+            data.append({
+                'uuid': str(activity.uuid),
+                'user': {
+                    'username': activity.user.username,
+                    'first_name': activity.user.first_name,
+                    'last_name': activity.user.last_name,
+                    'initials': f"{activity.user.first_name[0] if activity.user.first_name else ''}{activity.user.last_name[0] if activity.user.last_name else ''}".upper()
+                },
+                'action': activity.action,
+                'action_display': activity.get_action_display(),
+                'entity_type': activity.entity_type,
+                'entity_name': activity.entity_name,
+                'description': activity.description,
+                'time_ago': activity.time_ago,
+                'action_icon': activity.action_icon,
+                'status_color': activity.status_color,
+                'created_at': activity.created_at.isoformat()
+            })
+        
+        return Response({
+            'success': True,
+            'data': data,
+            'count': len(data)
+        }, status=status.HTTP_200_OK)
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des activités: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des activités',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_activities(request):
+    """
+    API pour récupérer les activités d'un utilisateur spécifique
+    """
+    try:
+        limit = int(request.GET.get('limit', 20))
+        
+        # Récupération des activités de l'utilisateur
+        activities = ActivityLog.objects.filter(user=request.user).select_related('user').order_by('-created_at')[:limit]
+        
+        # Formatage des données
+        data = []
+        for activity in activities:
+            data.append({
+                'uuid': str(activity.uuid),
+                'user': {
+                    'username': activity.user.username,
+                    'first_name': activity.user.first_name,
+                    'last_name': activity.user.last_name,
+                    'initials': f"{activity.user.first_name[0] if activity.user.first_name else ''}{activity.user.last_name[0] if activity.user.last_name else ''}".upper()
+                },
+                'action': activity.action,
+                'action_display': activity.get_action_display(),
+                'entity_type': activity.entity_type,
+                'entity_name': activity.entity_name,
+                'description': activity.description,
+                'time_ago': activity.time_ago,
+                'action_icon': activity.action_icon,
+                'status_color': activity.status_color,
+                'created_at': activity.created_at.isoformat()
+            })
+        
+        return Response({
+            'success': True,
+            'data': data,
+            'count': len(data)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des activités utilisateur: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des activités',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Vues existantes pour les paramètres
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def natures_list(request):
+    """
+    Liste des natures
+    """
     try:
         natures = Nature.objects.all().order_by('nom')
-        data = [serialize_nature(nature) for nature in natures]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des natures: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer les natures'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        data = []
+        for nature in natures:
+            data.append({
+                'uuid': str(nature.uuid),
+                'nom': nature.nom,
+                'description': nature.description,
+                'created_at': nature.created_at.isoformat(),
+                'updated_at': nature.updated_at.isoformat()
+            })
 
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def nature_create(request):
-    """Créer une nouvelle nature"""
-    try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
             return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si une nature avec ce nom existe déjà
-        nature, created = Nature.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_nature(nature), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_nature(nature), status=status.HTTP_200_OK)
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la nature: {str(e)}")
+        logger.error(f"Erreur lors de la récupération des natures: {e}")
         return Response({
-            'error': 'Impossible de créer la nature'
+            'success': False,
+            'message': 'Erreur lors de la récupération des natures',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def nature_detail(request, uuid):
-    """Détails d'une nature"""
-    try:
-        nature = Nature.objects.get(uuid=uuid)
-        return Response(serialize_nature(nature))
-    except Nature.DoesNotExist:
-        return Response({
-            'error': 'Nature non trouvée'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la nature: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer la nature'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)# Ajouter ce contenu à la fin du fichier views.py
-
-# ==================== CATÉGORIES ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def categorie_list(request):
-    """Liste des catégories"""
+@permission_classes([IsAuthenticated])
+def categories_list(request):
+    """
+    Liste des catégories
+    """
     try:
         categories = Categorie.objects.all().order_by('nom')
-        data = [serialize_categorie(categorie) for categorie in categories]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des catégories: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer les catégories'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        data = []
+        for categorie in categories:
+            data.append({
+                'uuid': str(categorie.uuid),
+                'nom': categorie.nom,
+                'description': categorie.description,
+                'created_at': categorie.created_at.isoformat(),
+                'updated_at': categorie.updated_at.isoformat()
+            })
 
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def categorie_create(request):
-    """Créer une nouvelle catégorie"""
-    try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
-            return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si une catégorie avec ce nom existe déjà
-        categorie, created = Categorie.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_categorie(categorie), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_categorie(categorie), status=status.HTTP_200_OK)
-            
-    except Exception as e:
-        logger.error(f"Erreur lors de la création de la catégorie: {str(e)}")
         return Response({
-            'error': 'Impossible de créer la catégorie'
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des catégories: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des catégories',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def categorie_detail(request, uuid):
-    """Détails d'une catégorie"""
-    try:
-        categorie = Categorie.objects.get(uuid=uuid)
-        return Response(serialize_categorie(categorie))
-    except Categorie.DoesNotExist:
-        return Response({
-            'error': 'Catégorie non trouvée'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la catégorie: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer la catégorie'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# ==================== SOURCES ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def source_list(request):
-    """Liste des sources"""
+@permission_classes([IsAuthenticated])
+def sources_list(request):
+    """
+    Liste des sources
+    """
     try:
         sources = Source.objects.all().order_by('nom')
-        data = [serialize_source(source) for source in sources]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des sources: {str(e)}")
+        data = []
+        for source in sources:
+            data.append({
+                'uuid': str(source.uuid),
+                'nom': source.nom,
+                'description': source.description,
+                'created_at': source.created_at.isoformat(),
+                'updated_at': source.updated_at.isoformat()
+            })
+
         return Response({
-            'error': 'Impossible de récupérer les sources'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def source_create(request):
-    """Créer une nouvelle source"""
-    try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
-            return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si une source avec ce nom existe déjà
-        source, created = Source.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_source(source), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_source(source), status=status.HTTP_200_OK)
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la source: {str(e)}")
+        logger.error(f"Erreur lors de la récupération des sources: {e}")
         return Response({
-            'error': 'Impossible de créer la source'
+            'success': False,
+            'message': 'Erreur lors de la récupération des sources',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def source_detail(request, uuid):
-    """Détails d'une source"""
-    try:
-        source = Source.objects.get(uuid=uuid)
-        return Response(serialize_source(source))
-    except Source.DoesNotExist:
-        return Response({
-            'error': 'Source non trouvée'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la source: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer la source'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# ==================== TYPES D'ACTION ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def action_type_list(request):
-    """Liste des types d'action"""
+@permission_classes([IsAuthenticated])
+def action_types_list(request):
+    """
+    Liste des types d'action
+    """
     try:
         action_types = ActionType.objects.all().order_by('nom')
-        data = [serialize_action_type(action_type) for action_type in action_types]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des types d'action: {str(e)}")
+        data = []
+        for action_type in action_types:
+            data.append({
+                'uuid': str(action_type.uuid),
+                'nom': action_type.nom,
+                'description': action_type.description,
+                'created_at': action_type.created_at.isoformat(),
+                'updated_at': action_type.updated_at.isoformat()
+            })
+
         return Response({
-            'error': 'Impossible de récupérer les types d\'action'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def action_type_create(request):
-    """Créer un nouveau type d'action"""
-    try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
-            return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si un type d'action avec ce nom existe déjà
-        action_type, created = ActionType.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_action_type(action_type), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_action_type(action_type), status=status.HTTP_200_OK)
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création du type d'action: {str(e)}")
+        logger.error(f"Erreur lors de la récupération des types d'action: {e}")
         return Response({
-            'error': 'Impossible de créer le type d\'action'
+            'success': False,
+            'message': 'Erreur lors de la récupération des types d\'action',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def action_type_detail(request, uuid):
-    """Détails d'un type d'action"""
-    try:
-        action_type = ActionType.objects.get(uuid=uuid)
-        return Response(serialize_action_type(action_type))
-    except ActionType.DoesNotExist:
-        return Response({
-            'error': 'Type d\'action non trouvé'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération du type d'action: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer le type d\'action'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# ==================== STATUTS ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def statut_list(request):
-    """Liste des statuts"""
+@permission_classes([IsAuthenticated])
+def statuts_list(request):
+    """
+    Liste des statuts
+    """
     try:
         statuts = Statut.objects.all().order_by('nom')
-        data = [serialize_statut(statut) for statut in statuts]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statuts: {str(e)}")
+        data = []
+        for statut in statuts:
+            data.append({
+                'uuid': str(statut.uuid),
+                'nom': statut.nom,
+                'description': statut.description,
+                'created_at': statut.created_at.isoformat(),
+                'updated_at': statut.updated_at.isoformat()
+            })
+
         return Response({
-            'error': 'Impossible de récupérer les statuts'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def statut_create(request):
-    """Créer un nouveau statut"""
-    try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
-            return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si un statut avec ce nom existe déjà
-        statut, created = Statut.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_statut(statut), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_statut(statut), status=status.HTTP_200_OK)
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création du statut: {str(e)}")
+        logger.error(f"Erreur lors de la récupération des statuts: {e}")
         return Response({
-            'error': 'Impossible de créer le statut'
+            'success': False,
+            'message': 'Erreur lors de la récupération des statuts',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def statut_detail(request, uuid):
-    """Détails d'un statut"""
-    try:
-        statut = Statut.objects.get(uuid=uuid)
-        return Response(serialize_statut(statut))
-    except Statut.DoesNotExist:
-        return Response({
-            'error': 'Statut non trouvé'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération du statut: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer le statut'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# ==================== ÉTATS DE MISE EN ŒUVRE ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def etat_mise_en_oeuvre_list(request):
-    """Liste des états de mise en œuvre"""
+@permission_classes([IsAuthenticated])
+def etats_mise_en_oeuvre_list(request):
+    """
+    Liste des états de mise en œuvre
+    """
     try:
         etats = EtatMiseEnOeuvre.objects.all().order_by('nom')
-        data = [serialize_etat_mise_en_oeuvre(etat) for etat in etats]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des états de mise en œuvre: {str(e)}")
+        data = []
+        for etat in etats:
+            data.append({
+                'uuid': str(etat.uuid),
+                'nom': etat.nom,
+                'description': etat.description,
+                'created_at': etat.created_at.isoformat(),
+                'updated_at': etat.updated_at.isoformat()
+            })
+
         return Response({
-            'error': 'Impossible de récupérer les états de mise en œuvre'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def etat_mise_en_oeuvre_create(request):
-    """Créer un nouvel état de mise en œuvre"""
-    try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
-            return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si un état avec ce nom existe déjà
-        etat, created = EtatMiseEnOeuvre.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_etat_mise_en_oeuvre(etat), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_etat_mise_en_oeuvre(etat), status=status.HTTP_200_OK)
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'état de mise en œuvre: {str(e)}")
+        logger.error(f"Erreur lors de la récupération des états de mise en œuvre: {e}")
         return Response({
-            'error': 'Impossible de créer l\'état de mise en œuvre'
+            'success': False,
+            'message': 'Erreur lors de la récupération des états de mise en œuvre',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def etat_mise_en_oeuvre_detail(request, uuid):
-    """Détails d'un état de mise en œuvre"""
-    try:
-        etat = EtatMiseEnOeuvre.objects.get(uuid=uuid)
-        return Response(serialize_etat_mise_en_oeuvre(etat))
-    except EtatMiseEnOeuvre.DoesNotExist:
-        return Response({
-            'error': 'État de mise en œuvre non trouvé'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération de l'état de mise en œuvre: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer l\'état de mise en œuvre'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# ==================== APPRÉCIATIONS ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def appreciation_list(request):
-    """Liste des appréciations"""
+@permission_classes([IsAuthenticated])
+def appreciations_list(request):
+    """
+    Liste des appréciations
+    """
     try:
         appreciations = Appreciation.objects.all().order_by('nom')
-        data = [serialize_appreciation(appreciation) for appreciation in appreciations]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des appréciations: {str(e)}")
+        data = []
+        for appreciation in appreciations:
+            data.append({
+                'uuid': str(appreciation.uuid),
+                'nom': appreciation.nom,
+                'description': appreciation.description,
+                'created_at': appreciation.created_at.isoformat(),
+                'updated_at': appreciation.updated_at.isoformat()
+            })
+
         return Response({
-            'error': 'Impossible de récupérer les appréciations'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def appreciation_create(request):
-    """Créer une nouvelle appréciation"""
-    try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
-            return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si une appréciation avec ce nom existe déjà
-        appreciation, created = Appreciation.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_appreciation(appreciation), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_appreciation(appreciation), status=status.HTTP_200_OK)
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'appréciation: {str(e)}")
+        logger.error(f"Erreur lors de la récupération des appréciations: {e}")
         return Response({
-            'error': 'Impossible de créer l\'appréciation'
+            'success': False,
+            'message': 'Erreur lors de la récupération des appréciations',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def appreciation_detail(request, uuid):
-    """Détails d'une appréciation"""
-    try:
-        appreciation = Appreciation.objects.get(uuid=uuid)
-        return Response(serialize_appreciation(appreciation))
-    except Appreciation.DoesNotExist:
-        return Response({
-            'error': 'Appréciation non trouvée'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération de l'appréciation: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer l\'appréciation'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# ==================== PROCESSUS ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def processus_list(request):
-    """Liste des processus"""
-    try:
-        processus = Processus.objects.all().order_by('numero_processus')
-        data = [serialize_processus(p) for p in processus]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des processus: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer les processus'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def processus_create(request):
-    """Créer un nouveau processus"""
-    try:
-        from django.contrib.auth.models import User
-        
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
-        
-        if not nom:
-            return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Récupérer le premier utilisateur comme créateur par défaut
-        user = User.objects.first()
-        if not user:
-            return Response({
-                'error': 'Aucun utilisateur trouvé'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si un processus avec ce nom existe déjà
-        processus, created = Processus.objects.get_or_create(
-            nom=nom,
-            defaults={
-                'description': description,
-                'cree_par': user
-            }
-        )
-        
-        if created:
-            return Response(serialize_processus(processus), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_processus(processus), status=status.HTTP_200_OK)
-            
-    except Exception as e:
-        logger.error(f"Erreur lors de la création du processus: {str(e)}")
-        return Response({
-            'error': 'Impossible de créer le processus'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def processus_detail(request, uuid):
-    """Détails d'un processus"""
-    try:
-        processus = Processus.objects.get(uuid=uuid)
-        return Response(serialize_processus(processus))
-    except Processus.DoesNotExist:
-        return Response({
-            'error': 'Processus non trouvé'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération du processus: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer le processus'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# ==================== DIRECTIONS ====================
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def direction_list(request):
-    """Liste des directions"""
+@permission_classes([IsAuthenticated])
+def directions_list(request):
+    """
+    Liste des directions
+    """
     try:
         directions = Direction.objects.all().order_by('nom')
-        data = [serialize_direction(direction) for direction in directions]
-        return Response(data)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des directions: {str(e)}")
+        data = []
+        for direction in directions:
+            data.append({
+                'uuid': str(direction.uuid),
+                'nom': direction.nom,
+                'description': direction.description,
+                'created_at': direction.created_at.isoformat(),
+                'updated_at': direction.updated_at.isoformat()
+            })
+
         return Response({
-            'error': 'Impossible de récupérer les directions'
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des directions: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des directions',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def direction_create(request):
-    """Créer une nouvelle direction"""
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sous_directions_list(request):
+    """
+    Liste des sous-directions
+    """
     try:
-        nom = request.data.get('nom')
-        description = request.data.get('description', '')
+        direction_uuid = request.GET.get('direction_uuid')
+        sous_directions = SousDirection.objects.select_related('direction')
         
-        if not nom:
+        if direction_uuid:
+            sous_directions = sous_directions.filter(direction__uuid=direction_uuid)
+        
+        sous_directions = sous_directions.order_by('direction__nom', 'nom')
+
+        data = []
+        for sous_direction in sous_directions:
+            data.append({
+                'uuid': str(sous_direction.uuid),
+                'nom': sous_direction.nom,
+                'description': sous_direction.description,
+                'direction': {
+                    'uuid': str(sous_direction.direction.uuid),
+                    'nom': sous_direction.direction.nom
+                },
+                'created_at': sous_direction.created_at.isoformat(),
+                'updated_at': sous_direction.updated_at.isoformat()
+            })
+
             return Response({
-                'error': 'Le nom est requis'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Vérifier si une direction avec ce nom existe déjà
-        direction, created = Direction.objects.get_or_create(
-            nom=nom,
-            defaults={'description': description}
-        )
-        
-        if created:
-            return Response(serialize_direction(direction), status=status.HTTP_201_CREATED)
-        else:
-            return Response(serialize_direction(direction), status=status.HTTP_200_OK)
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la direction: {str(e)}")
+        logger.error(f"Erreur lors de la récupération des sous-directions: {e}")
         return Response({
-            'error': 'Impossible de créer la direction'
+            'success': False,
+            'message': 'Erreur lors de la récupération des sous-directions',
+            'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
-def direction_detail(request, uuid):
-    """Détails d'une direction"""
+@permission_classes([IsAuthenticated])
+def services_list(request):
+    """
+    Liste des services
+    """
     try:
-        direction = Direction.objects.get(uuid=uuid)
-        return Response(serialize_direction(direction))
-    except Direction.DoesNotExist:
-        return Response({
-            'error': 'Direction non trouvée'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la direction: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer la direction'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def sous_direction_list(request, uuid):
-    """Liste des sous-directions d'une direction"""
-    try:
-        direction = Direction.objects.get(uuid=uuid)
-        sous_directions = SousDirection.objects.filter(direction=direction).order_by('nom')
-        data = [serialize_sous_direction(sous_direction) for sous_direction in sous_directions]
-        return Response(data)
-    except Direction.DoesNotExist:
-        return Response({
-            'error': 'Direction non trouvée'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des sous-directions: {str(e)}")
-        return Response({
-            'error': 'Impossible de récupérer les sous-directions'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def media_list(request):
-    medias = Media.objects.all().order_by('-created_at')
-    data = [serialize_media(media) for media in medias]
-    return Response(data)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser, FormParser])
-def media_create(request):
-    fiche = request.FILES.get('fichier')
-    url = request.data.get('url_fichier')
-
-    if not fiche and not url:
-        return Response({'error': 'Un fichier ou une URL doit être fourni'}, status=status.HTTP_400_BAD_REQUEST)
-
-    media = Media()
-    if fiche:
-        media.fichier = fiche
-    media.url_fichier = url
-    media.save()
-
-    return Response(serialize_media(media), status=status.HTTP_201_CREATED)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def media_detail(request, uuid):
-    try:
-        media = Media.objects.get(uuid=uuid)
-        return Response(serialize_media(media))
-    except Media.DoesNotExist:
-        return Response({'error': 'Media non trouvé'}, status=status.HTTP_404_NOT_FOUND)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def preuve_list(request):
-    preuves = Preuve.objects.prefetch_related('medias').order_by('-created_at')
-    data = [serialize_preuve(preuve) for preuve in preuves]
-    return Response(data)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def preuve_create(request):
-    description = request.data.get('description')
-    medias_data = request.data.get('medias', [])
-
-    if not description:
-        return Response({'error': 'La description est requise'}, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        # Créer la preuve
-        preuve = Preuve.objects.create(description=description)
+        sous_direction_uuid = request.GET.get('sous_direction_uuid')
+        services = Service.objects.select_related('sous_direction__direction')
         
-        # Ajouter les médias si fournis
-        if medias_data:
-            media_ids = [media_data.get('media') for media_data in medias_data if media_data.get('media')]
-            medias = Media.objects.filter(uuid__in=media_ids)
-            preuve.medias.set(medias)
-
-        return Response(serialize_preuve(preuve), status=status.HTTP_201_CREATED)
-    except Exception as e:
-        logger.error(f"Erreur lors de la création de la preuve: {str(e)}")
-        return Response({'error': 'Erreur lors de la création de la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def preuve_create_with_medias(request):
-    """Créer une preuve avec plusieurs médias"""
-    description = request.data.get('description')
-    medias_data = request.data.get('medias', [])
-
-    if not description:
-        return Response({'error': 'La description est requise'}, status=status.HTTP_400_BAD_REQUEST)
-
-    if not medias_data:
-        return Response({'error': 'Au moins un média est requis'}, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        # Créer la preuve
-        preuve = Preuve.objects.create(description=description)
+        if sous_direction_uuid:
+            services = services.filter(sous_direction__uuid=sous_direction_uuid)
         
-        # Ajouter tous les médias
-        media_ids = [media_data.get('media') for media_data in medias_data if media_data.get('media')]
-        medias = Media.objects.filter(uuid__in=media_ids)
-        preuve.medias.set(medias)
+        services = services.order_by('sous_direction__direction__nom', 'sous_direction__nom', 'nom')
 
-        return Response(serialize_preuve(preuve), status=status.HTTP_201_CREATED)
+        data = []
+        for service in services:
+            data.append({
+                'uuid': str(service.uuid),
+                'nom': service.nom,
+                'description': service.description,
+                'sous_direction': {
+                    'uuid': str(service.sous_direction.uuid),
+                    'nom': service.sous_direction.nom,
+                    'direction': {
+                        'uuid': str(service.sous_direction.direction.uuid),
+                        'nom': service.sous_direction.direction.nom
+                    }
+                },
+                'created_at': service.created_at.isoformat(),
+                'updated_at': service.updated_at.isoformat()
+            })
+
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+        
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la preuve avec médias: {str(e)}")
-        return Response({'error': 'Erreur lors de la création de la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Erreur lors de la récupération des services: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des services',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def preuve_detail(request, uuid):
+def processus_list(request):
+    """
+    Liste des processus
+    """
     try:
-        preuve = Preuve.objects.select_related('media').get(uuid=uuid)
-        return Response(serialize_preuve(preuve))
-    except Preuve.DoesNotExist:
-        return Response({'error': 'Preuve non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+        processus = Processus.objects.select_related('cree_par').order_by('numero_processus')
+        data = []
+        for processus in processus:
+            data.append({
+                'uuid': str(processus.uuid),
+                'numero_processus': processus.numero_processus,
+                'nom': processus.nom,
+                'description': processus.description,
+                'cree_par': {
+                    'id': processus.cree_par.id,
+                    'username': processus.cree_par.username,
+                    'first_name': processus.cree_par.first_name,
+                    'last_name': processus.cree_par.last_name
+                },
+                'created_at': processus.created_at.isoformat(),
+                'updated_at': processus.updated_at.isoformat()
+            })
+
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des processus: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des processus',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

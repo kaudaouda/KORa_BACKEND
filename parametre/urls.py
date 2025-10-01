@@ -5,60 +5,20 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # ==================== NATURES ====================
-    path('natures/', views.nature_list, name='nature_list'),
-    path('natures/create/', views.nature_create, name='nature_create'),
-    path('natures/<uuid:uuid>/', views.nature_detail, name='nature_detail'),
+    # ==================== ACTIVITÉS ====================
+    path('activities/recent/', views.recent_activities, name='recent_activities'),
+    path('activities/user/', views.user_activities, name='user_activities'),
     
-    # ==================== CATÉGORIES ====================
-    path('categories/', views.categorie_list, name='categorie_list'),
-    path('categories/create/', views.categorie_create, name='categorie_create'),
-    path('categories/<uuid:uuid>/', views.categorie_detail, name='categorie_detail'),
-    
-    # ==================== SOURCES ====================
-    path('sources/', views.source_list, name='source_list'),
-    path('sources/create/', views.source_create, name='source_create'),
-    path('sources/<uuid:uuid>/', views.source_detail, name='source_detail'),
-    
-    # ==================== TYPES D'ACTION ====================
-    path('action-types/', views.action_type_list, name='action_type_list'),
-    path('action-types/create/', views.action_type_create, name='action_type_create'),
-    path('action-types/<uuid:uuid>/', views.action_type_detail, name='action_type_detail'),
-    
-    # ==================== STATUTS ====================
-    path('statuts/', views.statut_list, name='statut_list'),
-    path('statuts/create/', views.statut_create, name='statut_create'),
-    path('statuts/<uuid:uuid>/', views.statut_detail, name='statut_detail'),
-    
-    # ==================== ÉTATS DE MISE EN ŒUVRE ====================
-    path('etat-mise-en-oeuvres/', views.etat_mise_en_oeuvre_list, name='etat_mise_en_oeuvre_list'),
-    path('etat-mise-en-oeuvres/create/', views.etat_mise_en_oeuvre_create, name='etat_mise_en_oeuvre_create'),
-    path('etat-mise-en-oeuvres/<uuid:uuid>/', views.etat_mise_en_oeuvre_detail, name='etat_mise_en_oeuvre_detail'),
-    
-    # ==================== APPRÉCIATIONS ====================
-    path('appreciations/', views.appreciation_list, name='appreciation_list'),
-    path('appreciations/create/', views.appreciation_create, name='appreciation_create'),
-    path('appreciations/<uuid:uuid>/', views.appreciation_detail, name='appreciation_detail'),
-    
-    # ==================== PROCESSUS ====================
+    # ==================== PARAMÈTRES ====================
+    path('natures/', views.natures_list, name='natures_list'),
+    path('categories/', views.categories_list, name='categories_list'),
+    path('sources/', views.sources_list, name='sources_list'),
+    path('action-types/', views.action_types_list, name='action_types_list'),
+    path('statuts/', views.statuts_list, name='statuts_list'),
+    path('etats-mise-en-oeuvre/', views.etats_mise_en_oeuvre_list, name='etats_mise_en_oeuvre_list'),
+    path('appreciations/', views.appreciations_list, name='appreciations_list'),
+    path('directions/', views.directions_list, name='directions_list'),
+    path('sous-directions/', views.sous_directions_list, name='sous_directions_list'),
+    path('services/', views.services_list, name='services_list'),
     path('processus/', views.processus_list, name='processus_list'),
-    path('processus/create/', views.processus_create, name='processus_create'),
-    path('processus/<uuid:uuid>/', views.processus_detail, name='processus_detail'),
-    
-    # ==================== DIRECTIONS ====================
-    path('directions/', views.direction_list, name='direction_list'),
-    path('directions/create/', views.direction_create, name='direction_create'),
-    path('directions/<uuid:uuid>/', views.direction_detail, name='direction_detail'),
-    path('directions/<uuid:uuid>/sous-directions/', views.sous_direction_list, name='sous_direction_list'),
-
-    # ==================== MÉDIAS ====================
-    path('medias/', views.media_list, name='media_list'),
-    path('medias/create/', views.media_create, name='media_create'),
-    path('medias/<uuid:uuid>/', views.media_detail, name='media_detail'),
-
-    # ==================== PREUVES ====================
-    path('preuves/', views.preuve_list, name='preuve_list'),
-    path('preuves/create/', views.preuve_create, name='preuve_create'),
-    path('preuves/create-with-medias/', views.preuve_create_with_medias, name='preuve_create_with_medias'),
-    path('preuves/<uuid:uuid>/', views.preuve_detail, name='preuve_detail'),
 ]
