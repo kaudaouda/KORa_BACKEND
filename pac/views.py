@@ -14,6 +14,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from .models import Pac, Traitement, Suivi
 from parametre.models import Processus, Media, Preuve
+from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
     PacSerializer, PacCreateSerializer, PacUpdateSerializer, TraitementSerializer, 
@@ -222,6 +223,13 @@ def login(request):
 
         # Générer les tokens
         access_token, refresh_token = AuthService.create_tokens(user)
+
+        # Log de l'activité de connexion
+        log_user_login(
+            user=user,
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT')
+        )
 
         # Créer la réponse
         response = Response({
@@ -468,6 +476,15 @@ def pac_create(request):
         serializer = PacCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             pac = serializer.save()
+            
+            # Log de l'activité
+            log_pac_creation(
+                user=request.user,
+                pac=pac,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT')
+            )
+            
             return Response(PacSerializer(pac).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
@@ -505,6 +522,15 @@ def pac_update(request, uuid):
         serializer = PacUpdateSerializer(pac, data=request.data, partial=True)
         if serializer.is_valid():
             updated_pac = serializer.save()
+            
+            # Log de l'activité
+            log_pac_update(
+                user=request.user,
+                pac=updated_pac,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT')
+            )
+            
             return Response(PacSerializer(updated_pac).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Pac.DoesNotExist:
@@ -543,6 +569,15 @@ def traitement_create(request):
         serializer = TraitementCreateSerializer(data=request.data)
         if serializer.is_valid():
             traitement = serializer.save()
+            
+            # Log de l'activité
+            log_traitement_creation(
+                user=request.user,
+                traitement=traitement,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT')
+            )
+            
             return Response(TraitementSerializer(traitement).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
@@ -687,6 +722,15 @@ def suivi_create(request):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             suivi = serializer.save()
+            
+            # Log de l'activité
+            log_suivi_creation(
+                user=request.user,
+                suivi=suivi,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT')
+            )
+            
             return Response(SuiviSerializer(suivi).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:

@@ -2,7 +2,8 @@ from django.contrib import admin
 from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
-    Direction, SousDirection, Service, Processus
+    Direction, SousDirection, Service, Processus,
+    ActivityLog
 )
 
 
@@ -113,3 +114,29 @@ class ProcessusAdmin(admin.ModelAdmin):
     list_filter = ('created_at', 'cree_par')
     search_fields = ('nom', 'description', 'cree_par__username', 'cree_par__email')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(ActivityLog)
+class ActivityLogAdmin(admin.ModelAdmin):
+    list_display = ('user', 'action', 'entity_type', 'entity_name', 'created_at')
+    list_filter = ('action', 'entity_type', 'created_at', 'user')
+    search_fields = (
+        'user__username',
+        'user__email',
+        'entity_name',
+        'entity_id',
+        'description',
+    )
+    readonly_fields = (
+        'uuid',
+        'user',
+        'action',
+        'entity_type',
+        'entity_id',
+        'entity_name',
+        'description',
+        'ip_address',
+        'user_agent',
+        'created_at',
+    )
+    ordering = ('-created_at',)

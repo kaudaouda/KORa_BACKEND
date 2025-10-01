@@ -293,3 +293,123 @@ class Preuve(models.Model):
 
     def __str__(self):
         return f"Preuve {self.uuid} - {self.description[:50]}..."
+
+
+class ActivityLog(models.Model):
+    """
+    Modèle pour tracer les activités des utilisateurs
+    """
+    ACTION_CHOICES = [
+        ('create', 'Création'),
+        ('update', 'Modification'),
+        ('delete', 'Suppression'),
+        ('view', 'Consultation'),
+        ('export', 'Export'),
+        ('import', 'Import'),
+        ('login', 'Connexion'),
+        ('logout', 'Déconnexion'),
+    ]
+    
+    ENTITY_CHOICES = [
+        ('pac', 'PAC'),
+        ('traitement', 'Traitement'),
+        ('suivi', 'Suivi'),
+        ('processus', 'Processus'),
+        ('user', 'Utilisateur'),
+        ('media', 'Média'),
+        ('preuve', 'Preuve'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='activity_logs'
+    )
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    entity_type = models.CharField(max_length=20, choices=ENTITY_CHOICES)
+    entity_id = models.CharField(max_length=100, blank=True, null=True)
+    entity_name = models.CharField(max_length=200, blank=True, null=True)
+    description = models.TextField()
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
+    user_agent = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'activity_log'
+        verbose_name = 'Log d\'activité'
+        verbose_name_plural = 'Logs d\'activité'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['action', '-created_at']),
+            models.Index(fields=['entity_type', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_action_display()} - {self.entity_name or self.entity_type}"
+
+    @property
+    def time_ago(self):
+        """
+        Retourne le temps écoulé depuis la création en français
+        """
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        now = timezone.now()
+        diff = now - self.created_at
+        
+        if diff.days > 0:
+            if diff.days == 1:
+                return "Il y a 1 jour"
+            elif diff.days < 7:
+                return f"Il y a {diff.days} jours"
+            elif diff.days < 30:
+                weeks = diff.days // 7
+                return f"Il y a {weeks} semaine{'s' if weeks > 1 else ''}"
+            else:
+                months = diff.days // 30
+                return f"Il y a {months} mois"
+        elif diff.seconds > 3600:
+            hours = diff.seconds // 3600
+            return f"Il y a {hours} heure{'s' if hours > 1 else ''}"
+        elif diff.seconds > 60:
+            minutes = diff.seconds // 60
+            return f"Il y a {minutes} minute{'s' if minutes > 1 else ''}"
+        else:
+            return "À l'instant"
+
+    @property
+    def action_icon(self):
+        """
+        Retourne l'icône et la couleur selon le type d'action
+        """
+        icons = {
+            'create': {'icon': 'C', 'color': 'blue'},
+            'update': {'icon': 'M', 'color': 'green'},
+            'delete': {'icon': 'S', 'color': 'red'},
+            'view': {'icon': 'V', 'color': 'gray'},
+            'export': {'icon': 'E', 'color': 'purple'},
+            'import': {'icon': 'I', 'color': 'orange'},
+            'login': {'icon': 'L', 'color': 'green'},
+            'logout': {'icon': 'O', 'color': 'gray'},
+        }
+        return icons.get(self.action, {'icon': '?', 'color': 'gray'})
+
+    @property
+    def status_color(self):
+        """
+        Retourne la couleur du statut selon l'action
+        """
+        colors = {
+            'create': 'green',
+            'update': 'blue',
+            'delete': 'red',
+            'view': 'gray',
+            'export': 'purple',
+            'import': 'orange',
+            'login': 'green',
+            'logout': 'gray',
+        }
+        return colors.get(self.action, 'gray')
