@@ -4,7 +4,7 @@ Serializers pour l'application PAC
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Pac, Traitement, Suivi
-from parametre.models import Processus
+from parametre.models import Processus, Preuve, Media
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -95,6 +95,18 @@ class PacCreateSerializer(serializers.ModelSerializer):
             'categorie', 'source', 'periode_de_realisation'
         ]
     
+    def validate_periode_de_realisation(self, value):
+        """Valider que la période de réalisation est >= aujourd'hui"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        if value < today:
+            raise serializers.ValidationError(
+                "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
+            )
+        
+        return value
+    
     def create(self, validated_data):
         """Créer un PAC avec l'utilisateur connecté et générer le numéro"""
         validated_data['cree_par'] = self.context['request'].user
@@ -128,6 +140,18 @@ class PacUpdateSerializer(serializers.ModelSerializer):
             'categorie', 'source', 'periode_de_realisation'
         ]
     
+    def validate_periode_de_realisation(self, value):
+        """Valider que la période de réalisation est >= aujourd'hui"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        if value < today:
+            raise serializers.ValidationError(
+                "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
+            )
+        
+        return value
+    
     def update(self, instance, validated_data):
         """Mettre à jour un PAC"""
         # Le numéro PAC et le créateur ne peuvent pas être modifiés
@@ -155,10 +179,18 @@ class TraitementSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid']
 
     def get_preuve_media_url(self, obj):
-        if obj.preuve and obj.preuve.media:
-            if hasattr(obj.preuve.media, 'get_url'):
-                return obj.preuve.media.get_url()
-            return getattr(obj.preuve.media, 'url_fichier', None)
+        """Retourner l'URL du premier média de la preuve"""
+        try:
+            if obj.preuve and obj.preuve.medias.exists():
+                # Prendre le premier média
+                media = obj.preuve.medias.first()
+                if media:
+                    if hasattr(media, 'get_url'):
+                        return media.get_url()
+                    return getattr(media, 'url_fichier', None)
+        except Exception as e:
+            # En cas d'erreur, retourner None
+            print(f"Erreur dans get_preuve_media_url: {e}")
         return None
 
 
@@ -171,6 +203,30 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
             'pac', 'action', 'type_action', 'responsable_direction', 
             'responsable_sous_direction', 'preuve', 'delai_realisation'
         ]
+    
+    def validate_delai_realisation(self, value):
+        """Valider que le délai de réalisation est >= aujourd'hui et >= période de réalisation du PAC"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        if value < today:
+            raise serializers.ValidationError(
+                "Le délai de réalisation doit être égal ou supérieur à la date d'aujourd'hui."
+            )
+        
+        # Vérifier si on a accès au PAC pour comparer avec sa période de réalisation
+        pac = self.initial_data.get('pac') if hasattr(self, 'initial_data') else None
+        if pac:
+            try:
+                pac_obj = Pac.objects.get(uuid=pac)
+                if value < pac_obj.periode_de_realisation:
+                    raise serializers.ValidationError(
+                        f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du PAC ({pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
+                    )
+            except Pac.DoesNotExist:
+                pass
+        
+        return value
 
 
 class TraitementUpdateSerializer(serializers.ModelSerializer):
@@ -182,6 +238,26 @@ class TraitementUpdateSerializer(serializers.ModelSerializer):
             'action', 'type_action', 'responsable_direction', 
             'responsable_sous_direction', 'preuve', 'delai_realisation'
         ]
+    
+    def validate_delai_realisation(self, value):
+        """Valider que le délai de réalisation est >= aujourd'hui et >= période de réalisation du PAC"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        if value < today:
+            raise serializers.ValidationError(
+                "Le délai de réalisation doit être égal ou supérieur à la date d'aujourd'hui."
+            )
+        
+        # Pour la mise à jour, on peut accéder au PAC via l'instance
+        if hasattr(self, 'instance') and self.instance and self.instance.pac:
+            pac_obj = self.instance.pac
+            if value < pac_obj.periode_de_realisation:
+                raise serializers.ValidationError(
+                    f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du PAC ({pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
+                )
+        
+        return value
 
 
 class SuiviSerializer(serializers.ModelSerializer):
@@ -192,6 +268,7 @@ class SuiviSerializer(serializers.ModelSerializer):
     statut_nom = serializers.CharField(source='statut.nom', read_only=True)
     preuve_description = serializers.CharField(source='preuve.description', read_only=True)
     preuve_media_url = serializers.SerializerMethodField()
+    preuve_media_urls = serializers.SerializerMethodField()
     createur_nom = serializers.SerializerMethodField()
     
     class Meta:
@@ -199,7 +276,7 @@ class SuiviSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'traitement', 'traitement_action', 'etat_mise_en_oeuvre',
             'etat_nom', 'resultat', 'appreciation', 'appreciation_nom',
-            'preuve', 'preuve_description', 'preuve_media_url',
+            'preuve', 'preuve_description', 'preuve_media_url', 'preuve_media_urls',
             'statut', 'statut_nom', 'date_mise_en_oeuvre_effective',
             'date_cloture', 'cree_par', 'createur_nom', 'created_at'
         ]
@@ -210,11 +287,34 @@ class SuiviSerializer(serializers.ModelSerializer):
         return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
 
     def get_preuve_media_url(self, obj):
-        if obj.preuve and obj.preuve.media:
-            if hasattr(obj.preuve.media, 'get_url'):
-                return obj.preuve.media.get_url()
-            return getattr(obj.preuve.media, 'url_fichier', None)
+        """Retourner l'URL du premier média de la preuve"""
+        try:
+            if obj.preuve and obj.preuve.medias.exists():
+                media = obj.preuve.medias.first()
+                if media:
+                    if hasattr(media, 'get_url'):
+                        return media.get_url()
+                    return getattr(media, 'url_fichier', None)
+        except Exception:
+            pass
         return None
+
+    def get_preuve_media_urls(self, obj):
+        """Retourner la liste de toutes les URLs des médias de la preuve"""
+        urls = []
+        try:
+            if obj.preuve:
+                for media in obj.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    if url:
+                        urls.append(url)
+        except Exception:
+            pass
+        return urls
 
 
 class SuiviCreateSerializer(serializers.ModelSerializer):
@@ -226,6 +326,32 @@ class SuiviCreateSerializer(serializers.ModelSerializer):
             'traitement', 'etat_mise_en_oeuvre', 'resultat', 'appreciation',
             'preuve', 'statut', 'date_mise_en_oeuvre_effective', 'date_cloture'
         ]
+    
+    def validate_date_mise_en_oeuvre_effective(self, value):
+        """Valider que la date de mise en œuvre effective est >= aujourd'hui"""
+        if value:
+            from django.utils import timezone
+            today = timezone.now().date()
+            
+            if value < today:
+                raise serializers.ValidationError(
+                    "La date de mise en œuvre effective doit être égale ou supérieure à la date d'aujourd'hui."
+                )
+        
+        return value
+    
+    def validate_date_cloture(self, value):
+        """Valider que la date de clôture est >= aujourd'hui"""
+        if value:
+            from django.utils import timezone
+            today = timezone.now().date()
+            
+            if value < today:
+                raise serializers.ValidationError(
+                    "La date de clôture doit être égale ou supérieure à la date d'aujourd'hui."
+                )
+        
+        return value
     
     def create(self, validated_data):
         """Créer un suivi avec l'utilisateur connecté"""
@@ -242,3 +368,29 @@ class SuiviUpdateSerializer(serializers.ModelSerializer):
             'etat_mise_en_oeuvre', 'resultat', 'appreciation',
             'preuve', 'statut', 'date_mise_en_oeuvre_effective', 'date_cloture'
         ]
+    
+    def validate_date_mise_en_oeuvre_effective(self, value):
+        """Valider que la date de mise en œuvre effective est >= aujourd'hui"""
+        if value:
+            from django.utils import timezone
+            today = timezone.now().date()
+            
+            if value < today:
+                raise serializers.ValidationError(
+                    "La date de mise en œuvre effective doit être égale ou supérieure à la date d'aujourd'hui."
+                )
+        
+        return value
+    
+    def validate_date_cloture(self, value):
+        """Valider que la date de clôture est >= aujourd'hui"""
+        if value:
+            from django.utils import timezone
+            today = timezone.now().date()
+            
+            if value < today:
+                raise serializers.ValidationError(
+                    "La date de clôture doit être égale ou supérieure à la date d'aujourd'hui."
+                )
+        
+        return value

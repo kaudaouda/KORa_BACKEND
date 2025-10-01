@@ -141,7 +141,7 @@ class Media(models.Model):
     Modèle pour les médias (fichiers)
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    fichier = models.FileField(upload_to='medias/', blank=True, null=True)
+    fichier = models.FileField(upload_to='', blank=True, null=True)
     url_fichier = models.URLField(max_length=500, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -283,11 +283,7 @@ class Preuve(models.Model):
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     description = models.TextField()
-    media = models.ForeignKey(
-        Media, 
-        on_delete=models.CASCADE, 
-        related_name='preuves'
-    )
+    medias = models.ManyToManyField(Media, related_name='preuves', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

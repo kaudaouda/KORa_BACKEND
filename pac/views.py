@@ -654,11 +654,13 @@ def traitement_suivis(request, uuid):
     try:
         # Charger les relations nécessaires pour éviter les requêtes N+1
         suivis = Suivi.objects.filter(traitement__uuid=uuid).select_related(
-            'preuve__media',
+            'preuve',
             'etat_mise_en_oeuvre',
             'appreciation',
             'statut',
             'cree_par'
+        ).prefetch_related(
+            'preuve__medias'
         ).order_by('-created_at')
         
         serializer = SuiviSerializer(suivis, many=True)
@@ -700,7 +702,9 @@ def suivi_detail(request, uuid):
     """Récupérer le détail d'un suivi"""
     try:
         suivi = Suivi.objects.select_related(
-            'traitement', 'etat_mise_en_oeuvre', 'appreciation', 'preuve__media', 'statut'
+            'traitement', 'etat_mise_en_oeuvre', 'appreciation', 'preuve', 'statut'
+        ).prefetch_related(
+            'preuve__medias'
         ).get(uuid=uuid, cree_par=request.user)
         return Response(SuiviSerializer(suivi).data)
     except Suivi.DoesNotExist:

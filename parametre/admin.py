@@ -72,10 +72,15 @@ class MediaAdmin(admin.ModelAdmin):
 
 @admin.register(Preuve)
 class PreuveAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'description', 'media', 'created_at')
-    list_filter = ('created_at', 'media')
-    search_fields = ('description', 'media__url_fichier')
+    list_display = ('uuid', 'description', 'get_medias_count', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('description',)
     readonly_fields = ('uuid', 'created_at')
+    filter_horizontal = ('medias',)
+
+    def get_medias_count(self, obj):
+        return obj.medias.count()
+    get_medias_count.short_description = 'Nombre de médias'
 
 
 @admin.register(Direction)
