@@ -17,7 +17,10 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
     SousDirection, Service, Processus, Preuve, ActivityLog
 )
-# Import supprimé - logique intégrée directement dans les vues
+from .serializers import (
+    AppreciationSerializer, CategorieSerializer, DirectionSerializer,
+    SousDirectionSerializer, ActionTypeSerializer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -640,3 +643,250 @@ def processus_list(request):
             'message': 'Erreur lors de la récupération des processus',
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== CRUD ENDPOINTS ====================
+
+# Appreciations CRUD
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def appreciation_create(request):
+    """Créer une nouvelle appréciation"""
+    try:
+        serializer = AppreciationSerializer(data=request.data)
+        if serializer.is_valid():
+            appreciation = serializer.save()
+            return Response(AppreciationSerializer(appreciation).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'appréciation: {str(e)}")
+        return Response({'error': 'Impossible de créer l\'appréciation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def appreciation_update(request, uuid):
+    """Mettre à jour une appréciation"""
+    try:
+        appreciation = Appreciation.objects.get(uuid=uuid)
+        serializer = AppreciationSerializer(appreciation, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Appreciation.DoesNotExist:
+        return Response({'error': 'Appréciation non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de l'appréciation: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour l\'appréciation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def appreciation_delete(request, uuid):
+    """Supprimer une appréciation"""
+    try:
+        appreciation = Appreciation.objects.get(uuid=uuid)
+        appreciation.delete()
+        return Response({'message': 'Appréciation supprimée avec succès'}, status=status.HTTP_200_OK)
+    except Appreciation.DoesNotExist:
+        return Response({'error': 'Appréciation non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de l'appréciation: {str(e)}")
+        return Response({'error': 'Impossible de supprimer l\'appréciation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Categories CRUD
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def categorie_create(request):
+    """Créer une nouvelle catégorie"""
+    try:
+        serializer = CategorieSerializer(data=request.data)
+        if serializer.is_valid():
+            categorie = serializer.save()
+            return Response(CategorieSerializer(categorie).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la catégorie: {str(e)}")
+        return Response({'error': 'Impossible de créer la catégorie'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def categorie_update(request, uuid):
+    """Mettre à jour une catégorie"""
+    try:
+        categorie = Categorie.objects.get(uuid=uuid)
+        serializer = CategorieSerializer(categorie, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Categorie.DoesNotExist:
+        return Response({'error': 'Catégorie non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la catégorie: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour la catégorie'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def categorie_delete(request, uuid):
+    """Supprimer une catégorie"""
+    try:
+        categorie = Categorie.objects.get(uuid=uuid)
+        categorie.delete()
+        return Response({'message': 'Catégorie supprimée avec succès'}, status=status.HTTP_200_OK)
+    except Categorie.DoesNotExist:
+        return Response({'error': 'Catégorie non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la catégorie: {str(e)}")
+        return Response({'error': 'Impossible de supprimer la catégorie'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Directions CRUD
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def direction_create(request):
+    """Créer une nouvelle direction"""
+    try:
+        serializer = DirectionSerializer(data=request.data)
+        if serializer.is_valid():
+            direction = serializer.save()
+            return Response(DirectionSerializer(direction).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la direction: {str(e)}")
+        return Response({'error': 'Impossible de créer la direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def direction_update(request, uuid):
+    """Mettre à jour une direction"""
+    try:
+        direction = Direction.objects.get(uuid=uuid)
+        serializer = DirectionSerializer(direction, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Direction.DoesNotExist:
+        return Response({'error': 'Direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la direction: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour la direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def direction_delete(request, uuid):
+    """Supprimer une direction"""
+    try:
+        direction = Direction.objects.get(uuid=uuid)
+        direction.delete()
+        return Response({'message': 'Direction supprimée avec succès'}, status=status.HTTP_200_OK)
+    except Direction.DoesNotExist:
+        return Response({'error': 'Direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la direction: {str(e)}")
+        return Response({'error': 'Impossible de supprimer la direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# SousDirections CRUD
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def sous_direction_create(request):
+    """Créer une nouvelle sous-direction"""
+    try:
+        serializer = SousDirectionSerializer(data=request.data)
+        if serializer.is_valid():
+            sous_direction = serializer.save()
+            return Response(SousDirectionSerializer(sous_direction).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la sous-direction: {str(e)}")
+        return Response({'error': 'Impossible de créer la sous-direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def sous_direction_update(request, uuid):
+    """Mettre à jour une sous-direction"""
+    try:
+        sous_direction = SousDirection.objects.get(uuid=uuid)
+        serializer = SousDirectionSerializer(sous_direction, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except SousDirection.DoesNotExist:
+        return Response({'error': 'Sous-direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la sous-direction: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour la sous-direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def sous_direction_delete(request, uuid):
+    """Supprimer une sous-direction"""
+    try:
+        sous_direction = SousDirection.objects.get(uuid=uuid)
+        sous_direction.delete()
+        return Response({'message': 'Sous-direction supprimée avec succès'}, status=status.HTTP_200_OK)
+    except SousDirection.DoesNotExist:
+        return Response({'error': 'Sous-direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la sous-direction: {str(e)}")
+        return Response({'error': 'Impossible de supprimer la sous-direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ActionTypes CRUD
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def action_type_create(request):
+    """Créer un nouveau type d'action"""
+    try:
+        serializer = ActionTypeSerializer(data=request.data)
+        if serializer.is_valid():
+            action_type = serializer.save()
+            return Response(ActionTypeSerializer(action_type).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du type d'action: {str(e)}")
+        return Response({'error': 'Impossible de créer le type d\'action'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def action_type_update(request, uuid):
+    """Mettre à jour un type d'action"""
+    try:
+        action_type = ActionType.objects.get(uuid=uuid)
+        serializer = ActionTypeSerializer(action_type, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except ActionType.DoesNotExist:
+        return Response({'error': 'Type d\'action non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du type d'action: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour le type d\'action'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def action_type_delete(request, uuid):
+    """Supprimer un type d'action"""
+    try:
+        action_type = ActionType.objects.get(uuid=uuid)
+        action_type.delete()
+        return Response({'message': 'Type d\'action supprimé avec succès'}, status=status.HTTP_200_OK)
+    except ActionType.DoesNotExist:
+        return Response({'error': 'Type d\'action non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du type d'action: {str(e)}")
+        return Response({'error': 'Impossible de supprimer le type d\'action'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
