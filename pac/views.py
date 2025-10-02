@@ -361,6 +361,158 @@ def user_profile(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_profile(request):
+    """Mettre à jour le profil de l'utilisateur connecté"""
+    try:
+        data = request.data
+        user = request.user
+        
+        # Mettre à jour les champs autorisés
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+        if 'last_name' in data:
+            user.last_name = data['last_name']
+        
+        # Sécurité : Bloquer la modification de l'email côté backend
+        if 'email' in data:
+            return Response({
+                'error': 'La modification de l\'email n\'est pas autorisée. Contactez l\'administrateur.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        user.save()
+        
+        serializer = UserSerializer(user)
+        return Response({
+            'message': 'Profil mis à jour avec succès',
+            'user': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du profil: {str(e)}")
+        return Response({
+            'error': 'Impossible de mettre à jour le profil',
+            'code': 'UPDATE_PROFILE_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def admin_update_profile(request):
+    """Mettre à jour le profil utilisateur (admin seulement)"""
+    try:
+        # Vérifier que l'utilisateur est admin
+        if not request.user.is_staff:
+            return Response({
+                'error': 'Accès refusé. Seuls les administrateurs peuvent modifier l\'email.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        data = request.data
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return Response({
+                'error': 'ID utilisateur requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({
+                'error': 'Utilisateur non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Mettre à jour tous les champs autorisés
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+        if 'last_name' in data:
+            user.last_name = data['last_name']
+        if 'email' in data:
+            # Vérifier que l'email n'est pas déjà utilisé par un autre utilisateur
+            if User.objects.filter(email=data['email']).exclude(id=user.id).exists():
+                return Response({
+                    'error': 'Cet email est déjà utilisé par un autre utilisateur'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            user.email = data['email']
+        
+        user.save()
+        
+        serializer = UserSerializer(user)
+        return Response({
+            'message': 'Profil utilisateur mis à jour avec succès',
+            'user': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du profil par admin: {str(e)}")
+        return Response({
+            'error': 'Impossible de mettre à jour le profil',
+            'code': 'ADMIN_UPDATE_PROFILE_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """Changer le mot de passe de l'utilisateur connecté"""
+    try:
+        data = request.data
+        user = request.user
+        
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
+        
+        # Validation des données
+        if not all([current_password, new_password, confirm_password]):
+            return Response({
+                'error': 'Tous les champs sont requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier le mot de passe actuel
+        if not user.check_password(current_password):
+            return Response({
+                'error': 'Mot de passe actuel incorrect'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que les nouveaux mots de passe correspondent
+        if new_password != confirm_password:
+            return Response({
+                'error': 'Les nouveaux mots de passe ne correspondent pas'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider le nouveau mot de passe
+        try:
+            validate_password(new_password)
+        except ValidationError as e:
+            return Response({
+                'error': 'Mot de passe invalide',
+                'details': list(e.messages),
+                'requirements': [
+                    'Au moins 8 caractères',
+                    'Ne pas être trop commun',
+                    'Ne pas être entièrement numérique',
+                    'Contenir au moins une lettre'
+                ]
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Changer le mot de passe
+        user.set_password(new_password)
+        user.save()
+        
+        return Response({
+            'message': 'Mot de passe changé avec succès'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du changement de mot de passe: {str(e)}")
+        return Response({
+            'error': 'Impossible de changer le mot de passe',
+            'code': 'CHANGE_PASSWORD_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def recaptcha_config(request):
