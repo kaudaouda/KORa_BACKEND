@@ -1,6 +1,8 @@
 from django.db import models
 import uuid
 from django.contrib.auth.models import User
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
 
 
 class Nature(models.Model):
@@ -413,3 +415,131 @@ class ActivityLog(models.Model):
             'logout': 'gray',
         }
         return colors.get(self.action, 'gray')
+
+
+class NotificationSettings(models.Model):
+    """
+    Paramètres globaux de notification (bannières d'échéance et rappels)
+    - Délais d'alerte avant échéance pour PAC, Traitement et Suivi
+    - Nombre de rappels à effectuer avant le jour J
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Notifier X jours avant l'échéance/la date cible
+    pac_echeance_notice_days = models.PositiveIntegerField(default=7)
+    traitement_delai_notice_days = models.PositiveIntegerField(default=7)
+    suivi_mise_en_oeuvre_notice_days = models.PositiveIntegerField(default=7)
+    suivi_cloture_notice_days = models.PositiveIntegerField(default=7)
+
+    # Nombre de rappels à effectuer avant le jour J
+    reminders_count_before_day = models.PositiveIntegerField(default=3)
+
+    # Enforce singleton
+    singleton_enforcer = models.BooleanField(default=True, unique=True, editable=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'notification_settings'
+        verbose_name = 'Paramètre de notification'
+        verbose_name_plural = 'Paramètres de notification'
+
+    def __str__(self):
+        return 'Paramètres de notification'
+
+    @classmethod
+    def get_solo(cls):
+        """Retourne l'unique instance des paramètres (créée si absente)."""
+        instance, _ = cls.objects.get_or_create(singleton_enforcer=True, defaults={})
+        return instance
+
+
+class NotificationOverride(models.Model):
+    """
+    Overrides spécifiques pour les paramètres de notification
+    - Peut cibler un objet précis (PAC, Traitement, Suivi) via GenericFK
+    - Peut cibler un périmètre (Direction, Processus, ActionType) via FK
+    - Tous les champs sont optionnels (null = hérite du global)
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Ciblage par objet précis (GenericFK)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True, blank=True)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    content_object = GenericForeignKey('content_type', 'object_id')
+    
+    # Ciblage par périmètre (FKs optionnelles)
+    direction = models.ForeignKey(Direction, on_delete=models.CASCADE, null=True, blank=True)
+    processus = models.ForeignKey(Processus, on_delete=models.CASCADE, null=True, blank=True)
+    action_type = models.ForeignKey(ActionType, on_delete=models.CASCADE, null=True, blank=True)
+    
+    # Paramètres de notification (tous optionnels)
+    pac_echeance_notice_days = models.PositiveIntegerField(null=True, blank=True)
+    traitement_delai_notice_days = models.PositiveIntegerField(null=True, blank=True)
+    suivi_mise_en_oeuvre_notice_days = models.PositiveIntegerField(null=True, blank=True)
+    suivi_cloture_notice_days = models.PositiveIntegerField(null=True, blank=True)
+    reminders_count_before_day = models.PositiveIntegerField(null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'notification_override'
+        verbose_name = 'Override de notification'
+        verbose_name_plural = 'Overrides de notification'
+        constraints = [
+            # Une seule override par objet précis
+            models.UniqueConstraint(
+                fields=['content_type', 'object_id'],
+                condition=models.Q(content_type__isnull=False, object_id__isnull=False),
+                name='unique_object_override'
+            ),
+            # Une seule override par direction
+            models.UniqueConstraint(
+                fields=['direction'],
+                condition=models.Q(direction__isnull=False),
+                name='unique_direction_override'
+            ),
+            # Une seule override par processus
+            models.UniqueConstraint(
+                fields=['processus'],
+                condition=models.Q(processus__isnull=False),
+                name='unique_processus_override'
+            ),
+            # Une seule override par type d'action
+            models.UniqueConstraint(
+                fields=['action_type'],
+                condition=models.Q(action_type__isnull=False),
+                name='unique_action_type_override'
+            ),
+        ]
+    
+    def __str__(self):
+        if self.content_object:
+            return f"Override pour {self.content_object}"
+        elif self.direction:
+            return f"Override pour Direction {self.direction.nom}"
+        elif self.processus:
+            return f"Override pour Processus {self.processus.nom}"
+        elif self.action_type:
+            return f"Override pour Type d'action {self.action_type.nom}"
+        return f"Override {self.uuid}"
+    
+    def clean(self):
+        """Validation: au moins une cible doit être définie"""
+        from django.core.exceptions import ValidationError
+        
+        targets = [
+            self.content_object,
+            self.direction,
+            self.processus,
+            self.action_type
+        ]
+        
+        if not any(targets):
+            raise ValidationError("Au moins une cible doit être définie (objet, direction, processus, ou type d'action)")
+    
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)

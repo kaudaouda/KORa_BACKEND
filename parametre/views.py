@@ -15,11 +15,13 @@ import logging
 from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
-    SousDirection, Service, Processus, Preuve, ActivityLog
+    SousDirection, Service, Processus, Preuve, ActivityLog,
+    NotificationSettings, NotificationOverride
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
-    SousDirectionSerializer, ActionTypeSerializer
+    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
+    NotificationOverrideSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,238 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
     except Exception as e:
         logger.error(f"Erreur lors de l'enregistrement de l'activité: {e}")
         return None
+
+
+def resolve_notification_settings(obj):
+    """
+    Résout les paramètres de notification pour un objet donné.
+    Priorité: objet précis > périmètre (direction/processus/action_type) > global
+    
+    Args:
+        obj: L'objet pour lequel résoudre les paramètres (PAC, Traitement, Suivi, etc.)
+    
+    Returns:
+        dict: Paramètres de notification résolus
+    """
+    from django.contrib.contenttypes.models import ContentType
+    
+    # Récupérer les paramètres globaux par défaut
+    global_settings = NotificationSettings.get_solo()
+    
+    # Initialiser avec les valeurs globales
+    resolved = {
+        'pac_echeance_notice_days': global_settings.pac_echeance_notice_days,
+        'traitement_delai_notice_days': global_settings.traitement_delai_notice_days,
+        'suivi_mise_en_oeuvre_notice_days': global_settings.suivi_mise_en_oeuvre_notice_days,
+        'suivi_cloture_notice_days': global_settings.suivi_cloture_notice_days,
+        'reminders_count_before_day': global_settings.reminders_count_before_day,
+    }
+    
+    # 1. Chercher un override pour l'objet précis (GenericFK)
+    if obj:
+        content_type = ContentType.objects.get_for_model(obj)
+        try:
+            object_override = NotificationOverride.objects.get(
+                content_type=content_type,
+                object_id=obj.pk
+            )
+            # Appliquer les overrides de l'objet (seulement si non null)
+            for field in resolved.keys():
+                override_value = getattr(object_override, field, None)
+                if override_value is not None:
+                    resolved[field] = override_value
+            return resolved
+        except NotificationOverride.DoesNotExist:
+            pass
+    
+    # 2. Chercher des overrides par périmètre (ordre de priorité)
+    overrides = []
+    
+    # Si l'objet a une direction, chercher l'override de direction
+    if hasattr(obj, 'direction') and obj.direction:
+        try:
+            direction_override = NotificationOverride.objects.get(direction=obj.direction)
+            overrides.append(direction_override)
+        except NotificationOverride.DoesNotExist:
+            pass
+    
+    # Si l'objet a un processus, chercher l'override de processus
+    if hasattr(obj, 'processus') and obj.processus:
+        try:
+            processus_override = NotificationOverride.objects.get(processus=obj.processus)
+            overrides.append(processus_override)
+        except NotificationOverride.DoesNotExist:
+            pass
+    
+    # Si l'objet a un type d'action, chercher l'override de type d'action
+    if hasattr(obj, 'action_type') and obj.action_type:
+        try:
+            action_type_override = NotificationOverride.objects.get(action_type=obj.action_type)
+            overrides.append(action_type_override)
+        except NotificationOverride.DoesNotExist:
+            pass
+    
+    # Appliquer les overrides trouvés (ordre de priorité)
+    for override in overrides:
+        for field in resolved.keys():
+            override_value = getattr(override, field, None)
+            if override_value is not None:
+                resolved[field] = override_value
+    
+    return resolved
+
+
+# ==================== NOTIFICATION SETTINGS ====================
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notification_settings_get(request):
+    """
+    Récupère les paramètres globaux de notification (singleton)
+    """
+    try:
+        settings_instance = NotificationSettings.get_solo()
+        serializer = NotificationSettingsSerializer(settings_instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des paramètres de notification: {str(e)}")
+        return Response({'error': 'Impossible de récupérer les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def notification_settings_update(request):
+    """
+    Met à jour les paramètres globaux de notification (admin recommandé)
+    """
+    try:
+        # Optionnel: restreindre aux admins
+        # if not request.user.is_staff:
+        #     return Response({'error': 'Accès refusé'}, status=status.HTTP_403_FORBIDDEN)
+
+        settings_instance = NotificationSettings.get_solo()
+        serializer = NotificationSettingsSerializer(settings_instance, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour des paramètres de notification: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notification_settings_effective(request):
+    """
+    Récupère les paramètres de notification effectifs pour un objet donné.
+    Query params:
+    - content_type: Le type de contenu (ex: 'pac.pac', 'pac.traitement', 'pac.suivi')
+    - object_id: L'ID de l'objet
+    """
+    try:
+        content_type_str = request.GET.get('content_type')
+        object_id = request.GET.get('object_id')
+        
+        if not content_type_str or not object_id:
+            return Response({
+                'error': 'content_type et object_id sont requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Récupérer l'objet
+        from django.contrib.contenttypes.models import ContentType
+        try:
+            content_type = ContentType.objects.get(model=content_type_str.split('.')[-1])
+            obj = content_type.get_object_for_this_type(pk=object_id)
+        except (ContentType.DoesNotExist, Exception) as e:
+            return Response({
+                'error': f'Objet non trouvé: {str(e)}'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Résoudre les paramètres
+        resolved_settings = resolve_notification_settings(obj)
+        
+        return Response({
+            'object': {
+                'type': content_type_str,
+                'id': object_id,
+                'name': str(obj)
+            },
+            'settings': resolved_settings
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la résolution des paramètres effectifs: {str(e)}")
+        return Response({'error': 'Impossible de résoudre les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== NOTIFICATION OVERRIDES ====================
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notification_overrides_list(request):
+    """
+    Récupère tous les overrides de notification
+    """
+    try:
+        overrides = NotificationOverride.objects.select_related('direction', 'processus', 'action_type').all()
+        serializer = NotificationOverrideSerializer(overrides, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des overrides: {str(e)}")
+        return Response({'error': 'Impossible de récupérer les overrides'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def notification_override_create(request):
+    """
+    Créer un nouvel override de notification
+    """
+    try:
+        serializer = NotificationOverrideSerializer(data=request.data)
+        if serializer.is_valid():
+            override = serializer.save()
+            return Response(NotificationOverrideSerializer(override).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'override: {str(e)}")
+        return Response({'error': 'Impossible de créer l\'override'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def notification_override_update(request, uuid):
+    """
+    Mettre à jour un override de notification
+    """
+    try:
+        override = NotificationOverride.objects.get(uuid=uuid)
+        serializer = NotificationOverrideSerializer(override, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except NotificationOverride.DoesNotExist:
+        return Response({'error': 'Override non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de l'override: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour l\'override'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def notification_override_delete(request, uuid):
+    """
+    Supprimer un override de notification
+    """
+    try:
+        override = NotificationOverride.objects.get(uuid=uuid)
+        override.delete()
+        return Response({'message': 'Override supprimé avec succès'}, status=status.HTTP_200_OK)
+    except NotificationOverride.DoesNotExist:
+        return Response({'error': 'Override non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de l'override: {str(e)}")
+        return Response({'error': 'Impossible de supprimer l\'override'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 def log_pac_creation(user, pac, ip_address=None, user_agent=None):
@@ -890,3 +1124,140 @@ def action_type_delete(request, uuid):
     except Exception as e:
         logger.error(f"Erreur lors de la suppression du type d'action: {str(e)}")
         return Response({'error': 'Impossible de supprimer le type d\'action'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== NOTIFICATIONS UPCOMING ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def upcoming_notifications(request):
+    """
+    Récupère les échéances à venir pour l'utilisateur connecté
+    """
+    try:
+        from datetime import datetime, timedelta
+        from django.utils import timezone
+        from pac.models import Pac, Traitement, Suivi
+        
+        today = timezone.now().date()
+        notifications = []
+        
+        # Récupérer les paramètres de notification globaux
+        global_settings = NotificationSettings.get_solo()
+        
+        # 1. PAC avec échéances proches (utilise periode_de_realisation)
+        pac_echeance_days = global_settings.pac_echeance_notice_days
+        pac_cutoff_date = today + timedelta(days=pac_echeance_days)
+        
+        upcoming_pacs = Pac.objects.filter(
+            periode_de_realisation__lte=pac_cutoff_date,
+            periode_de_realisation__gte=today
+        ).order_by('periode_de_realisation')
+        
+        for pac in upcoming_pacs:
+            days_until_due = (pac.periode_de_realisation - today).days
+            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
+            
+            notifications.append({
+                'id': f'pac_{pac.uuid}',
+                'type': 'pac',
+                'title': f'PAC-{pac.numero_pac}',
+                'message': f'Échéance dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
+                'due_date': pac.periode_de_realisation.isoformat(),
+                'priority': priority,
+                'action_url': f'/pac/edit/{pac.uuid}',
+                'entity_id': str(pac.uuid)
+            })
+        
+        # 2. Traitements avec délais proches
+        traitement_delai_days = global_settings.traitement_delai_notice_days
+        traitement_cutoff_date = today + timedelta(days=traitement_delai_days)
+        
+        upcoming_traitements = Traitement.objects.filter(
+            delai_realisation__lte=traitement_cutoff_date,
+            delai_realisation__gte=today
+        ).order_by('delai_realisation')
+        
+        for traitement in upcoming_traitements:
+            days_until_due = (traitement.delai_realisation - today).days
+            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
+            
+            notifications.append({
+                'id': f'traitement_{traitement.uuid}',
+                'type': 'traitement',
+                'title': f'Traitement - {traitement.pac.numero_pac}',
+                'message': f'Délai de réalisation dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
+                'due_date': traitement.delai_realisation.isoformat(),
+                'priority': priority,
+                'action_url': f'/pac/traitement/{traitement.uuid}/show',
+                'entity_id': str(traitement.uuid)
+            })
+        
+        # 3. Suivis avec échéances de mise en œuvre proches (utilise date_mise_en_oeuvre_effective)
+        suivi_mise_oeuvre_days = global_settings.suivi_mise_en_oeuvre_notice_days
+        suivi_cutoff_date = today + timedelta(days=suivi_mise_oeuvre_days)
+        
+        upcoming_suivis = Suivi.objects.filter(
+            date_mise_en_oeuvre_effective__isnull=False,
+            date_mise_en_oeuvre_effective__lte=suivi_cutoff_date,
+            date_mise_en_oeuvre_effective__gte=today
+        ).order_by('date_mise_en_oeuvre_effective')
+        
+        for suivi in upcoming_suivis:
+            days_until_due = (suivi.date_mise_en_oeuvre_effective - today).days
+            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
+            
+            notifications.append({
+                'id': f'suivi_{suivi.uuid}',
+                'type': 'suivi',
+                'title': f'Suivi - {suivi.traitement.pac.numero_pac}',
+                'message': f'Échéance mise en œuvre dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
+                'due_date': suivi.date_mise_en_oeuvre_effective.isoformat(),
+                'priority': priority,
+                'action_url': f'/pac/suivi/{suivi.uuid}',
+                'entity_id': str(suivi.uuid)
+            })
+        
+        # 4. Suivis avec échéances de clôture proches (utilise date_cloture)
+        suivi_cloture_days = global_settings.suivi_cloture_notice_days
+        suivi_cloture_cutoff_date = today + timedelta(days=suivi_cloture_days)
+        
+        upcoming_suivis_cloture = Suivi.objects.filter(
+            date_cloture__isnull=False,
+            date_cloture__lte=suivi_cloture_cutoff_date,
+            date_cloture__gte=today
+        ).order_by('date_cloture')
+        
+        for suivi in upcoming_suivis_cloture:
+            days_until_due = (suivi.date_cloture - today).days
+            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
+            
+            notifications.append({
+                'id': f'suivi_cloture_{suivi.uuid}',
+                'type': 'suivi',
+                'title': f'Suivi - {suivi.traitement.pac.numero_pac}',
+                'message': f'Échéance de clôture dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
+                'due_date': suivi.date_cloture.isoformat(),
+                'priority': priority,
+                'action_url': f'/pac/suivi/{suivi.uuid}',
+                'entity_id': str(suivi.uuid)
+            })
+        
+        # Trier par priorité et date d'échéance
+        priority_order = {'high': 0, 'medium': 1, 'low': 2}
+        notifications.sort(key=lambda x: (priority_order.get(x['priority'], 3), x['due_date']))
+        
+        return Response({
+            'notifications': notifications,
+            'total': len(notifications),
+            'settings': {
+                'pac_echeance_notice_days': pac_echeance_days,
+                'traitement_delai_notice_days': traitement_delai_days,
+                'suivi_mise_en_oeuvre_notice_days': suivi_mise_oeuvre_days,
+                'suivi_cloture_notice_days': suivi_cloture_days
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des échéances: {str(e)}")
+        return Response({'error': 'Impossible de récupérer les échéances'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
