@@ -3,7 +3,7 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
-    ActivityLog, NotificationSettings, NotificationOverride
+    ActivityLog, NotificationSettings, NotificationOverride, ReminderEmailLog
 )
 
 
@@ -212,3 +212,11 @@ class NotificationOverrideAdmin(admin.ModelAdmin):
         return "Aucune cible"
     
     get_target_display.short_description = "Cible"
+
+
+@admin.register(ReminderEmailLog)
+class ReminderEmailLogAdmin(admin.ModelAdmin):
+    list_display = ('recipient', 'subject', 'context_hash', 'sent_at')
+    search_fields = ('recipient', 'subject', 'context_hash')
+    list_filter = ('sent_at',)
+    readonly_fields = ('uuid', 'recipient', 'subject', 'context_hash', 'sent_at')

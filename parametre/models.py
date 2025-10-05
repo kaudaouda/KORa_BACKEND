@@ -543,3 +543,23 @@ class NotificationOverride(models.Model):
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
+
+
+# ==================== LOG D'ENVOI DE RELANCES ====================
+class ReminderEmailLog(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    recipient = models.EmailField()
+    subject = models.CharField(max_length=255)
+    context_hash = models.CharField(max_length=64)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'reminder_email_log'
+        indexes = [
+            models.Index(fields=['recipient', 'context_hash', 'sent_at'])
+        ]
+        verbose_name = 'Log email de relance'
+        verbose_name_plural = 'Logs emails de relance'
+
+    def __str__(self):
+        return f"Relance {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
