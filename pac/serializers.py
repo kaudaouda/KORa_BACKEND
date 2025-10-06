@@ -359,6 +359,132 @@ class SuiviCreateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class PacCompletSerializer(serializers.ModelSerializer):
+    """Serializer complet pour un PAC avec tous ses traitements et suivis"""
+    processus_nom = serializers.CharField(source='processus.nom', read_only=True)
+    processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
+    nature_nom = serializers.CharField(source='nature.nom', read_only=True)
+    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
+    source_nom = serializers.CharField(source='source.nom', read_only=True)
+    createur_nom = serializers.SerializerMethodField()
+    jours_restants = serializers.SerializerMethodField()
+    
+    # Inclure tous les traitements avec leurs suivis
+    traitements = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Pac
+        fields = [
+            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero',
+            'libelle', 'nature', 'nature_nom', 'categorie', 'categorie_nom',
+            'source', 'source_nom', 'periode_de_realisation', 'jours_restants',
+            'cree_par', 'createur_nom', 'created_at', 'updated_at', 'traitements'
+        ]
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def get_createur_nom(self, obj):
+        """Retourner le nom du créateur"""
+        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+    
+    def get_jours_restants(self, obj):
+        """Calculer les jours restants"""
+        from django.utils import timezone
+        delta = obj.periode_de_realisation - timezone.now().date()
+        return delta.days if delta.days > 0 else 0
+    
+    def get_traitements(self, obj):
+        """Récupérer tous les traitements avec leurs suivis"""
+        traitements = obj.traitements.all().order_by('delai_realisation')
+        traitements_data = []
+        
+        for traitement in traitements:
+            traitement_data = {
+                'uuid': str(traitement.uuid),
+                'action': traitement.action,
+                'type_action': traitement.type_action.uuid if traitement.type_action else None,
+                'type_action_nom': traitement.type_action.nom if traitement.type_action else None,
+                'responsable_direction': traitement.responsable_direction.uuid if traitement.responsable_direction else None,
+                'responsable_direction_nom': traitement.responsable_direction.nom if traitement.responsable_direction else None,
+                'responsable_sous_direction': traitement.responsable_sous_direction.uuid if traitement.responsable_sous_direction else None,
+                'responsable_sous_direction_nom': traitement.responsable_sous_direction.nom if traitement.responsable_sous_direction else None,
+                'delai_realisation': traitement.delai_realisation,
+                'preuve': traitement.preuve.uuid if traitement.preuve else None,
+                'preuve_description': traitement.preuve.description if traitement.preuve else None,
+                'preuve_media_url': self.get_preuve_media_url(traitement),
+                'suivis': []
+            }
+            
+            # Récupérer tous les suivis pour ce traitement
+            suivis = traitement.suivis.all().order_by('created_at')
+            for suivi in suivis:
+                suivi_data = {
+                    'uuid': str(suivi.uuid),
+                    'etat_mise_en_oeuvre': suivi.etat_mise_en_oeuvre.uuid if suivi.etat_mise_en_oeuvre else None,
+                    'etat_nom': suivi.etat_mise_en_oeuvre.nom if suivi.etat_mise_en_oeuvre else None,
+                    'resultat': suivi.resultat,
+                    'appreciation': suivi.appreciation.uuid if suivi.appreciation else None,
+                    'appreciation_nom': suivi.appreciation.nom if suivi.appreciation else None,
+                    'statut': suivi.statut.uuid if suivi.statut else None,
+                    'statut_nom': suivi.statut.nom if suivi.statut else None,
+                    'date_mise_en_oeuvre_effective': suivi.date_mise_en_oeuvre_effective,
+                    'date_cloture': suivi.date_cloture,
+                    'createur_nom': f"{suivi.cree_par.first_name} {suivi.cree_par.last_name}".strip() or suivi.cree_par.username,
+                    'created_at': suivi.created_at,
+                    'preuve': suivi.preuve.uuid if suivi.preuve else None,
+                    'preuve_description': suivi.preuve.description if suivi.preuve else None,
+                    'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
+                    'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi)
+                }
+                traitement_data['suivis'].append(suivi_data)
+            
+            traitements_data.append(traitement_data)
+        
+        return traitements_data
+    
+    def get_preuve_media_url(self, traitement):
+        """Retourner l'URL du premier média de la preuve du traitement"""
+        try:
+            if traitement.preuve and traitement.preuve.medias.exists():
+                media = traitement.preuve.medias.first()
+                if media:
+                    if hasattr(media, 'get_url'):
+                        return media.get_url()
+                    return getattr(media, 'url_fichier', None)
+        except Exception:
+            pass
+        return None
+    
+    def get_preuve_media_url_suivi(self, suivi):
+        """Retourner l'URL du premier média de la preuve du suivi"""
+        try:
+            if suivi.preuve and suivi.preuve.medias.exists():
+                media = suivi.preuve.medias.first()
+                if media:
+                    if hasattr(media, 'get_url'):
+                        return media.get_url()
+                    return getattr(media, 'url_fichier', None)
+        except Exception:
+            pass
+        return None
+    
+    def get_preuve_media_urls_suivi(self, suivi):
+        """Retourner la liste de toutes les URLs des médias de la preuve du suivi"""
+        urls = []
+        try:
+            if suivi.preuve:
+                for media in suivi.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    if url:
+                        urls.append(url)
+        except Exception:
+            pass
+        return urls
+
+
 class SuiviUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour la mise à jour des suivis"""
 

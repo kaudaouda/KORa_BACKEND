@@ -20,6 +20,7 @@ urlpatterns = [
     path('pac/', views.pac_list, name='pac_list'),
     path('pac/create/', views.pac_create, name='pac_create'),
     path('pac/<uuid:uuid>/', views.pac_detail, name='pac_detail'),
+    path('pac/<uuid:uuid>/complet/', views.pac_complet, name='pac_complet'),
     path('pac/<uuid:uuid>/update/', views.pac_update, name='pac_update'),
     
     # ==================== API TRAITEMENTS ====================

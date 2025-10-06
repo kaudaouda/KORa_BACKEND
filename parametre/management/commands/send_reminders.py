@@ -103,13 +103,13 @@ class Command(BaseCommand):
         
         # KORA color palette
         colors = {
-            'primary': '#F97316',      # Orange KORA
-            'secondary': '#3B82F6',    # Blue KORA
-            'neutral_50': '#F9FAFB',   # Light gray
-            'neutral_100': '#F3F4F6',  # Gray
-            'neutral_200': '#E5E7EB',  # Border gray
-            'neutral_600': '#4B5563',  # Text gray
-            'neutral_900': '#111827',  # Dark text
+            'primary': '#F97316',      
+            'secondary': '#3B82F6',
+            'neutral_50': '#F9FAFB',   
+            'neutral_100': '#F3F4F6',  
+            'neutral_200': '#E5E7EB',  
+            'neutral_600': '#4B5563',  
+            'neutral_900': '#111827',  
             'white': '#FFFFFF',
         }
         
@@ -127,9 +127,9 @@ class Command(BaseCommand):
             
             # Priority color
             priority_color = {
-                'high': '#EF4444',    # Red
-                'medium': '#F59E0B',  # Yellow
-                'low': '#10B981'      # Green
+                'high': '#EF4444',    
+                'medium': '#F59E0B',  
+                'low': '#10B981'      
             }.get(priority, colors['secondary'])
             
             # Format date
