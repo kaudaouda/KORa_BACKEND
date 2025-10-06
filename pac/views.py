@@ -17,9 +17,9 @@ from parametre.models import Processus, Media, Preuve
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
-    PacSerializer, PacCreateSerializer, PacUpdateSerializer, TraitementSerializer, 
-    TraitementCreateSerializer, TraitementUpdateSerializer, SuiviSerializer, SuiviCreateSerializer,
-    SuiviUpdateSerializer
+    PacSerializer, PacCreateSerializer, PacUpdateSerializer, PacCompletSerializer,
+    TraitementSerializer, TraitementCreateSerializer, TraitementUpdateSerializer, 
+    SuiviSerializer, SuiviCreateSerializer, SuiviUpdateSerializer
 )
 from shared.authentication import AuthService
 from shared.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
@@ -665,6 +665,38 @@ def pac_detail(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pac_complet(request, uuid):
+    """Récupérer un PAC complet avec tous ses traitements et suivis"""
+    try:
+        pac = Pac.objects.select_related(
+            'processus', 'nature', 'categorie', 'source', 'cree_par'
+        ).prefetch_related(
+            'traitements__type_action',
+            'traitements__responsable_direction',
+            'traitements__responsable_sous_direction',
+            'traitements__preuve__medias',
+            'traitements__suivis__etat_mise_en_oeuvre',
+            'traitements__suivis__appreciation',
+            'traitements__suivis__statut',
+            'traitements__suivis__cree_par',
+            'traitements__suivis__preuve__medias'
+        ).get(uuid=uuid, cree_par=request.user)
+        
+        serializer = PacCompletSerializer(pac)
+        return Response(serializer.data)
+    except Pac.DoesNotExist:
+        return Response({
+            'error': 'PAC non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du PAC complet: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer le PAC complet'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def pac_update(request, uuid):
@@ -694,6 +726,8 @@ def pac_update(request, uuid):
         return Response({
             'error': 'Impossible de mettre à jour le PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 
 # ==================== API TRAITEMENTS ====================

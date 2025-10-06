@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
-    NotificationSettings, NotificationOverride
+    NotificationSettings
 )
 
 
@@ -58,29 +58,3 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
-class NotificationOverrideSerializer(serializers.ModelSerializer):
-    direction_nom = serializers.CharField(source='direction.nom', read_only=True)
-    processus_nom = serializers.CharField(source='processus.nom', read_only=True)
-    action_type_nom = serializers.CharField(source='action_type.nom', read_only=True)
-    
-    class Meta:
-        model = NotificationOverride
-        fields = [
-            'uuid',
-            'content_type',
-            'object_id',
-            'direction',
-            'direction_nom',
-            'processus',
-            'processus_nom',
-            'action_type',
-            'action_type_nom',
-            'pac_echeance_notice_days',
-            'traitement_delai_notice_days',
-            'suivi_mise_en_oeuvre_notice_days',
-            'suivi_cloture_notice_days',
-            'reminders_count_before_day',
-            'created_at',
-            'updated_at',
-        ]
-        read_only_fields = ['uuid', 'created_at', 'updated_at']

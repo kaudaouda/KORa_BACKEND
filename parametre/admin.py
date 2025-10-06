@@ -3,7 +3,7 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
-    ActivityLog, NotificationSettings, NotificationOverride, ReminderEmailLog
+    ActivityLog, NotificationSettings, ReminderEmailLog
 )
 
 
@@ -153,65 +153,6 @@ class NotificationSettingsAdmin(admin.ModelAdmin):
         'updated_at',
     )
     readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
-
-
-@admin.register(NotificationOverride)
-class NotificationOverrideAdmin(admin.ModelAdmin):
-    list_display = (
-        'get_target_display',
-        'pac_echeance_notice_days',
-        'traitement_delai_notice_days',
-        'suivi_mise_en_oeuvre_notice_days',
-        'suivi_cloture_notice_days',
-        'reminders_count_before_day',
-        'created_at',
-    )
-    list_filter = (
-        'direction',
-        'processus',
-        'action_type',
-        'content_type',
-        'created_at',
-    )
-    search_fields = (
-        'direction__nom',
-        'processus__nom',
-        'action_type__nom',
-    )
-    readonly_fields = ('uuid', 'created_at', 'updated_at')
-    
-    fieldsets = (
-        ('Ciblage', {
-            'fields': ('content_type', 'object_id', 'direction', 'processus', 'action_type')
-        }),
-        ('Paramètres de notification', {
-            'fields': (
-                'pac_echeance_notice_days',
-                'traitement_delai_notice_days',
-                'suivi_mise_en_oeuvre_notice_days',
-                'suivi_cloture_notice_days',
-                'reminders_count_before_day',
-            )
-        }),
-        ('Métadonnées', {
-            'fields': ('uuid', 'created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def get_target_display(self, obj):
-        """Affiche la cible de l'override"""
-        if obj.content_object:
-            return f"Objet: {obj.content_object}"
-        elif obj.direction:
-            return f"Direction: {obj.direction.nom}"
-        elif obj.processus:
-            return f"Processus: {obj.processus.nom}"
-        elif obj.action_type:
-            return f"Type d'action: {obj.action_type.nom}"
-        return "Aucune cible"
-    
-    get_target_display.short_description = "Cible"
 
 
 @admin.register(ReminderEmailLog)

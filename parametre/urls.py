@@ -49,11 +49,6 @@ urlpatterns = [
     path('notification-settings/update/', views.notification_settings_update, name='notification_settings_update'),
     path('notification-settings/effective/', views.notification_settings_effective, name='notification_settings_effective'),
     
-    # ==================== NOTIFICATION OVERRIDES ====================
-    path('notification-overrides/', views.notification_overrides_list, name='notification_overrides_list'),
-    path('notification-overrides/create/', views.notification_override_create, name='notification_override_create'),
-    path('notification-overrides/<uuid:uuid>/update/', views.notification_override_update, name='notification_override_update'),
-    path('notification-overrides/<uuid:uuid>/delete/', views.notification_override_delete, name='notification_override_delete'),
     
     # ==================== UPCOMING NOTIFICATIONS ====================
     path('upcoming-notifications/', views.upcoming_notifications, name='upcoming_notifications'),

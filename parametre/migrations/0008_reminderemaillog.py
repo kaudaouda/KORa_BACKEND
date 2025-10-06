@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('parametre', '0007_notificationoverride'),
+        ('parametre', '0006_notificationsettings'),
     ]
 
     operations = [

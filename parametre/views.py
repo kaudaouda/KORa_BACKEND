@@ -16,12 +16,11 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
     SousDirection, Service, Processus, Preuve, ActivityLog,
-    NotificationSettings, NotificationOverride
+    NotificationSettings
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
-    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
-    NotificationOverrideSerializer
+    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -64,80 +63,25 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
 def resolve_notification_settings(obj):
     """
     Résout les paramètres de notification pour un objet donné.
-    Priorité: objet précis > périmètre (direction/processus/action_type) > global
+    Retourne maintenant seulement les paramètres globaux.
     
     Args:
         obj: L'objet pour lequel résoudre les paramètres (PAC, Traitement, Suivi, etc.)
     
     Returns:
-        dict: Paramètres de notification résolus
+        dict: Paramètres de notification globaux
     """
-    from django.contrib.contenttypes.models import ContentType
-    
     # Récupérer les paramètres globaux par défaut
     global_settings = NotificationSettings.get_solo()
     
-    # Initialiser avec les valeurs globales
-    resolved = {
+    # Retourner les valeurs globales
+    return {
         'pac_echeance_notice_days': global_settings.pac_echeance_notice_days,
         'traitement_delai_notice_days': global_settings.traitement_delai_notice_days,
         'suivi_mise_en_oeuvre_notice_days': global_settings.suivi_mise_en_oeuvre_notice_days,
         'suivi_cloture_notice_days': global_settings.suivi_cloture_notice_days,
         'reminders_count_before_day': global_settings.reminders_count_before_day,
     }
-    
-    # 1. Chercher un override pour l'objet précis (GenericFK)
-    if obj:
-        content_type = ContentType.objects.get_for_model(obj)
-        try:
-            object_override = NotificationOverride.objects.get(
-                content_type=content_type,
-                object_id=obj.pk
-            )
-            # Appliquer les overrides de l'objet (seulement si non null)
-            for field in resolved.keys():
-                override_value = getattr(object_override, field, None)
-                if override_value is not None:
-                    resolved[field] = override_value
-            return resolved
-        except NotificationOverride.DoesNotExist:
-            pass
-    
-    # 2. Chercher des overrides par périmètre (ordre de priorité)
-    overrides = []
-    
-    # Si l'objet a une direction, chercher l'override de direction
-    if hasattr(obj, 'direction') and obj.direction:
-        try:
-            direction_override = NotificationOverride.objects.get(direction=obj.direction)
-            overrides.append(direction_override)
-        except NotificationOverride.DoesNotExist:
-            pass
-    
-    # Si l'objet a un processus, chercher l'override de processus
-    if hasattr(obj, 'processus') and obj.processus:
-        try:
-            processus_override = NotificationOverride.objects.get(processus=obj.processus)
-            overrides.append(processus_override)
-        except NotificationOverride.DoesNotExist:
-            pass
-    
-    # Si l'objet a un type d'action, chercher l'override de type d'action
-    if hasattr(obj, 'action_type') and obj.action_type:
-        try:
-            action_type_override = NotificationOverride.objects.get(action_type=obj.action_type)
-            overrides.append(action_type_override)
-        except NotificationOverride.DoesNotExist:
-            pass
-    
-    # Appliquer les overrides trouvés (ordre de priorité)
-    for override in overrides:
-        for field in resolved.keys():
-            override_value = getattr(override, field, None)
-            if override_value is not None:
-                resolved[field] = override_value
-    
-    return resolved
 
 
 # ==================== NOTIFICATION SETTINGS ====================
@@ -223,74 +167,6 @@ def notification_settings_effective(request):
         return Response({'error': 'Impossible de résoudre les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# ==================== NOTIFICATION OVERRIDES ====================
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def notification_overrides_list(request):
-    """
-    Récupère tous les overrides de notification
-    """
-    try:
-        overrides = NotificationOverride.objects.select_related('direction', 'processus', 'action_type').all()
-        serializer = NotificationOverrideSerializer(overrides, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des overrides: {str(e)}")
-        return Response({'error': 'Impossible de récupérer les overrides'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def notification_override_create(request):
-    """
-    Créer un nouvel override de notification
-    """
-    try:
-        serializer = NotificationOverrideSerializer(data=request.data)
-        if serializer.is_valid():
-            override = serializer.save()
-            return Response(NotificationOverrideSerializer(override).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        logger.error(f"Erreur lors de la création de l'override: {str(e)}")
-        return Response({'error': 'Impossible de créer l\'override'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def notification_override_update(request, uuid):
-    """
-    Mettre à jour un override de notification
-    """
-    try:
-        override = NotificationOverride.objects.get(uuid=uuid)
-        serializer = NotificationOverrideSerializer(override, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    except NotificationOverride.DoesNotExist:
-        return Response({'error': 'Override non trouvé'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'override: {str(e)}")
-        return Response({'error': 'Impossible de mettre à jour l\'override'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def notification_override_delete(request, uuid):
-    """
-    Supprimer un override de notification
-    """
-    try:
-        override = NotificationOverride.objects.get(uuid=uuid)
-        override.delete()
-        return Response({'message': 'Override supprimé avec succès'}, status=status.HTTP_200_OK)
-    except NotificationOverride.DoesNotExist:
-        return Response({'error': 'Override non trouvé'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'override: {str(e)}")
-        return Response({'error': 'Impossible de supprimer l\'override'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 def log_pac_creation(user, pac, ip_address=None, user_agent=None):
