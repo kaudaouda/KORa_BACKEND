@@ -52,4 +52,9 @@ urlpatterns = [
     
     # ==================== UPCOMING NOTIFICATIONS ====================
     path('upcoming-notifications/', views.upcoming_notifications, name='upcoming_notifications'),
+    
+    # ==================== EMAIL SETTINGS ====================
+    path('email-settings/', views.email_settings_detail, name='email_settings_detail'),
+    path('email-settings/update/', views.email_settings_update, name='email_settings_update'),
+    path('email-settings/test/', views.test_email_configuration, name='test_email_configuration'),
 ]

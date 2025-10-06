@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
-    NotificationSettings
+    NotificationSettings, EmailSettings
 )
 
 
@@ -47,14 +47,32 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
         model = NotificationSettings
         fields = [
             'uuid',
-            'pac_echeance_notice_days',
             'traitement_delai_notice_days',
-            'suivi_mise_en_oeuvre_notice_days',
-            'suivi_cloture_notice_days',
-            'reminders_count_before_day',
             'created_at',
             'updated_at',
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class EmailSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailSettings
+        fields = [
+            'uuid',
+            'email_host',
+            'email_port',
+            'email_host_user',
+            'email_host_password',
+            'email_use_tls',
+            'email_use_ssl',
+            'email_from_name',
+            'email_timeout',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'email_host_password': {'write_only': True}  # Ne pas afficher le mot de passe dans les réponses
+        }
 
 

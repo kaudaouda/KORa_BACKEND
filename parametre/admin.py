@@ -3,7 +3,7 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
-    ActivityLog, NotificationSettings, ReminderEmailLog
+    ActivityLog, NotificationSettings, EmailSettings, ReminderEmailLog
 )
 
 
@@ -145,14 +145,44 @@ class ActivityLogAdmin(admin.ModelAdmin):
 @admin.register(NotificationSettings)
 class NotificationSettingsAdmin(admin.ModelAdmin):
     list_display = (
-        'pac_echeance_notice_days',
         'traitement_delai_notice_days',
-        'suivi_mise_en_oeuvre_notice_days',
-        'suivi_cloture_notice_days',
-        'reminders_count_before_day',
         'updated_at',
     )
     readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
+
+
+@admin.register(EmailSettings)
+class EmailSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        'email_host',
+        'email_host_user',
+        'email_port',
+        'email_use_tls',
+        'updated_at',
+    )
+    fieldsets = (
+        ('Configuration SMTP', {
+            'fields': ('email_host', 'email_port', 'email_host_user', 'email_host_password')
+        }),
+        ('Sécurité', {
+            'fields': ('email_use_tls', 'email_use_ssl')
+        }),
+        ('Paramètres d\'envoi', {
+            'fields': ('email_from_name', 'email_timeout')
+        }),
+        ('Métadonnées', {
+            'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
+            'classes': ('collapse',)
+        }),
+    )
+    readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Rendre le mot de passe en lecture seule après création"""
+        readonly_fields = list(super().get_readonly_fields(request, obj))
+        if obj:  # Si l'objet existe déjà
+            readonly_fields.append('email_host_password')
+        return readonly_fields
 
 
 @admin.register(ReminderEmailLog)
