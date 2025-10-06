@@ -419,20 +419,12 @@ class ActivityLog(models.Model):
 
 class NotificationSettings(models.Model):
     """
-    Paramètres globaux de notification (bannières d'échéance et rappels)
-    - Délais d'alerte avant échéance pour PAC, Traitement et Suivi
-    - Nombre de rappels à effectuer avant le jour J
+    Paramètres globaux de notification - Délai de réalisation uniquement
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Notifier X jours avant l'échéance/la date cible
-    pac_echeance_notice_days = models.PositiveIntegerField(default=7)
+    # Délai d'alerte pour les traitements uniquement
     traitement_delai_notice_days = models.PositiveIntegerField(default=7)
-    suivi_mise_en_oeuvre_notice_days = models.PositiveIntegerField(default=7)
-    suivi_cloture_notice_days = models.PositiveIntegerField(default=7)
-
-    # Nombre de rappels à effectuer avant le jour J
-    reminders_count_before_day = models.PositiveIntegerField(default=3)
 
     # Enforce singleton
     singleton_enforcer = models.BooleanField(default=True, unique=True, editable=False)
@@ -458,6 +450,69 @@ class NotificationSettings(models.Model):
 
 
 # ==================== LOG D'ENVOI DE RELANCES ====================
+class EmailSettings(models.Model):
+    """
+    Paramètres de configuration email pour l'envoi de notifications
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Paramètres SMTP
+    email_host = models.CharField(max_length=255, default='smtp.gmail.com', help_text='Serveur SMTP (ex: smtp.gmail.com)')
+    email_port = models.PositiveIntegerField(default=587, help_text='Port SMTP (587 pour TLS, 465 pour SSL)')
+    email_host_user = models.EmailField(help_text='Adresse email pour l\'authentification SMTP')
+    email_host_password = models.CharField(max_length=255, help_text='Mot de passe pour l\'authentification SMTP')
+    email_use_tls = models.BooleanField(default=True, help_text='Utiliser TLS (recommandé)')
+    email_use_ssl = models.BooleanField(default=False, help_text='Utiliser SSL')
+    
+    # Paramètres d'envoi
+    email_from_name = models.CharField(max_length=100, default='KORA', help_text='Nom affiché dans l\'expéditeur')
+    email_timeout = models.PositiveIntegerField(default=30, help_text='Timeout en secondes pour l\'envoi')
+    
+    # Enforce singleton
+    singleton_enforcer = models.BooleanField(default=True, unique=True, editable=False)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'email_settings'
+        verbose_name = 'Paramètre email'
+        verbose_name_plural = 'Paramètres email'
+
+    def __str__(self):
+        return f'Configuration email - {self.email_host_user}'
+
+    @classmethod
+    def get_solo(cls):
+        """Retourne l'unique instance des paramètres email (créée si absente)."""
+        instance, _ = cls.objects.get_or_create(singleton_enforcer=True, defaults={
+            'email_host': 'smtp.gmail.com',
+            'email_port': 587,
+            'email_host_user': '',
+            'email_host_password': '',
+            'email_use_tls': True,
+            'email_use_ssl': False,
+            'email_from_name': 'KORA',
+            'email_timeout': 30
+        })
+        return instance
+
+    def get_email_config(self):
+        """
+        Retourne la configuration email au format Django
+        """
+        return {
+            'EMAIL_HOST': self.email_host,
+            'EMAIL_PORT': self.email_port,
+            'EMAIL_HOST_USER': self.email_host_user,
+            'EMAIL_HOST_PASSWORD': self.email_host_password,
+            'EMAIL_USE_TLS': self.email_use_tls,
+            'EMAIL_USE_SSL': self.email_use_ssl,
+            'EMAIL_TIMEOUT': self.email_timeout,
+            'DEFAULT_FROM_EMAIL': f'{self.email_from_name} <{self.email_host_user}>',
+        }
+
+
 class ReminderEmailLog(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient = models.EmailField()

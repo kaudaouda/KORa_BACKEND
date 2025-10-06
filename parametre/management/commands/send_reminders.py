@@ -5,7 +5,7 @@ from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 from django.conf import settings
 
-from parametre.models import ReminderEmailLog
+from parametre.models import ReminderEmailLog, EmailSettings
 from parametre.views import upcoming_notifications
 from rest_framework.test import APIRequestFactory, force_authenticate
 from django.contrib.auth import get_user_model
@@ -20,6 +20,17 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         dry_run = options['dry_run']
         User = get_user_model()
+
+        # Récupérer la configuration email depuis la base de données
+        email_settings = EmailSettings.get_solo()
+        
+        # Vérifier que la configuration email est complète
+        if not email_settings.email_host_user or not email_settings.email_host_password:
+            self.stderr.write(self.style.ERROR("Configuration email incomplète. Veuillez configurer EMAIL_HOST_USER et EMAIL_HOST_PASSWORD dans l'admin."))
+            return
+
+        # Appliquer la configuration email
+        self.apply_email_config(email_settings)
 
         factory = APIRequestFactory()
 
@@ -77,10 +88,11 @@ class Command(BaseCommand):
                     from django.core.mail import EmailMultiAlternatives
                     
                     # Create email with both HTML and text versions
+                    from_email = f"{email_settings.email_from_name} <{email_settings.email_host_user}>"
                     email = EmailMultiAlternatives(
                         subject=subject,
                         body=text_body,
-                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        from_email=from_email,
                         to=[user.email]
                     )
                     email.attach_alternative(html_body, "text/html")
@@ -252,5 +264,11 @@ class Command(BaseCommand):
         ])
 
         return "\n".join(lines)
+
+    def apply_email_config(self, email_settings):
+        """Applique la configuration email depuis la base de données"""
+        config = email_settings.get_email_config()
+        for key, value in config.items():
+            setattr(settings, key, value)
 
 

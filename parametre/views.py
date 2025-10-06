@@ -16,11 +16,12 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
     SousDirection, Service, Processus, Preuve, ActivityLog,
-    NotificationSettings
+    NotificationSettings, EmailSettings
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
-    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer
+    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
+    EmailSettingsSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
 def resolve_notification_settings(obj):
     """
     Résout les paramètres de notification pour un objet donné.
-    Retourne maintenant seulement les paramètres globaux.
+    Retourne maintenant seulement le délai de réalisation.
     
     Args:
         obj: L'objet pour lequel résoudre les paramètres (PAC, Traitement, Suivi, etc.)
@@ -74,13 +75,9 @@ def resolve_notification_settings(obj):
     # Récupérer les paramètres globaux par défaut
     global_settings = NotificationSettings.get_solo()
     
-    # Retourner les valeurs globales
+    # Retourner seulement le délai de réalisation
     return {
-        'pac_echeance_notice_days': global_settings.pac_echeance_notice_days,
         'traitement_delai_notice_days': global_settings.traitement_delai_notice_days,
-        'suivi_mise_en_oeuvre_notice_days': global_settings.suivi_mise_en_oeuvre_notice_days,
-        'suivi_cloture_notice_days': global_settings.suivi_cloture_notice_days,
-        'reminders_count_before_day': global_settings.reminders_count_before_day,
     }
 
 
@@ -1008,12 +1005,12 @@ def action_type_delete(request, uuid):
 @permission_classes([IsAuthenticated])
 def upcoming_notifications(request):
     """
-    Récupère les échéances à venir pour l'utilisateur connecté
+    Récupère les échéances à venir pour l'utilisateur connecté - Délai de réalisation uniquement
     """
     try:
         from datetime import datetime, timedelta
         from django.utils import timezone
-        from pac.models import Pac, Traitement, Suivi
+        from pac.models import Traitement
         
         today = timezone.now().date()
         notifications = []
@@ -1021,31 +1018,7 @@ def upcoming_notifications(request):
         # Récupérer les paramètres de notification globaux
         global_settings = NotificationSettings.get_solo()
         
-        # 1. PAC avec échéances proches (utilise periode_de_realisation)
-        pac_echeance_days = global_settings.pac_echeance_notice_days
-        pac_cutoff_date = today + timedelta(days=pac_echeance_days)
-        
-        upcoming_pacs = Pac.objects.filter(
-            periode_de_realisation__lte=pac_cutoff_date,
-            periode_de_realisation__gte=today
-        ).order_by('periode_de_realisation')
-        
-        for pac in upcoming_pacs:
-            days_until_due = (pac.periode_de_realisation - today).days
-            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
-            
-            notifications.append({
-                'id': f'pac_{pac.uuid}',
-                'type': 'pac',
-                'title': f'PAC-{pac.numero_pac}',
-                'message': f'Échéance dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
-                'due_date': pac.periode_de_realisation.isoformat(),
-                'priority': priority,
-                'action_url': f'/pac/edit/{pac.uuid}',
-                'entity_id': str(pac.uuid)
-            })
-        
-        # 2. Traitements avec délais proches
+        # Traitements avec délais proches uniquement
         traitement_delai_days = global_settings.traitement_delai_notice_days
         traitement_cutoff_date = today + timedelta(days=traitement_delai_days)
         
@@ -1069,56 +1042,6 @@ def upcoming_notifications(request):
                 'entity_id': str(traitement.uuid)
             })
         
-        # 3. Suivis avec échéances de mise en œuvre proches (utilise date_mise_en_oeuvre_effective)
-        suivi_mise_oeuvre_days = global_settings.suivi_mise_en_oeuvre_notice_days
-        suivi_cutoff_date = today + timedelta(days=suivi_mise_oeuvre_days)
-        
-        upcoming_suivis = Suivi.objects.filter(
-            date_mise_en_oeuvre_effective__isnull=False,
-            date_mise_en_oeuvre_effective__lte=suivi_cutoff_date,
-            date_mise_en_oeuvre_effective__gte=today
-        ).order_by('date_mise_en_oeuvre_effective')
-        
-        for suivi in upcoming_suivis:
-            days_until_due = (suivi.date_mise_en_oeuvre_effective - today).days
-            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
-            
-            notifications.append({
-                'id': f'suivi_{suivi.uuid}',
-                'type': 'suivi',
-                'title': f'Suivi - {suivi.traitement.pac.numero_pac}',
-                'message': f'Échéance mise en œuvre dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
-                'due_date': suivi.date_mise_en_oeuvre_effective.isoformat(),
-                'priority': priority,
-                'action_url': f'/pac/suivi/{suivi.uuid}',
-                'entity_id': str(suivi.uuid)
-            })
-        
-        # 4. Suivis avec échéances de clôture proches (utilise date_cloture)
-        suivi_cloture_days = global_settings.suivi_cloture_notice_days
-        suivi_cloture_cutoff_date = today + timedelta(days=suivi_cloture_days)
-        
-        upcoming_suivis_cloture = Suivi.objects.filter(
-            date_cloture__isnull=False,
-            date_cloture__lte=suivi_cloture_cutoff_date,
-            date_cloture__gte=today
-        ).order_by('date_cloture')
-        
-        for suivi in upcoming_suivis_cloture:
-            days_until_due = (suivi.date_cloture - today).days
-            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
-            
-            notifications.append({
-                'id': f'suivi_cloture_{suivi.uuid}',
-                'type': 'suivi',
-                'title': f'Suivi - {suivi.traitement.pac.numero_pac}',
-                'message': f'Échéance de clôture dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
-                'due_date': suivi.date_cloture.isoformat(),
-                'priority': priority,
-                'action_url': f'/pac/suivi/{suivi.uuid}',
-                'entity_id': str(suivi.uuid)
-            })
-        
         # Trier par priorité et date d'échéance
         priority_order = {'high': 0, 'medium': 1, 'low': 2}
         notifications.sort(key=lambda x: (priority_order.get(x['priority'], 3), x['due_date']))
@@ -1127,13 +1050,123 @@ def upcoming_notifications(request):
             'notifications': notifications,
             'total': len(notifications),
             'settings': {
-                'pac_echeance_notice_days': pac_echeance_days,
-                'traitement_delai_notice_days': traitement_delai_days,
-                'suivi_mise_en_oeuvre_notice_days': suivi_mise_oeuvre_days,
-                'suivi_cloture_notice_days': suivi_cloture_days
+                'traitement_delai_notice_days': traitement_delai_days
             }
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des échéances: {str(e)}")
         return Response({'error': 'Impossible de récupérer les échéances'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== EMAIL SETTINGS ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def email_settings_detail(request):
+    """
+    Récupérer les paramètres email globaux
+    """
+    try:
+        settings = EmailSettings.get_solo()
+        serializer = EmailSettingsSerializer(settings)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des paramètres email: {str(e)}")
+        return Response({'error': 'Impossible de récupérer les paramètres email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def email_settings_update(request):
+    """
+    Mettre à jour les paramètres email globaux
+    """
+    try:
+        settings = EmailSettings.get_solo()
+        serializer = EmailSettingsSerializer(settings, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            
+            # Log de l'activité
+            ActivityLog.objects.create(
+                user=request.user,
+                action='update',
+                entity_type='email_settings',
+                entity_id=str(settings.uuid),
+                entity_name='Paramètres email',
+                description=f'Paramètres email mis à jour par {request.user.username}',
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            
+            return Response({
+                'message': 'Paramètres email mis à jour avec succès',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour des paramètres email: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour les paramètres email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def test_email_configuration(request):
+    """
+    Tester la configuration email
+    """
+    try:
+        from django.core.mail import send_mail
+        from django.conf import settings
+        
+        email_settings = EmailSettings.get_solo()
+        
+        # Configuration temporaire pour le test
+        original_config = {
+            'EMAIL_HOST': getattr(settings, 'EMAIL_HOST', ''),
+            'EMAIL_PORT': getattr(settings, 'EMAIL_PORT', 587),
+            'EMAIL_HOST_USER': getattr(settings, 'EMAIL_HOST_USER', ''),
+            'EMAIL_HOST_PASSWORD': getattr(settings, 'EMAIL_HOST_PASSWORD', ''),
+            'EMAIL_USE_TLS': getattr(settings, 'EMAIL_USE_TLS', True),
+            'EMAIL_USE_SSL': getattr(settings, 'EMAIL_USE_SSL', False),
+            'EMAIL_TIMEOUT': getattr(settings, 'EMAIL_TIMEOUT', 30),
+        }
+        
+        # Appliquer la configuration depuis la base de données
+        test_config = email_settings.get_email_config()
+        for key, value in test_config.items():
+            setattr(settings, key, value)
+        
+        # Envoyer un email de test
+        test_email = request.data.get('test_email', request.user.email)
+        if not test_email:
+            return Response({'error': 'Adresse email de test requise'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        send_mail(
+            subject='Test de configuration email - KORA',
+            message='Ceci est un email de test pour vérifier la configuration SMTP.',
+            from_email=test_config['DEFAULT_FROM_EMAIL'],
+            recipient_list=[test_email],
+            fail_silently=False,
+        )
+        
+        # Restaurer la configuration originale
+        for key, value in original_config.items():
+            setattr(settings, key, value)
+        
+        return Response({
+            'message': f'Email de test envoyé avec succès à {test_email}',
+            'status': 'success'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du test email: {str(e)}")
+        return Response({
+            'error': f'Erreur lors de l\'envoi du test: {str(e)}',
+            'status': 'error'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
