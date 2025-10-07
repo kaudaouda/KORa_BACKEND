@@ -48,6 +48,7 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
         fields = [
             'uuid',
             'traitement_delai_notice_days',
+            'traitement_reminder_frequency_days',
             'created_at',
             'updated_at',
         ]

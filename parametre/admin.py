@@ -146,7 +146,17 @@ class ActivityLogAdmin(admin.ModelAdmin):
 class NotificationSettingsAdmin(admin.ModelAdmin):
     list_display = (
         'traitement_delai_notice_days',
+        'traitement_reminder_frequency_days',
         'updated_at',
+    )
+    fieldsets = (
+        ('Paramètres de notification', {
+            'fields': ('traitement_delai_notice_days', 'traitement_reminder_frequency_days')
+        }),
+        ('Métadonnées', {
+            'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
+            'classes': ('collapse',)
+        }),
     )
     readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
 
