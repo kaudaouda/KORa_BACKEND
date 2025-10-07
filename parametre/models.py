@@ -424,7 +424,16 @@ class NotificationSettings(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     # Délai d'alerte pour les traitements uniquement
-    traitement_delai_notice_days = models.PositiveIntegerField(default=7)
+    traitement_delai_notice_days = models.PositiveIntegerField(
+        default=7,
+        help_text="Nombre de jours avant le délai pour envoyer la première notification"
+    )
+    
+    # Fréquence des rappels après la notification initiale
+    traitement_reminder_frequency_days = models.PositiveIntegerField(
+        default=1,
+        help_text="Fréquence des rappels après la notification initiale (en jours). 1 = chaque jour, 2 = tous les 2 jours, etc."
+    )
 
     # Enforce singleton
     singleton_enforcer = models.BooleanField(default=True, unique=True, editable=False)

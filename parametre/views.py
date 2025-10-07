@@ -64,7 +64,7 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
 def resolve_notification_settings(obj):
     """
     Résout les paramètres de notification pour un objet donné.
-    Retourne maintenant seulement le délai de réalisation.
+    Retourne le délai de réalisation et la fréquence des rappels.
     
     Args:
         obj: L'objet pour lequel résoudre les paramètres (PAC, Traitement, Suivi, etc.)
@@ -75,9 +75,10 @@ def resolve_notification_settings(obj):
     # Récupérer les paramètres globaux par défaut
     global_settings = NotificationSettings.get_solo()
     
-    # Retourner seulement le délai de réalisation
+    # Retourner le délai de réalisation et la fréquence des rappels
     return {
         'traitement_delai_notice_days': global_settings.traitement_delai_notice_days,
+        'traitement_reminder_frequency_days': global_settings.traitement_reminder_frequency_days,
     }
 
 
@@ -1034,7 +1035,7 @@ def upcoming_notifications(request):
             notifications.append({
                 'id': f'traitement_{traitement.uuid}',
                 'type': 'traitement',
-                'title': f'Traitement - {traitement.pac.numero_pac}',
+                'title': f'{traitement.pac.numero_pac} - Action : {traitement.action[:50]}{"..." if len(traitement.action) > 50 else ""}',
                 'message': f'Délai de réalisation dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
                 'due_date': traitement.delai_realisation.isoformat(),
                 'priority': priority,
@@ -1050,7 +1051,8 @@ def upcoming_notifications(request):
             'notifications': notifications,
             'total': len(notifications),
             'settings': {
-                'traitement_delai_notice_days': traitement_delai_days
+                'traitement_delai_notice_days': traitement_delai_days,
+                'traitement_reminder_frequency_days': global_settings.traitement_reminder_frequency_days
             }
         }, status=status.HTTP_200_OK)
         
