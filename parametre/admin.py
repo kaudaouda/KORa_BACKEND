@@ -9,32 +9,32 @@ from .models import (
 
 @admin.register(Nature)
 class NatureAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'description', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'description', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(Source)
 class SourceAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'description', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(ActionType)
 class ActionTypeAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'description', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
@@ -49,16 +49,16 @@ class StatutAdmin(admin.ModelAdmin):
 
 @admin.register(EtatMiseEnOeuvre)
 class EtatMiseEnOeuvreAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'description', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(Appreciation)
 class AppreciationAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'description', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
@@ -86,32 +86,32 @@ class PreuveAdmin(admin.ModelAdmin):
 
 @admin.register(Direction)
 class DirectionAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'description', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(SousDirection)
 class SousDirectionAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'direction', 'description', 'created_at')
-    list_filter = ('direction', 'created_at')
+    list_display = ('nom', 'direction', 'description', 'is_active', 'created_at')
+    list_filter = ('direction', 'is_active', 'created_at')
     search_fields = ('nom', 'description', 'direction__nom')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'sous_direction', 'description', 'created_at')
-    list_filter = ('sous_direction__direction', 'sous_direction', 'created_at')
+    list_display = ('nom', 'sous_direction', 'description', 'is_active', 'created_at')
+    list_filter = ('sous_direction__direction', 'sous_direction', 'is_active', 'created_at')
     search_fields = ('nom', 'description', 'sous_direction__nom', 'sous_direction__direction__nom')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 
 @admin.register(Processus)
 class ProcessusAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'cree_par', 'created_at')
-    list_filter = ('created_at', 'cree_par')
+    list_display = ('nom', 'cree_par', 'is_active', 'created_at')
+    list_filter = ('created_at', 'cree_par', 'is_active')
     search_fields = ('nom', 'description', 'cree_par__username', 'cree_par__email')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 

@@ -293,10 +293,18 @@ class SuiviSerializer(serializers.ModelSerializer):
                 media = obj.preuve.medias.first()
                 if media:
                     if hasattr(media, 'get_url'):
-                        return media.get_url()
-                    return getattr(media, 'url_fichier', None)
-        except Exception:
-            pass
+                        url = media.get_url()
+                        print(f"Debug SuiviSerializer get_preuve_media_url - URL trouvée via get_url(): {url}")
+                        return url
+                    url = getattr(media, 'url_fichier', None)
+                    print(f"Debug SuiviSerializer get_preuve_media_url - URL trouvée via url_fichier: {url}")
+                    return url
+                else:
+                    print(f"Debug SuiviSerializer get_preuve_media_url - Aucun média trouvé dans preuve.medias")
+            else:
+                print(f"Debug SuiviSerializer get_preuve_media_url - Pas de preuve ou pas de médias. Preuve: {obj.preuve}, Médias existent: {obj.preuve.medias.exists() if obj.preuve else False}")
+        except Exception as e:
+            print(f"Debug SuiviSerializer get_preuve_media_url - Erreur: {e}")
         return None
 
     def get_preuve_media_urls(self, obj):

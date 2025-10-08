@@ -1,28 +1,29 @@
 from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
-    NotificationSettings, EmailSettings
+    NotificationSettings, EmailSettings, Nature, Source, Processus, 
+    Service, EtatMiseEnOeuvre
 )
 
 
 class AppreciationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appreciation
-        fields = ['uuid', 'nom', 'description', 'created_at', 'updated_at']
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
 class CategorieSerializer(serializers.ModelSerializer):
     class Meta:
         model = Categorie
-        fields = ['uuid', 'nom', 'description', 'created_at', 'updated_at']
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
 class DirectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Direction
-        fields = ['uuid', 'nom', 'description', 'created_at', 'updated_at']
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
@@ -31,14 +32,52 @@ class SousDirectionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = SousDirection
-        fields = ['uuid', 'nom', 'description', 'direction', 'direction_nom', 'created_at', 'updated_at']
+        fields = ['uuid', 'nom', 'description', 'direction', 'direction_nom', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
 class ActionTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActionType
-        fields = ['uuid', 'nom', 'description', 'created_at', 'updated_at']
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class NatureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Nature
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class SourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Source
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class ProcessusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Processus
+        fields = ['uuid', 'numero_processus', 'nom', 'description', 'cree_par', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'numero_processus', 'created_at', 'updated_at']
+
+
+class ServiceSerializer(serializers.ModelSerializer):
+    sous_direction_nom = serializers.CharField(source='sous_direction.nom', read_only=True)
+    direction_nom = serializers.CharField(source='sous_direction.direction.nom', read_only=True)
+    
+    class Meta:
+        model = Service
+        fields = ['uuid', 'nom', 'description', 'sous_direction', 'sous_direction_nom', 'direction_nom', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class EtatMiseEnOeuvreSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EtatMiseEnOeuvre
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
