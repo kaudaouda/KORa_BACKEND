@@ -61,6 +61,77 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
         return None
 
 
+def get_model_list_data(model_class, order_by='nom', include_inactive=False):
+    """
+    Fonction utilitaire pour récupérer les données d'un modèle avec gestion des états
+    
+    Args:
+        model_class: Classe du modèle Django
+        order_by: Champ pour trier les résultats
+        include_inactive: Si True, inclut les éléments désactivés
+    
+    Returns:
+        list: Liste des données formatées
+    """
+    try:
+        queryset = model_class.objects.all()
+        
+        # Filtrer par is_active si le modèle a ce champ
+        if hasattr(model_class, 'is_active') and not include_inactive:
+            queryset = queryset.filter(is_active=True)
+        
+        queryset = queryset.order_by(order_by)
+        
+        data = []
+        for obj in queryset:
+            item_data = {
+                'uuid': str(obj.uuid),
+                'nom': obj.nom,
+                'description': obj.description,
+                'created_at': obj.created_at.isoformat(),
+                'updated_at': obj.updated_at.isoformat()
+            }
+            
+            # Ajouter is_active si le modèle a ce champ
+            if hasattr(obj, 'is_active'):
+                item_data['is_active'] = obj.is_active
+            
+            # Ajouter des champs spécifiques selon le modèle
+            if hasattr(obj, 'direction'):
+                item_data['direction'] = {
+                    'uuid': str(obj.direction.uuid),
+                    'nom': obj.direction.nom
+                }
+            
+            if hasattr(obj, 'sous_direction'):
+                item_data['sous_direction'] = {
+                    'uuid': str(obj.sous_direction.uuid),
+                    'nom': obj.sous_direction.nom,
+                    'direction': {
+                        'uuid': str(obj.sous_direction.direction.uuid),
+                        'nom': obj.sous_direction.direction.nom
+                    }
+                }
+            
+            if hasattr(obj, 'cree_par'):
+                item_data['cree_par'] = {
+                    'id': obj.cree_par.id,
+                    'username': obj.cree_par.username,
+                    'first_name': obj.cree_par.first_name,
+                    'last_name': obj.cree_par.last_name
+                }
+            
+            if hasattr(obj, 'numero_processus'):
+                item_data['numero_processus'] = obj.numero_processus
+            
+            data.append(item_data)
+        
+        return data
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des données {model_class.__name__}: {e}")
+        raise e
+
+
 def resolve_notification_settings(obj):
     """
     Résout les paramètres de notification pour un objet donné.
@@ -375,7 +446,7 @@ def natures_list(request):
     Liste des natures
     """
     try:
-        natures = Nature.objects.all().order_by('nom')
+        natures = Nature.objects.filter(is_active=True).order_by('nom')
         data = []
         for nature in natures:
             data.append({
@@ -383,7 +454,7 @@ def natures_list(request):
                 'nom': nature.nom,
                 'description': nature.description,
                 'created_at': nature.created_at.isoformat(),
-                'updated_at': nature.updated_at.isoformat()
+                'is_active': nature.is_active,
             })
 
             return Response({
@@ -407,7 +478,7 @@ def categories_list(request):
     Liste des catégories
     """
     try:
-        categories = Categorie.objects.all().order_by('nom')
+        categories = Categorie.objects.filter(is_active=True).order_by('nom')
         data = []
         for categorie in categories:
             data.append({
@@ -415,7 +486,7 @@ def categories_list(request):
                 'nom': categorie.nom,
                 'description': categorie.description,
                 'created_at': categorie.created_at.isoformat(),
-                'updated_at': categorie.updated_at.isoformat()
+                'is_active': categorie.is_active,
             })
 
         return Response({
@@ -439,7 +510,7 @@ def sources_list(request):
     Liste des sources
     """
     try:
-        sources = Source.objects.all().order_by('nom')
+        sources = Source.objects.filter(is_active=True).order_by('nom')
         data = []
         for source in sources:
             data.append({
@@ -447,7 +518,7 @@ def sources_list(request):
                 'nom': source.nom,
                 'description': source.description,
                 'created_at': source.created_at.isoformat(),
-                'updated_at': source.updated_at.isoformat()
+                'is_active': source.is_active,
             })
 
         return Response({
@@ -471,7 +542,7 @@ def action_types_list(request):
     Liste des types d'action
     """
     try:
-        action_types = ActionType.objects.all().order_by('nom')
+        action_types = ActionType.objects.filter(is_active=True).order_by('nom')
         data = []
         for action_type in action_types:
             data.append({
@@ -479,7 +550,7 @@ def action_types_list(request):
                 'nom': action_type.nom,
                 'description': action_type.description,
                 'created_at': action_type.created_at.isoformat(),
-                'updated_at': action_type.updated_at.isoformat()
+                'is_active': action_type.is_active,
             })
 
         return Response({
@@ -535,7 +606,7 @@ def etats_mise_en_oeuvre_list(request):
     Liste des états de mise en œuvre
     """
     try:
-        etats = EtatMiseEnOeuvre.objects.all().order_by('nom')
+        etats = EtatMiseEnOeuvre.objects.filter(is_active=True).order_by('nom')
         data = []
         for etat in etats:
             data.append({
@@ -543,7 +614,7 @@ def etats_mise_en_oeuvre_list(request):
                 'nom': etat.nom,
                 'description': etat.description,
                 'created_at': etat.created_at.isoformat(),
-                'updated_at': etat.updated_at.isoformat()
+                'is_active': etat.is_active,
             })
 
         return Response({
@@ -567,7 +638,7 @@ def appreciations_list(request):
     Liste des appréciations
     """
     try:
-        appreciations = Appreciation.objects.all().order_by('nom')
+        appreciations = Appreciation.objects.filter(is_active=True).order_by('nom')
         data = []
         for appreciation in appreciations:
             data.append({
@@ -575,7 +646,7 @@ def appreciations_list(request):
                 'nom': appreciation.nom,
                 'description': appreciation.description,
                 'created_at': appreciation.created_at.isoformat(),
-                'updated_at': appreciation.updated_at.isoformat()
+                'is_active': appreciation.is_active,
             })
 
         return Response({
@@ -599,7 +670,7 @@ def directions_list(request):
     Liste des directions
     """
     try:
-        directions = Direction.objects.all().order_by('nom')
+        directions = Direction.objects.filter(is_active=True).order_by('nom')
         data = []
         for direction in directions:
             data.append({
@@ -607,7 +678,7 @@ def directions_list(request):
                 'nom': direction.nom,
                 'description': direction.description,
                 'created_at': direction.created_at.isoformat(),
-                'updated_at': direction.updated_at.isoformat()
+                'is_active': direction.is_active,
             })
 
         return Response({
@@ -632,7 +703,7 @@ def sous_directions_list(request):
     """
     try:
         direction_uuid = request.GET.get('direction_uuid')
-        sous_directions = SousDirection.objects.select_related('direction')
+        sous_directions = SousDirection.objects.select_related('direction').filter(is_active=True)
         
         if direction_uuid:
             sous_directions = sous_directions.filter(direction__uuid=direction_uuid)
@@ -650,7 +721,7 @@ def sous_directions_list(request):
                     'nom': sous_direction.direction.nom
                 },
                 'created_at': sous_direction.created_at.isoformat(),
-                'updated_at': sous_direction.updated_at.isoformat()
+                'is_active': sous_direction.is_active,
             })
 
             return Response({
@@ -675,7 +746,7 @@ def services_list(request):
     """
     try:
         sous_direction_uuid = request.GET.get('sous_direction_uuid')
-        services = Service.objects.select_related('sous_direction__direction')
+        services = Service.objects.select_related('sous_direction__direction').filter(is_active=True)
         
         if sous_direction_uuid:
             services = services.filter(sous_direction__uuid=sous_direction_uuid)
@@ -697,7 +768,7 @@ def services_list(request):
                     }
                 },
                 'created_at': service.created_at.isoformat(),
-                'updated_at': service.updated_at.isoformat()
+                'is_active': service.is_active,
             })
 
         return Response({
@@ -721,7 +792,7 @@ def processus_list(request):
     Liste des processus
     """
     try:
-        processus = Processus.objects.select_related('cree_par').order_by('numero_processus')
+        processus = Processus.objects.select_related('cree_par').filter(is_active=True).order_by('numero_processus')
         data = []
         for processus in processus:
             data.append({
@@ -736,7 +807,7 @@ def processus_list(request):
                     'last_name': processus.cree_par.last_name
                 },
                 'created_at': processus.created_at.isoformat(),
-                'updated_at': processus.updated_at.isoformat()
+                'is_active': processus.is_active,
             })
 
         return Response({
@@ -1171,4 +1242,285 @@ def test_email_configuration(request):
             'error': f'Erreur lors de l\'envoi du test: {str(e)}',
             'status': 'error'
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ==================== ENDPOINTS POUR AFFICHAGE COMPLET (AVEC ÉLÉMENTS DÉSACTIVÉS) ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def natures_all_list(request):
+    """
+    Liste de toutes les natures (y compris les désactivées) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(Nature, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de toutes les natures: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de toutes les natures',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def categories_all_list(request):
+    """
+    Liste de toutes les catégories (y compris les désactivées) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(Categorie, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de toutes les catégories: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de toutes les catégories',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sources_all_list(request):
+    """
+    Liste de toutes les sources (y compris les désactivées) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(Source, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de toutes les sources: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de toutes les sources',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def action_types_all_list(request):
+    """
+    Liste de tous les types d'action (y compris les désactivés) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(ActionType, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les types d'action: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de tous les types d\'action',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def statuts_all_list(request):
+    """
+    Liste de tous les statuts (y compris les désactivés) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(Statut, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les statuts: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de tous les statuts',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def etats_mise_en_oeuvre_all_list(request):
+    """
+    Liste de tous les états de mise en œuvre (y compris les désactivés) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(EtatMiseEnOeuvre, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les états de mise en œuvre: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de tous les états de mise en œuvre',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def appreciations_all_list(request):
+    """
+    Liste de toutes les appréciations (y compris les désactivées) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(Appreciation, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de toutes les appréciations: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de toutes les appréciations',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def directions_all_list(request):
+    """
+    Liste de toutes les directions (y compris les désactivées) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(Direction, include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de toutes les directions: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de toutes les directions',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sous_directions_all_list(request):
+    """
+    Liste de toutes les sous-directions (y compris les désactivées) - pour l'affichage des données existantes
+    """
+    try:
+        direction_uuid = request.GET.get('direction_uuid')
+        sous_directions = SousDirection.objects.select_related('direction')
+        
+        if direction_uuid:
+            sous_directions = sous_directions.filter(direction__uuid=direction_uuid)
+        
+        sous_directions = sous_directions.order_by('direction__nom', 'nom')
+        
+        data = []
+        for sous_direction in sous_directions:
+            data.append({
+                'uuid': str(sous_direction.uuid),
+                'nom': sous_direction.nom,
+                'description': sous_direction.description,
+                'is_active': sous_direction.is_active,
+                'direction': {
+                    'uuid': str(sous_direction.direction.uuid),
+                    'nom': sous_direction.direction.nom
+                },
+                'created_at': sous_direction.created_at.isoformat(),
+                'updated_at': sous_direction.updated_at.isoformat()
+            })
+
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de toutes les sous-directions: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de toutes les sous-directions',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def services_all_list(request):
+    """
+    Liste de tous les services (y compris les désactivés) - pour l'affichage des données existantes
+    """
+    try:
+        sous_direction_uuid = request.GET.get('sous_direction_uuid')
+        services = Service.objects.select_related('sous_direction__direction')
+        
+        if sous_direction_uuid:
+            services = services.filter(sous_direction__uuid=sous_direction_uuid)
+        
+        services = services.order_by('sous_direction__direction__nom', 'sous_direction__nom', 'nom')
+
+        data = []
+        for service in services:
+            data.append({
+                'uuid': str(service.uuid),
+                'nom': service.nom,
+                'description': service.description,
+                'is_active': service.is_active,
+                'sous_direction': {
+                    'uuid': str(service.sous_direction.uuid),
+                    'nom': service.sous_direction.nom,
+                    'direction': {
+                        'uuid': str(service.sous_direction.direction.uuid),
+                        'nom': service.sous_direction.direction.nom
+                    }
+                },
+                'created_at': service.created_at.isoformat(),
+                'updated_at': service.updated_at.isoformat()
+            })
+
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les services: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de tous les services',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def processus_all_list(request):
+    """
+    Liste de tous les processus (y compris les désactivés) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(Processus, order_by='numero_processus', include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les processus: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de tous les processus',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

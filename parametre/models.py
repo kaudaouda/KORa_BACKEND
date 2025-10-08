@@ -5,7 +5,20 @@ from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 
 
-class Nature(models.Model):
+class HasActiveStatus(models.Model):
+    """
+    Trait abstrait pour ajouter un champ is_active aux modèles
+    """
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Indique si cet élément est actif et peut être utilisé"
+    )
+    
+    class Meta:
+        abstract = True
+
+
+class Nature(HasActiveStatus):
     """
     Modèle pour les types de nature (Recommandation, Non-conformité)
     """
@@ -24,7 +37,7 @@ class Nature(models.Model):
         return self.nom
 
 
-class Categorie(models.Model):
+class Categorie(HasActiveStatus):
     """
     Modèle pour les catégories
     """
@@ -43,7 +56,7 @@ class Categorie(models.Model):
         return self.nom
 
 
-class Source(models.Model):
+class Source(HasActiveStatus):
     """
     Modèle pour les sources (Revue de processus, Audit interne...)
     """
@@ -62,7 +75,7 @@ class Source(models.Model):
         return self.nom
 
 
-class ActionType(models.Model):
+class ActionType(HasActiveStatus):
     """
     Modèle pour les types d'action (Corrective, Préventive)
     """
@@ -100,7 +113,7 @@ class Statut(models.Model):
         return self.nom
 
 
-class EtatMiseEnOeuvre(models.Model):
+class EtatMiseEnOeuvre(HasActiveStatus):
     """
     Modèle pour les états de mise en œuvre (En cours, Réalisée, Partiellement réalisée)
     """
@@ -119,7 +132,7 @@ class EtatMiseEnOeuvre(models.Model):
         return self.nom
 
 
-class Appreciation(models.Model):
+class Appreciation(HasActiveStatus):
     """
     Modèle pour les appréciations (Satisfaisant, Non satisfaisant)
     """
@@ -174,7 +187,7 @@ class Media(models.Model):
         return self.url_fichier
 
 
-class Direction(models.Model):
+class Direction(HasActiveStatus):
     """
     Modèle pour les directions
     """
@@ -193,7 +206,7 @@ class Direction(models.Model):
         return self.nom
 
 
-class SousDirection(models.Model):
+class SousDirection(HasActiveStatus):
     """
     Modèle pour les sous-directions
     """
@@ -214,7 +227,7 @@ class SousDirection(models.Model):
         return f"{self.direction.nom} - {self.nom}"
 
 
-class Service(models.Model):
+class Service(HasActiveStatus):
     """
     Modèle pour les services
     """
@@ -235,7 +248,7 @@ class Service(models.Model):
         return f"{self.sous_direction.direction.nom} - {self.sous_direction.nom} - {self.nom}"
 
 
-class Processus(models.Model):
+class Processus(HasActiveStatus):
     """
     Modèle pour les processus (déplacé depuis l'app pac)
     """
