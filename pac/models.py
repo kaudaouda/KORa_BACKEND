@@ -33,6 +33,13 @@ class Pac(models.Model):
         on_delete=models.CASCADE, 
         related_name='pacs'
     )
+    dysfonctionnement_recommandation = models.ForeignKey(
+        'parametre.DysfonctionnementRecommandation', 
+        on_delete=models.CASCADE, 
+        related_name='pacs',
+        null=True,
+        blank=True
+    )
     
     periode_de_realisation = models.DateField()
     cree_par = models.ForeignKey(
@@ -83,6 +90,17 @@ class Traitement(models.Model):
         related_name='traitements_responsables',
         blank=True,
         null=True
+    )
+    # Nouveau: permettre plusieurs responsables en parallèle, tout en gardant les FK pour compatibilité
+    responsables_directions = models.ManyToManyField(
+        'parametre.Direction',
+        related_name='traitements_responsables_m2m',
+        blank=True
+    )
+    responsables_sous_directions = models.ManyToManyField(
+        'parametre.SousDirection',
+        related_name='traitements_responsables_sous_m2m',
+        blank=True
     )
     preuve = models.ForeignKey(
         'parametre.Preuve',

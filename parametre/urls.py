@@ -57,6 +57,8 @@ urlpatterns = [
     path('services/all/', views.services_all_list, name='services_all_list'),
     path('processus/', views.processus_list, name='processus_list'),
     path('processus/all/', views.processus_all_list, name='processus_all_list'),
+    path('dysfonctionnements/', views.dysfonctionnements_list, name='dysfonctionnements_list'),
+    path('dysfonctionnements/all/', views.dysfonctionnements_all_list, name='dysfonctionnements_all_list'),
 
     # ==================== NOTIFICATION SETTINGS ====================
     path('notification-settings/', views.notification_settings_get, name='notification_settings_get'),

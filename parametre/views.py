@@ -16,7 +16,7 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
     SousDirection, Service, Processus, Preuve, ActivityLog,
-    NotificationSettings, EmailSettings
+    NotificationSettings, EmailSettings, DysfonctionnementRecommandation
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
@@ -820,6 +820,65 @@ def processus_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des processus',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dysfonctionnements_list(request):
+    """
+    Liste des dysfonctionnements/recommandations (éléments actifs uniquement)
+    """
+    try:
+        dysfonctionnements = DysfonctionnementRecommandation.objects.select_related('cree_par').filter(is_active=True).order_by('nom')
+        data = []
+        for dysfonctionnement in dysfonctionnements:
+            data.append({
+                'uuid': str(dysfonctionnement.uuid),
+                'nom': dysfonctionnement.nom,
+                'description': dysfonctionnement.description,
+                'cree_par': {
+                    'id': dysfonctionnement.cree_par.id,
+                    'username': dysfonctionnement.cree_par.username,
+                    'first_name': dysfonctionnement.cree_par.first_name,
+                    'last_name': dysfonctionnement.cree_par.last_name
+                },
+                'created_at': dysfonctionnement.created_at.isoformat(),
+                'is_active': dysfonctionnement.is_active,
+            })
+
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des dysfonctionnements: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des dysfonctionnements',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dysfonctionnements_all_list(request):
+    """
+    Liste de tous les dysfonctionnements/recommandations (y compris les désactivés) - pour l'affichage des données existantes
+    """
+    try:
+        data = get_model_list_data(DysfonctionnementRecommandation, order_by='nom', include_inactive=True)
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les dysfonctionnements: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de tous les dysfonctionnements',
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

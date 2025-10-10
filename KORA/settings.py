@@ -52,6 +52,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'shared.middleware.MediaFrameOptionsMiddleware',  # Notre middleware personnalisé (avant XFrameOptionsMiddleware)
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'shared.middleware.JWTCookieMiddleware',
 ]
@@ -161,6 +162,10 @@ SESSION_COOKIE_SECURE = False  # True en production avec HTTPS
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SECURE = False  # True en production avec HTTPS
+
+# Configuration X-Frame-Options pour permettre l'affichage en iframe des fichiers média
+# Le middleware MediaFrameOptionsMiddleware gère spécifiquement les fichiers /medias/
+X_FRAME_OPTIONS = 'DENY'  # Protection par défaut, le middleware personnalisé override pour /medias/
 
 # REST Framework Configuration
 REST_FRAMEWORK = {
