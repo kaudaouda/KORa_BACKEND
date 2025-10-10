@@ -292,6 +292,31 @@ class Processus(HasActiveStatus):
 
         return numero
 
+
+class DysfonctionnementRecommandation(HasActiveStatus):
+    """
+    Modèle pour les dysfonctionnements et recommandations
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nom = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True, null=True)
+    cree_par = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='dysfonctionnements_crees'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'dysfonctionnement_recommandation'
+        verbose_name = 'Dysfonctionnement/Recommandation'
+        verbose_name_plural = 'Dysfonctionnements/Recommandations'
+
+    def __str__(self):
+        return self.nom
+
+
 class Preuve(models.Model):
     """
     Modèle pour les preuves (Evidence) - Déplacé de pac vers parametre

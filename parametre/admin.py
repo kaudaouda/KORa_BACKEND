@@ -3,7 +3,8 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
-    ActivityLog, NotificationSettings, EmailSettings, ReminderEmailLog
+    ActivityLog, NotificationSettings, EmailSettings, ReminderEmailLog,
+    DysfonctionnementRecommandation
 )
 
 
@@ -114,6 +115,26 @@ class ProcessusAdmin(admin.ModelAdmin):
     list_filter = ('created_at', 'cree_par', 'is_active')
     search_fields = ('nom', 'description', 'cree_par__username', 'cree_par__email')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(DysfonctionnementRecommandation)
+class DysfonctionnementRecommandationAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'cree_par', 'is_active', 'created_at')
+    list_filter = ('created_at', 'cree_par', 'is_active')
+    search_fields = ('nom', 'description', 'cree_par__username', 'cree_par__email')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('nom', 'description', 'cree_par')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('uuid', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(ActivityLog)

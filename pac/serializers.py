@@ -92,7 +92,7 @@ class PacCreateSerializer(serializers.ModelSerializer):
         model = Pac
         fields = [
             'processus', 'libelle', 'nature', 
-            'categorie', 'source', 'periode_de_realisation'
+            'categorie', 'source', 'dysfonctionnement_recommandation', 'periode_de_realisation'
         ]
     
     def validate_periode_de_realisation(self, value):
@@ -137,7 +137,7 @@ class PacUpdateSerializer(serializers.ModelSerializer):
         model = Pac
         fields = [
             'processus', 'libelle', 'nature', 
-            'categorie', 'source', 'periode_de_realisation'
+            'categorie', 'source', 'dysfonctionnement_recommandation', 'periode_de_realisation'
         ]
     
     def validate_periode_de_realisation(self, value):
@@ -168,12 +168,21 @@ class TraitementSerializer(serializers.ModelSerializer):
     responsable_direction_nom = serializers.CharField(source='responsable_direction.nom', read_only=True)
     responsable_sous_direction_nom = serializers.CharField(source='responsable_sous_direction.nom', read_only=True)
     
+    # Exposer aussi les M2M (lecture seule pour compat)
+    responsables_directions = serializers.PrimaryKeyRelatedField(
+        many=True, read_only=True
+    )
+    responsables_sous_directions = serializers.PrimaryKeyRelatedField(
+        many=True, read_only=True
+    )
+
     class Meta:
         model = Traitement
         fields = [
             'uuid', 'pac', 'pac_uuid', 'pac_numero', 'action', 'type_action', 
             'type_action_nom', 'responsable_direction', 'responsable_direction_nom',
             'responsable_sous_direction', 'responsable_sous_direction_nom',
+            'responsables_directions', 'responsables_sous_directions',
             'preuve', 'preuve_description', 'preuve_media_url', 'delai_realisation'
         ]
         read_only_fields = ['uuid']
@@ -196,12 +205,20 @@ class TraitementSerializer(serializers.ModelSerializer):
 
 class TraitementCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de traitements"""
+    # Nouveau: accepter des listes d'UUID en entrée pour M2M
+    responsables_directions = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True
+    )
+    responsables_sous_directions = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True
+    )
     
     class Meta:
         model = Traitement
         fields = [
             'pac', 'action', 'type_action', 'responsable_direction', 
-            'responsable_sous_direction', 'preuve', 'delai_realisation'
+            'responsable_sous_direction', 'responsables_directions', 'responsables_sous_directions',
+            'preuve', 'delai_realisation'
         ]
     
     def validate_delai_realisation(self, value):
@@ -228,15 +245,46 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
         
         return value
 
+    def create(self, validated_data):
+        # Extraire les listes M2M si présentes
+        resp_dirs = self.initial_data.get('responsables_directions', [])
+        resp_sous = self.initial_data.get('responsables_sous_directions', [])
+
+        # Retirer des validated_data s'ils y sont (on gère après création)
+        validated_data.pop('responsables_directions', None)
+        validated_data.pop('responsables_sous_directions', None)
+
+        instance = super().create(validated_data)
+
+        # Synchroniser M2M si fournis
+        from parametre.models import Direction, SousDirection
+        if isinstance(resp_dirs, list) and len(resp_dirs) > 0:
+            instance.responsables_directions.set(
+                list(Direction.objects.filter(uuid__in=resp_dirs))
+            )
+        if isinstance(resp_sous, list) and len(resp_sous) > 0:
+            instance.responsables_sous_directions.set(
+                list(SousDirection.objects.filter(uuid__in=resp_sous))
+            )
+
+        return instance
+
 
 class TraitementUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour la mise à jour de traitements"""
+    responsables_directions = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True
+    )
+    responsables_sous_directions = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True
+    )
     
     class Meta:
         model = Traitement
         fields = [
             'action', 'type_action', 'responsable_direction', 
-            'responsable_sous_direction', 'preuve', 'delai_realisation'
+            'responsable_sous_direction', 'responsables_directions', 'responsables_sous_directions',
+            'preuve', 'delai_realisation'
         ]
     
     def validate_delai_realisation(self, value):
@@ -258,6 +306,27 @@ class TraitementUpdateSerializer(serializers.ModelSerializer):
                 )
         
         return value
+
+    def update(self, instance, validated_data):
+        resp_dirs = self.initial_data.get('responsables_directions', None)
+        resp_sous = self.initial_data.get('responsables_sous_directions', None)
+
+        validated_data.pop('responsables_directions', None)
+        validated_data.pop('responsables_sous_directions', None)
+
+        instance = super().update(instance, validated_data)
+
+        from parametre.models import Direction, SousDirection
+        if isinstance(resp_dirs, list):
+            instance.responsables_directions.set(
+                list(Direction.objects.filter(uuid__in=resp_dirs))
+            )
+        if isinstance(resp_sous, list):
+            instance.responsables_sous_directions.set(
+                list(SousDirection.objects.filter(uuid__in=resp_sous))
+            )
+
+        return instance
 
 
 class SuiviSerializer(serializers.ModelSerializer):
