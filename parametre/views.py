@@ -1161,16 +1161,47 @@ def upcoming_notifications(request):
         for traitement in upcoming_traitements:
             days_until_due = (traitement.delai_realisation - today).days
             priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
-            
+
+            # Déterminer la nature (dysfonctionnement ou recommandation) via le PAC
+            nature_label = None
+            try:
+                # Si une nature est liée sur PAC, utiliser son nom
+                if getattr(traitement.pac, 'nature', None):
+                    nature_name = (traitement.pac.nature.nom or '').strip().lower()
+                    if 'recommand' in nature_name:
+                        nature_label = 'Recommandation'
+                    elif 'non' in nature_name or 'dysfonction' in nature_name:
+                        nature_label = 'Dysfonctionnement'
+                    else:
+                        nature_label = traitement.pac.nature.nom
+            except Exception:
+                nature_label = None
+
+            # Type d'action (ActionType.nom)
+            type_action = None
+            if getattr(traitement, 'type_action', None):
+                try:
+                    type_action = traitement.type_action.nom
+                except Exception:
+                    type_action = None
+
+            # Libellé de délai + jours restants entre parenthèses
+            delai_label = f"{traitement.delai_realisation.strftime('%d/%m/%Y')} ({days_until_due} jour{'s' if days_until_due > 1 else ''})"
+
             notifications.append({
                 'id': f'traitement_{traitement.uuid}',
                 'type': 'traitement',
-                'title': f'{traitement.pac.numero_pac} - Action : {traitement.action[:50]}{"..." if len(traitement.action) > 50 else ""}',
-                'message': f'Délai de réalisation dans {days_until_due} jour{"s" if days_until_due > 1 else ""}',
+                'title': f"{traitement.pac.numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}",
+                'message': f"Délai de réalisation dans {days_until_due} jour{'s' if days_until_due > 1 else ''}",
                 'due_date': traitement.delai_realisation.isoformat(),
                 'priority': priority,
                 'action_url': f'/pac/traitement/{traitement.uuid}/show',
-                'entity_id': str(traitement.uuid)
+                'entity_id': str(traitement.uuid),
+                # Champs ajoutés pour l'affichage
+                'nature_label': nature_label,
+                'type_action': type_action,
+                'days_remaining': days_until_due,
+                'delai_label': delai_label,
             })
         
         # Trier par priorité et date d'échéance
