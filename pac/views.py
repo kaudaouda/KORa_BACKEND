@@ -728,6 +728,41 @@ def pac_update(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def pac_delete(request, uuid):
+    """Supprimer un PAC"""
+    try:
+        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        pac_info = {
+            'uuid': str(pac.uuid),
+            'libelle': pac.libelle,
+            'processus': pac.processus.nom if pac.processus else None
+        }
+        
+        # Log de l'activité avant suppression
+        logger.info(
+            f"Suppression PAC - User: {request.user.email}, "
+            f"PAC: {pac_info['libelle']}, UUID: {pac_info['uuid']}, "
+            f"IP: {get_client_ip(request)}"
+        )
+        
+        # Suppression du PAC (cascade sur traitements et suivis)
+        pac.delete()
+        
+        return Response({
+            'message': 'PAC supprimé avec succès',
+            'pac': pac_info
+        }, status=status.HTTP_200_OK)
+    except Pac.DoesNotExist:
+        return Response({
+            'error': 'PAC non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du PAC: {str(e)}")
+        return Response({
+            'error': 'Impossible de supprimer le PAC'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== API TRAITEMENTS ====================
