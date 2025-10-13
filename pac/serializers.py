@@ -58,18 +58,26 @@ class PacSerializer(serializers.ModelSerializer):
     """Serializer pour les PACs"""
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
     processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
+    processus_uuid = serializers.UUIDField(source='processus.uuid', read_only=True)
     nature_nom = serializers.CharField(source='nature.nom', read_only=True)
+    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True)
     categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
+    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True)
     source_nom = serializers.CharField(source='source.nom', read_only=True)
+    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True)
+    dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
+    dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     jours_restants = serializers.SerializerMethodField()
     
     class Meta:
         model = Pac
         fields = [
-            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero',
-            'libelle', 'nature', 'nature_nom', 'categorie', 'categorie_nom',
-            'source', 'source_nom', 'periode_de_realisation', 'jours_restants',
+            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
+            'libelle', 'nature', 'nature_nom', 'nature_uuid', 'categorie', 'categorie_nom', 'categorie_uuid',
+            'source', 'source_nom', 'source_uuid', 'dysfonctionnement_recommandation', 
+            'dysfonctionnement_recommandation_nom', 'dysfonctionnement_recommandation_uuid',
+            'periode_de_realisation', 'jours_restants',
             'cree_par', 'createur_nom', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
@@ -440,9 +448,15 @@ class PacCompletSerializer(serializers.ModelSerializer):
     """Serializer complet pour un PAC avec tous ses traitements et suivis"""
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
     processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
+    processus_uuid = serializers.UUIDField(source='processus.uuid', read_only=True)
     nature_nom = serializers.CharField(source='nature.nom', read_only=True)
+    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True)
     categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
+    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True)
     source_nom = serializers.CharField(source='source.nom', read_only=True)
+    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True)
+    dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
+    dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     jours_restants = serializers.SerializerMethodField()
     
@@ -452,9 +466,11 @@ class PacCompletSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pac
         fields = [
-            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero',
-            'libelle', 'nature', 'nature_nom', 'categorie', 'categorie_nom',
-            'source', 'source_nom', 'periode_de_realisation', 'jours_restants',
+            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
+            'libelle', 'nature', 'nature_nom', 'nature_uuid', 'categorie', 'categorie_nom', 'categorie_uuid',
+            'source', 'source_nom', 'source_uuid', 'dysfonctionnement_recommandation',
+            'dysfonctionnement_recommandation_nom', 'dysfonctionnement_recommandation_uuid',
+            'periode_de_realisation', 'jours_restants',
             'cree_par', 'createur_nom', 'created_at', 'updated_at', 'traitements'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
