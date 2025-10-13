@@ -1614,3 +1614,113 @@ def processus_all_list(request):
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# ==================== MEDIAS ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def media_create(request):
+    """
+    Créer un nouveau média (upload de fichier)
+    """
+    try:
+        fichier = request.FILES.get('fichier')
+        url_fichier = request.data.get('url_fichier')
+        
+        if not fichier and not url_fichier:
+            return Response({
+                'error': 'Fichier ou URL fichier requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Créer le média
+        media = Media.objects.create(
+            fichier=fichier if fichier else None,
+            url_fichier=url_fichier if url_fichier else None
+        )
+        
+        # Retourner les données du média créé
+        return Response({
+            'uuid': str(media.uuid),
+            'fichier_url': media.get_url(),
+            'url_fichier': media.url_fichier,
+            'created_at': media.created_at.isoformat()
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du média: {str(e)}")
+        return Response({
+            'error': f'Impossible de créer le média: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def media_list(request):
+    """Lister les médias existants"""
+    try:
+        medias = Media.objects.all().order_by('-created_at')
+        data = []
+        for m in medias:
+            data.append({
+                'uuid': str(m.uuid),
+                'fichier_url': m.get_url(),
+                'url_fichier': m.url_fichier,
+                'created_at': m.created_at.isoformat()
+            })
+        return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des médias: {str(e)}")
+        return Response({'error': 'Impossible de lister les médias'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def preuve_create_with_medias(request):
+    """Créer une preuve et y associer une liste de médias (uuids)."""
+    try:
+        description = request.data.get('description')
+        media_uuids = request.data.get('medias', [])
+        if not description:
+            return Response({'error': 'description est requis'}, status=status.HTTP_400_BAD_REQUEST)
+        preuve = Preuve.objects.create(description=description)
+        if isinstance(media_uuids, list) and len(media_uuids) > 0:
+            medias = list(Media.objects.filter(uuid__in=media_uuids))
+            preuve.medias.add(*medias)
+        return Response({
+            'uuid': str(preuve.uuid),
+            'description': preuve.description,
+            'medias': [str(m.uuid) for m in preuve.medias.all()],
+            'created_at': preuve.created_at.isoformat()
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la preuve: {str(e)}")
+        return Response({'error': 'Impossible de créer la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def preuves_list(request):
+    """Lister les preuves avec leurs médias"""
+    try:
+        preuves = Preuve.objects.prefetch_related('medias').order_by('-created_at')
+        data = []
+        for p in preuves:
+            data.append({
+                'uuid': str(p.uuid),
+                'description': p.description,
+                'medias': [
+                    {
+                        'uuid': str(m.uuid),
+                        'fichier_url': m.get_url(),
+                        'url_fichier': m.url_fichier,
+                        'created_at': m.created_at.isoformat()
+                    }
+                    for m in p.medias.all()
+                ],
+                'created_at': p.created_at.isoformat()
+            })
+        return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des preuves: {str(e)}")
+        return Response({'error': 'Impossible de lister les preuves'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

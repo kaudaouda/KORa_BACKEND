@@ -73,4 +73,12 @@ urlpatterns = [
     path('email-settings/', views.email_settings_detail, name='email_settings_detail'),
     path('email-settings/update/', views.email_settings_update, name='email_settings_update'),
     path('email-settings/test/', views.test_email_configuration, name='test_email_configuration'),
+    
+    # ==================== MEDIAS ====================
+    path('medias/create/', views.media_create, name='media_create'),
+    path('medias/', views.media_list, name='media_list'),
+
+    # ==================== PREUVES ====================
+    path('preuves/create-with-medias/', views.preuve_create_with_medias, name='preuve_create_with_medias'),
+    path('preuves/', views.preuves_list, name='preuves_list'),
 ]
