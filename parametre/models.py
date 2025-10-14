@@ -577,3 +577,286 @@ class ReminderEmailLog(models.Model):
 
     def __str__(self):
         return f"Relance {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
+
+
+class Frequence(models.Model):
+    """
+    Modèle pour les fréquences de mesure des indicateurs
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nom = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Nom de la fréquence (ex: Trimestrielle, Semestrielle, Annuelle, Mensuelle, etc.)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'frequence'
+        verbose_name = 'Fréquence'
+        verbose_name_plural = 'Fréquences'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
+class Periodicite(models.Model):
+    """
+    Modèle pour les périodicités de mesure des indicateurs
+    """
+    PERIODE_CHOICES = [
+        # Trimestrielle (4 périodes)
+        ('T1', '1er Trimestre'),
+        ('T2', '2ème Trimestre'),
+        ('T3', '3ème Trimestre'),
+        ('T4', '4ème Trimestre'),
+        # Semestrielle (2 périodes)
+        ('S1', '1er Semestre'),
+        ('S2', '2ème Semestre'),
+        # Annuelle (1 période)
+        ('A1', 'Année'),
+    ]
+    
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    frequence_id = models.ForeignKey(
+        Frequence,
+        on_delete=models.CASCADE,
+        related_name='periodicites',
+        help_text="Fréquence associée à cette périodicité"
+    )
+    periode = models.CharField(
+        max_length=3,
+        choices=PERIODE_CHOICES,
+        default='A1',
+        help_text="Période spécifique de la fréquence"
+    )
+    a_realiser = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Nombre d'actions à réaliser"
+    )
+    realiser = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Nombre d'actions réalisées"
+    )
+    taux = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        help_text="Taux de réalisation en pourcentage"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'periodicite'
+        verbose_name = 'Périodicité'
+        verbose_name_plural = 'Périodicités'
+        ordering = ['frequence_id', 'created_at']
+
+    def __str__(self):
+        periode_display = dict(self.PERIODE_CHOICES).get(self.periode, self.periode)
+        return f"{self.frequence_id.nom} - {periode_display} - {self.taux}% ({self.realiser}/{self.a_realiser})"
+
+    def save(self, *args, **kwargs):
+        """
+        Calculer automatiquement le taux si les valeurs sont fournies
+        """
+        if self.a_realiser and self.a_realiser > 0:
+            self.taux = (self.realiser / self.a_realiser) * 100
+        else:
+            self.taux = 0
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_periodes_for_frequence(cls, frequence_nom):
+        """
+        Retourne les périodes disponibles pour une fréquence donnée
+        """
+        # Périodes prédéfinies pour les fréquences courantes
+        periodes_predefinies = {
+            'Trimestrielle': [('T1', '1er Trimestre'), ('T2', '2ème Trimestre'), ('T3', '3ème Trimestre'), ('T4', '4ème Trimestre')],
+            'Semestrielle': [('S1', '1er Semestre'), ('S2', '2ème Semestre')],
+            'Annuelle': [('A1', 'Année')],
+            'Mensuelle': [('M1', 'Janvier'), ('M2', 'Février'), ('M3', 'Mars'), ('M4', 'Avril'), ('M5', 'Mai'), ('M6', 'Juin'), ('M7', 'Juillet'), ('M8', 'Août'), ('M9', 'Septembre'), ('M10', 'Octobre'), ('M11', 'Novembre'), ('M12', 'Décembre')],
+        }
+        
+        # Retourner les périodes prédéfinies si disponibles
+        if frequence_nom in periodes_predefinies:
+            return periodes_predefinies[frequence_nom]
+        
+        # Pour les fréquences personnalisées, retourner une période générique
+        return [('P1', f'Période {frequence_nom}')]
+
+    @classmethod
+    def get_periodes_choices_for_frequence(cls, frequence_nom):
+        """
+        Retourne les choix de périodes pour une fréquence donnée (pour les formulaires)
+        """
+        return cls.get_periodes_for_frequence(frequence_nom)
+
+
+class Cible(models.Model):
+    """
+    Modèle pour les cibles des indicateurs
+    """
+    CONDITION_CHOICES = [
+        ('≥', 'Supérieur ou égal à'),
+        ('>', 'Supérieur à'),
+        ('≤', 'Inférieur ou égal à'),
+        ('<', 'Inférieur à'),
+        ('=', 'Égal à'),
+        ('≠', 'Différent de'),
+    ]
+    
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    valeur = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Valeur de la cible (ex: 70)"
+    )
+    condition = models.CharField(
+        max_length=2,
+        choices=CONDITION_CHOICES,
+        help_text="Condition de comparaison (ex: ≥)"
+    )
+    frequence_id = models.ForeignKey(
+        Periodicite,
+        on_delete=models.CASCADE,
+        related_name='cibles',
+        help_text="Périodicité associée à cette cible"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'cible'
+        verbose_name = 'Cible'
+        verbose_name_plural = 'Cibles'
+        ordering = ['frequence_id', 'created_at']
+
+    def __str__(self):
+        condition_display = dict(self.CONDITION_CHOICES).get(self.condition, self.condition)
+        return f"{self.frequence_id} - {condition_display} {self.valeur}"
+
+    def is_objectif_atteint(self, valeur_reelle):
+        """
+        Vérifier si l'objectif est atteint avec une valeur réelle donnée
+        """
+        if self.condition == '≥':
+            return valeur_reelle >= self.valeur
+        elif self.condition == '>':
+            return valeur_reelle > self.valeur
+        elif self.condition == '≤':
+            return valeur_reelle <= self.valeur
+        elif self.condition == '<':
+            return valeur_reelle < self.valeur
+        elif self.condition == '=':
+            return valeur_reelle == self.valeur
+        elif self.condition == '≠':
+            return valeur_reelle != self.valeur
+        else:
+            return False
+
+
+class SourceDonnees(models.Model):
+    """
+    Modèle pour les sources des données
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nom = models.CharField(
+        max_length=200,
+        help_text="Nom de la source (ex: Rapport annuel ANAC 2025)"
+    )
+    methode_id = models.ForeignKey(
+        Cible,
+        on_delete=models.CASCADE,
+        related_name='sources_donnees',
+        help_text="Méthode de cible associée à cette source"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'source_donnees'
+        verbose_name = 'Source des Données'
+        verbose_name_plural = 'Sources des Données'
+        ordering = ['nom', 'created_at']
+
+    def __str__(self):
+        return f"{self.nom} - {self.methode_id}"
+
+
+class MediaSource(models.Model):
+    """
+    Modèle pour les médias associés aux sources
+    
+    Types de médias acceptés :
+    - Images : .jpg, .jpeg, .png, .gif, .webp, .svg
+    - Vidéos : .mp4, .avi, .mov, .wmv, .flv, .webm
+    - Documents : .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .txt
+    - Liens : URLs externes vers des ressources web
+    """
+    
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source_id = models.ForeignKey(
+        SourceDonnees,
+        on_delete=models.CASCADE,
+        related_name='medias',
+        help_text="Source associée à ce média"
+    )
+    url = models.URLField(
+        max_length=500,
+        help_text="URL du média (Images, Vidéos, Documents, Liens)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'media_source'
+        verbose_name = 'Média Source'
+        verbose_name_plural = 'Médias Sources'
+        ordering = ['source_id', 'created_at']
+
+    def __str__(self):
+        return f"{self.source_id.nom} - {self.url}"
+
+    def get_type_from_url(self):
+        """
+        Détermine le type de média à partir de l'URL
+        """
+        url_lower = self.url.lower()
+        
+        # Images
+        image_extensions = ['.jpg', '.jpeg', '.png']
+        if any(ext in url_lower for ext in image_extensions):
+            return 'Image'
+        
+        # Vidéos
+        video_extensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
+        if any(ext in url_lower for ext in video_extensions):
+            return 'Vidéo'
+        
+        # Documents
+        doc_extensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt']
+        if any(ext in url_lower for ext in doc_extensions):
+            return 'Document'
+        
+        # Par défaut, considérer comme un lien
+        return 'Lien'
+
+
+    def is_valid_url(self):
+        """
+        Vérifie si l'URL est valide et accessible
+        """
+        import requests
+        try:
+            response = requests.head(self.url, timeout=5)
+            return response.status_code < 400
+        except:
+            return False
