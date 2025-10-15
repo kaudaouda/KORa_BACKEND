@@ -16,12 +16,12 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
     SousDirection, Service, Processus, Preuve, ActivityLog,
-    NotificationSettings, EmailSettings, DysfonctionnementRecommandation
+    NotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
     SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
-    EmailSettingsSerializer
+    EmailSettingsSerializer, FrequenceSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -1723,4 +1723,51 @@ def preuves_list(request):
     except Exception as e:
         logger.error(f"Erreur lors de la liste des preuves: {str(e)}")
         return Response({'error': 'Impossible de lister les preuves'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== FRÉQUENCES ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def frequences_list(request):
+    """
+    Liste toutes les fréquences
+    """
+    try:
+        frequences = Frequence.objects.all().order_by('nom')
+        serializer = FrequenceSerializer(frequences, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des fréquences: {str(e)}")
+        return Response({'error': 'Impossible de lister les fréquences'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def periodicites_list(request):
+    """Liste toutes les périodicités"""
+    try:
+        from .models import Periodicite
+        periodicites = Periodicite.objects.all().order_by('frequence_id', 'periode')
+        
+        # Créer un serializer simple pour les périodicités
+        data = []
+        for periodicite in periodicites:
+            data.append({
+                'uuid': str(periodicite.uuid),
+                'periode': periodicite.periode,
+                'periode_display': periodicite.get_periode_display(),
+                'a_realiser': float(periodicite.a_realiser),
+                'realiser': float(periodicite.realiser),
+                'taux': float(periodicite.taux),
+                'frequence_id': str(periodicite.frequence_id.uuid),
+                'frequence_nom': periodicite.frequence_id.nom,
+                'created_at': periodicite.created_at,
+                'updated_at': periodicite.updated_at
+            })
+        
+        return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des périodicités: {str(e)}")
+        return Response({'error': 'Impossible de lister les périodicités'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

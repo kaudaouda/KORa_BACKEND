@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
     NotificationSettings, EmailSettings, Nature, Source, Processus, 
-    Service, EtatMiseEnOeuvre
+    Service, EtatMiseEnOeuvre, Frequence
 )
 
 
@@ -114,5 +114,12 @@ class EmailSettingsSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'email_host_password': {'write_only': True}  # Ne pas afficher le mot de passe dans les réponses
         }
+
+
+class FrequenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Frequence
+        fields = ['uuid', 'nom', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
