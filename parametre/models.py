@@ -724,11 +724,11 @@ class Cible(models.Model):
         choices=CONDITION_CHOICES,
         help_text="Condition de comparaison (ex: ≥)"
     )
-    frequence_id = models.ForeignKey(
-        Periodicite,
+    indicateur_id = models.OneToOneField(
+        'dashboard.Indicateur',
         on_delete=models.CASCADE,
-        related_name='cibles',
-        help_text="Périodicité associée à cette cible"
+        related_name='cible',
+        help_text="Indicateur associé à cette cible"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -737,11 +737,11 @@ class Cible(models.Model):
         db_table = 'cible'
         verbose_name = 'Cible'
         verbose_name_plural = 'Cibles'
-        ordering = ['frequence_id', 'created_at']
+        ordering = ['indicateur_id', 'created_at']
 
     def __str__(self):
         condition_display = dict(self.CONDITION_CHOICES).get(self.condition, self.condition)
-        return f"{self.frequence_id} - {condition_display} {self.valeur}"
+        return f"{self.indicateur_id} - {condition_display} {self.valeur}"
 
     def is_objectif_atteint(self, valeur_reelle):
         """

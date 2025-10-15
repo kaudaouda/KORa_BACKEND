@@ -20,6 +20,14 @@ urlpatterns = [
     path('indicateurs/<uuid:uuid>/update/', views.indicateurs_update, name='indicateurs_update'),
     path('indicateurs/<uuid:uuid>/delete/', views.indicateurs_delete, name='indicateurs_delete'),
     
+    # ==================== API CIBLES ====================
+    path('cibles/', views.cibles_list, name='cibles_list'),
+    path('cibles/create/', views.cibles_create, name='cibles_create'),
+    path('cibles/<uuid:uuid>/', views.cibles_detail, name='cibles_detail'),
+    path('cibles/<uuid:uuid>/update/', views.cibles_update, name='cibles_update'),
+    path('cibles/<uuid:uuid>/delete/', views.cibles_delete, name='cibles_delete'),
+    path('cibles/indicateur/<uuid:indicateur_uuid>/', views.cibles_by_indicateur, name='cibles_by_indicateur'),
+    
     # ==================== STATISTIQUES ====================
     path('stats/', views.dashboard_stats, name='dashboard_stats'),
 ]
