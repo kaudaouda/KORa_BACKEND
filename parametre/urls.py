@@ -81,4 +81,10 @@ urlpatterns = [
     # ==================== PREUVES ====================
     path('preuves/create-with-medias/', views.preuve_create_with_medias, name='preuve_create_with_medias'),
     path('preuves/', views.preuves_list, name='preuves_list'),
+    
+    # ==================== FRÉQUENCES ====================
+    path('frequences/', views.frequences_list, name='frequences_list'),
+    
+    # ==================== PÉRIODICITÉS ====================
+    path('periodicites/', views.periodicites_list, name='periodicites_list'),
 ]

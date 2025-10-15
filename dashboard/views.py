@@ -10,7 +10,8 @@ from django.utils import timezone
 from .models import Objectives, Indicateur
 from .serializers import (
     ObjectivesSerializer, ObjectivesCreateSerializer, ObjectivesUpdateSerializer,
-    IndicateurSerializer, IndicateurCreateSerializer, IndicateurUpdateSerializer
+    IndicateurSerializer, IndicateurCreateSerializer, IndicateurUpdateSerializer,
+    CibleSerializer, CibleCreateSerializer, CibleUpdateSerializer
 )
 import logging
 
@@ -422,4 +423,202 @@ def objectives_indicateurs(request, objective_uuid):
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des indicateurs de l\'objectif'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== CIBLES ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cibles_list(request):
+    """Liste toutes les cibles"""
+    try:
+        from parametre.models import Cible
+        cibles = Cible.objects.all().order_by('indicateur_id', 'created_at')
+        serializer = CibleSerializer(cibles, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': cibles.count()
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des cibles: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des cibles'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cibles_detail(request, uuid):
+    """Détail d'une cible"""
+    try:
+        from parametre.models import Cible
+        cible = Cible.objects.get(uuid=uuid)
+        serializer = CibleSerializer(cible)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Cible.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Cible non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de la cible {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération de la cible'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cibles_create(request):
+    """Créer une nouvelle cible"""
+    try:
+        from parametre.models import Cible
+        serializer = CibleCreateSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            cible = serializer.save()
+            response_serializer = CibleSerializer(cible)
+            
+            logger.info(f"Cible créée/mise à jour: {cible} par {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Cible sauvegardée avec succès',
+                'data': response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la cible: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la création de la cible'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def cibles_update(request, uuid):
+    """Mettre à jour une cible"""
+    try:
+        from parametre.models import Cible
+        cible = Cible.objects.get(uuid=uuid)
+        serializer = CibleUpdateSerializer(cible, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            updated_cible = serializer.save()
+            response_serializer = CibleSerializer(updated_cible)
+            
+            logger.info(f"Cible mise à jour: {cible} par {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Cible mise à jour avec succès',
+                'data': response_serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Cible.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Cible non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la cible {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la mise à jour de la cible'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def cibles_delete(request, uuid):
+    """Supprimer une cible"""
+    try:
+        from parametre.models import Cible
+        cible = Cible.objects.get(uuid=uuid)
+        cible.delete()
+        
+        logger.info(f"Cible supprimée: {cible} par {request.user.username}")
+        
+        return Response({
+            'success': True,
+            'message': 'Cible supprimée avec succès'
+        }, status=status.HTTP_200_OK)
+        
+    except Cible.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Cible non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la cible {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la suppression de la cible'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cibles_by_indicateur(request, indicateur_uuid):
+    """Récupérer les cibles d'un indicateur spécifique"""
+    try:
+        from parametre.models import Cible
+        from .models import Indicateur
+        
+        # Récupérer l'indicateur
+        indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
+        
+        # Récupérer la cible liée à l'indicateur (une seule)
+        cible = Cible.objects.filter(indicateur_id=indicateur).first()
+        serializer = CibleSerializer(cible) if cible else None
+        
+        return Response({
+            'success': True,
+            'data': serializer.data if serializer else None,
+            'count': 1 if cible else 0,
+            'indicateur': {
+                'uuid': str(indicateur.uuid),
+                'libelle': indicateur.libelle,
+                'frequence_nom': indicateur.frequence_id.nom
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Indicateur.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Indicateur non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des cibles de l'indicateur {indicateur_uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des cibles de l\'indicateur'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
