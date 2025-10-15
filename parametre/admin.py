@@ -292,7 +292,7 @@ class PeriodiciteAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('frequence_id')
+        return super().get_queryset(request).select_related('indicateur_id')
 
 
 @admin.register(Cible)
@@ -300,22 +300,22 @@ class CibleAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les cibles"""
     
     list_display = [
-        'frequence_id', 'condition', 'valeur', 'created_at', 'updated_at'
+        'indicateur_id', 'condition', 'valeur', 'created_at', 'updated_at'
     ]
     list_filter = [
-        'condition', 'frequence_id__frequence_id', 'frequence_id__periode', 'created_at', 'updated_at'
+        'condition', 'indicateur_id', 'created_at', 'updated_at'
     ]
     search_fields = [
-        'frequence_id__frequence_id__nom', 'frequence_id__periode'
+        'indicateur_id__libelle'
     ]
     readonly_fields = [
         'uuid', 'created_at', 'updated_at'
     ]
-    ordering = ['frequence_id', '-created_at']
+    ordering = ['indicateur_id', '-created_at']
     
     fieldsets = (
         ('Informations générales', {
-            'fields': ('uuid', 'frequence_id')
+            'fields': ('uuid', 'indicateur_id')
         }),
         ('Cible', {
             'fields': ('condition', 'valeur')
@@ -328,7 +328,7 @@ class CibleAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('frequence_id__frequence_id')
+        return super().get_queryset(request).select_related('indicateur_id')
 
 
 @admin.register(SourceDonnees)
@@ -339,10 +339,10 @@ class SourceDonneesAdmin(admin.ModelAdmin):
         'nom', 'methode_id', 'medias_count', 'created_at', 'updated_at'
     ]
     list_filter = [
-        'methode_id__frequence_id__frequence_id', 'methode_id__condition', 'created_at', 'updated_at'
+        'methode_id__condition', 'created_at', 'updated_at'
     ]
     search_fields = [
-        'nom', 'methode_id__frequence_id__frequence_id__nom'
+        'nom'
     ]
     readonly_fields = [
         'uuid', 'created_at', 'updated_at'
@@ -361,7 +361,7 @@ class SourceDonneesAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('methode_id__frequence_id__frequence_id')
+        return super().get_queryset(request).select_related('methode_id__frequence_id')
     
     def medias_count(self, obj):
         """Afficher le nombre de médias associés"""
@@ -377,7 +377,7 @@ class MediaSourceAdmin(admin.ModelAdmin):
         'source_id', 'url', 'type_detected', 'url_valid', 'created_at', 'updated_at'
     ]
     list_filter = [
-        'source_id__methode_id__frequence_id__frequence_id', 'created_at', 'updated_at'
+        'created_at', 'updated_at'
     ]
     search_fields = [
         'source_id__nom', 'url'
@@ -402,7 +402,7 @@ class MediaSourceAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('source_id__methode_id__frequence_id__frequence_id')
+        return super().get_queryset(request).select_related('source_id__methode_id__frequence_id')
     
     def type_detected(self, obj):
         """Afficher le type de média détecté"""
