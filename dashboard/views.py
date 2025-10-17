@@ -11,7 +11,8 @@ from .models import Objectives, Indicateur
 from .serializers import (
     ObjectivesSerializer, ObjectivesCreateSerializer, ObjectivesUpdateSerializer,
     IndicateurSerializer, IndicateurCreateSerializer, IndicateurUpdateSerializer,
-    CibleSerializer, CibleCreateSerializer, CibleUpdateSerializer
+    CibleSerializer, CibleCreateSerializer, CibleUpdateSerializer,
+    PeriodiciteSerializer, PeriodiciteCreateSerializer, PeriodiciteUpdateSerializer
 )
 import logging
 
@@ -207,6 +208,37 @@ def dashboard_stats(request):
         month_ago = today - timedelta(days=30)
         objectives_this_month = Objectives.objects.filter(created_at__date__gte=month_ago).count()
         
+        # Calculer les pourcentages de cibles atteintes et non atteintes
+        from parametre.models import Cible, Periodicite
+        from django.db.models import Q, Count, Case, When, DecimalField, F
+        
+        # Récupérer toutes les cibles avec leurs indicateurs
+        cibles_with_periodicites = Cible.objects.select_related('indicateur_id').prefetch_related(
+            'indicateur_id__periodicites'
+        ).all()
+        
+        total_cibles = cibles_with_periodicites.count()
+        cibles_atteintes = 0
+        cibles_non_atteintes = 0
+        
+        # Pour chaque cible, vérifier si elle est atteinte en comparant avec les périodicités
+        for cible in cibles_with_periodicites:
+            # Récupérer la dernière périodicité pour cet indicateur
+            derniere_periodicite = Periodicite.objects.filter(
+                indicateur_id=cible.indicateur_id
+            ).order_by('-created_at').first()
+            
+            if derniere_periodicite and derniere_periodicite.taux is not None:
+                # Utiliser la méthode is_objectif_atteint pour vérifier si la cible est atteinte
+                if cible.is_objectif_atteint(float(derniere_periodicite.taux)):
+                    cibles_atteintes += 1
+                else:
+                    cibles_non_atteintes += 1
+        
+        # Calculer les pourcentages
+        pourcentage_atteintes = (cibles_atteintes / total_cibles * 100) if total_cibles > 0 else 0
+        pourcentage_non_atteintes = (cibles_non_atteintes / total_cibles * 100) if total_cibles > 0 else 0
+        
         stats = {
             'total_objectives': total_objectives,
             'total_frequences': total_frequences,
@@ -214,6 +246,11 @@ def dashboard_stats(request):
             'objectives_today': objectives_today,
             'objectives_this_week': objectives_this_week,
             'objectives_this_month': objectives_this_month,
+            'total_cibles': total_cibles,
+            'cibles_atteintes': cibles_atteintes,
+            'cibles_non_atteintes': cibles_non_atteintes,
+            'pourcentage_atteintes': round(pourcentage_atteintes, 2),
+            'pourcentage_non_atteintes': round(pourcentage_non_atteintes, 2),
         }
         
         return Response({
@@ -621,4 +658,191 @@ def cibles_by_indicateur(request, indicateur_uuid):
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des cibles de l\'indicateur'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== PERIODICITES ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def periodicites_list(request):
+    """Liste toutes les périodicités"""
+    try:
+        from parametre.models import Periodicite
+        periodicites = Periodicite.objects.all().order_by('indicateur_id', 'periode')
+        serializer = PeriodiciteSerializer(periodicites, many=True)
+
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': periodicites.count()
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des périodicités: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des périodicités'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def periodicites_detail(request, uuid):
+    """Détail d'une périodicité"""
+    try:
+        from parametre.models import Periodicite
+        periodicite = Periodicite.objects.get(uuid=uuid)
+        serializer = PeriodiciteSerializer(periodicite)
+
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Periodicite.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Périodicité non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de la périodicité {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération de la périodicité'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def periodicites_create(request):
+    """Créer une nouvelle périodicité"""
+    try:
+        serializer = PeriodiciteCreateSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            periodicite = serializer.save()
+            response_serializer = PeriodiciteSerializer(periodicite)
+            
+            return Response({
+                'success': True,
+                'message': 'Périodicité créée avec succès',
+                'data': response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la périodicité: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la création de la périodicité'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def periodicites_update(request, uuid):
+    """Mettre à jour une périodicité"""
+    try:
+        from parametre.models import Periodicite
+        periodicite = Periodicite.objects.get(uuid=uuid)
+        serializer = PeriodiciteUpdateSerializer(periodicite, data=request.data)
+        
+        if serializer.is_valid():
+            periodicite = serializer.save()
+            response_serializer = PeriodiciteSerializer(periodicite)
+            
+            return Response({
+                'success': True,
+                'message': 'Périodicité mise à jour avec succès',
+                'data': response_serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Periodicite.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Périodicité non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la périodicité {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la mise à jour de la périodicité'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def periodicites_delete(request, uuid):
+    """Supprimer une périodicité"""
+    try:
+        from parametre.models import Periodicite
+        periodicite = Periodicite.objects.get(uuid=uuid)
+        periodicite.delete()
+        
+        return Response({
+            'success': True,
+            'message': 'Périodicité supprimée avec succès'
+        }, status=status.HTTP_200_OK)
+        
+    except Periodicite.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Périodicité non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la périodicité {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la suppression de la périodicité'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def periodicites_by_indicateur(request, indicateur_uuid):
+    """Récupérer les périodicités d'un indicateur spécifique"""
+    try:
+        from parametre.models import Periodicite
+        from .models import Indicateur
+
+        # Récupérer l'indicateur
+        indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
+
+        # Récupérer les périodicités liées à l'indicateur
+        periodicites = Periodicite.objects.filter(indicateur_id=indicateur).order_by('periode')
+        serializer = PeriodiciteSerializer(periodicites, many=True)
+
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': periodicites.count(),
+            'indicateur': {
+                'uuid': str(indicateur.uuid),
+                'libelle': indicateur.libelle,
+                'frequence_nom': indicateur.frequence_id.nom
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Indicateur.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Indicateur non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des périodicités de l'indicateur {indicateur_uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des périodicités de l\'indicateur'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
