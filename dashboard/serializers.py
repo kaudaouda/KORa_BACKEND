@@ -3,7 +3,7 @@ Serializers pour l'application Dashboard
 """
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Objectives, Indicateur
+from .models import Objectives, Indicateur, Observation
 from parametre.models import Cible, Periodicite, Frequence
 
 
@@ -354,3 +354,67 @@ class CibleUpdateSerializer(serializers.ModelSerializer):
         if value < 0:
             raise serializers.ValidationError("La valeur de la cible ne peut pas être négative")
         return value
+
+
+# ==================== OBSERVATIONS ====================
+
+class ObservationSerializer(serializers.ModelSerializer):
+    """Serializer pour les observations"""
+    createur_nom = serializers.SerializerMethodField()
+    indicateur_libelle = serializers.SerializerMethodField()
+    indicateur_number = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Observation
+        fields = [
+            'uuid', 'libelle', 'indicateur_id', 'indicateur_libelle', 
+            'indicateur_number', 'cree_par', 'createur_nom', 
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def get_createur_nom(self, obj):
+        """Retourner le nom du créateur"""
+        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+    
+    def get_indicateur_libelle(self, obj):
+        """Retourner le libellé de l'indicateur"""
+        return obj.indicateur_id.libelle
+    
+    def get_indicateur_number(self, obj):
+        """Retourner le numéro de l'objectif associé"""
+        return obj.indicateur_id.objective_id.number
+
+
+class ObservationCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour la création d'observations"""
+    
+    class Meta:
+        model = Observation
+        fields = ['libelle', 'indicateur_id', 'cree_par']
+    
+    def validate_libelle(self, value):
+        """Valider le libellé de l'observation"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Le libellé de l'observation ne peut pas être vide")
+        return value.strip()
+    
+    def validate_indicateur_id(self, value):
+        """Valider que l'indicateur n'a pas déjà une observation"""
+        if Observation.objects.filter(indicateur_id=value).exists():
+            raise serializers.ValidationError("Cet indicateur a déjà une observation")
+        return value
+
+
+class ObservationUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour d'observations"""
+    
+    class Meta:
+        model = Observation
+        fields = ['libelle']
+    
+    def validate_libelle(self, value):
+        """Valider le libellé de l'observation"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Le libellé de l'observation ne peut pas être vide")
+        return value.strip()

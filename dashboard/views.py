@@ -7,12 +7,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.http import JsonResponse
 from django.utils import timezone
-from .models import Objectives, Indicateur
+from .models import Objectives, Indicateur, Observation
 from .serializers import (
     ObjectivesSerializer, ObjectivesCreateSerializer, ObjectivesUpdateSerializer,
     IndicateurSerializer, IndicateurCreateSerializer, IndicateurUpdateSerializer,
     CibleSerializer, CibleCreateSerializer, CibleUpdateSerializer,
-    PeriodiciteSerializer, PeriodiciteCreateSerializer, PeriodiciteUpdateSerializer
+    PeriodiciteSerializer, PeriodiciteCreateSerializer, PeriodiciteUpdateSerializer,
+    ObservationSerializer, ObservationCreateSerializer, ObservationUpdateSerializer
 )
 import logging
 
@@ -845,4 +846,184 @@ def periodicites_by_indicateur(request, indicateur_uuid):
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des périodicités de l\'indicateur'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== OBSERVATIONS ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def observations_list(request):
+    """Liste toutes les observations"""
+    try:
+        observations = Observation.objects.select_related(
+            'indicateur_id', 'indicateur_id__objective_id', 'cree_par'
+        ).all().order_by('indicateur_id__objective_id', 'created_at')
+        serializer = ObservationSerializer(observations, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': observations.count()
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des observations: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des observations'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def observations_create(request):
+    """Créer une nouvelle observation"""
+    try:
+        # Ajouter l'utilisateur connecté comme créateur
+        data = request.data.copy()
+        data['cree_par'] = request.user.id
+        
+        serializer = ObservationCreateSerializer(data=data)
+        
+        if serializer.is_valid():
+            observation = serializer.save()
+            response_serializer = ObservationSerializer(observation)
+            
+            return Response({
+                'success': True,
+                'data': response_serializer.data,
+                'message': 'Observation créée avec succès'
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'observation: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la création de l\'observation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def observations_detail(request, uuid):
+    """Détail d'une observation"""
+    try:
+        observation = Observation.objects.select_related(
+            'indicateur_id', 'indicateur_id__objective_id', 'cree_par'
+        ).get(uuid=uuid)
+        serializer = ObservationSerializer(observation)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Observation.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Observation non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de l'observation {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération de l\'observation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def observations_update(request, uuid):
+    """Mettre à jour une observation"""
+    try:
+        observation = Observation.objects.get(uuid=uuid)
+        serializer = ObservationUpdateSerializer(observation, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            observation = serializer.save()
+            response_serializer = ObservationSerializer(observation)
+            
+            return Response({
+                'success': True,
+                'data': response_serializer.data,
+                'message': 'Observation mise à jour avec succès'
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Observation.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Observation non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de l'observation {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la mise à jour de l\'observation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def observations_delete(request, uuid):
+    """Supprimer une observation"""
+    try:
+        observation = Observation.objects.get(uuid=uuid)
+        observation.delete()
+        
+        return Response({
+            'success': True,
+            'message': 'Observation supprimée avec succès'
+        }, status=status.HTTP_200_OK)
+        
+    except Observation.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Observation non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de l'observation {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la suppression de l\'observation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def observations_by_indicateur(request, indicateur_uuid):
+    """Récupérer l'observation d'un indicateur"""
+    try:
+        observation = Observation.objects.select_related(
+            'indicateur_id', 'indicateur_id__objective_id', 'cree_par'
+        ).get(indicateur_id=indicateur_uuid)
+        serializer = ObservationSerializer(observation)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Observation.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Aucune observation trouvée pour cet indicateur'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de l'observation de l'indicateur {indicateur_uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération de l\'observation de l\'indicateur'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
