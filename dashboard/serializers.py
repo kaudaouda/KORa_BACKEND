@@ -81,14 +81,20 @@ class IndicateurSerializer(serializers.ModelSerializer):
     objective_number = serializers.CharField(source='objective_id.number', read_only=True)
     objective_libelle = serializers.CharField(source='objective_id.libelle', read_only=True)
     frequence_nom = serializers.CharField(source='frequence_id.nom', read_only=True)
+    allowed_periodes = serializers.SerializerMethodField()
     
     class Meta:
         model = Indicateur
         fields = [
             'uuid', 'libelle', 'objective_id', 'objective_number', 'objective_libelle',
-            'frequence_id', 'frequence_nom', 'created_at', 'updated_at'
+            'frequence_id', 'frequence_nom', 'allowed_periodes', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def get_allowed_periodes(self, obj):
+        """Retourner les périodes autorisées pour la fréquence de cet indicateur"""
+        from parametre.models import Periodicite
+        return [p[0] for p in Periodicite.get_periodes_for_frequence(obj.frequence_id.nom)]
 
 
 class IndicateurCreateSerializer(serializers.ModelSerializer):
@@ -171,6 +177,107 @@ class IndicateurUpdateSerializer(serializers.ModelSerializer):
             return value
         else:
             raise serializers.ValidationError("Format de fréquence invalide")
+
+
+# ==================== PERIODICITES ====================
+
+class PeriodiciteSerializer(serializers.ModelSerializer):
+    """Serializer pour les périodicités"""
+    indicateur_libelle = serializers.CharField(source='indicateur_id.libelle', read_only=True)
+    periode_display = serializers.CharField(source='get_periode_display', read_only=True)
+    
+    class Meta:
+        model = Periodicite
+        fields = [
+            'uuid', 'indicateur_id', 'indicateur_libelle', 'periode', 'periode_display',
+            'a_realiser', 'realiser', 'taux', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['uuid', 'taux', 'created_at', 'updated_at']
+
+
+class PeriodiciteCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour la création de périodicités"""
+    
+    class Meta:
+        model = Periodicite
+        fields = ['indicateur_id', 'periode', 'a_realiser', 'realiser']
+    
+    def validate(self, data):
+        """Valider les données"""
+        indicateur = data.get('indicateur_id')
+        periode = data.get('periode')
+        
+        # Vérifier que la période est autorisée pour la fréquence de l'indicateur
+        if indicateur and periode:
+            frequence_nom = indicateur.frequence_id.nom
+            if not Periodicite.is_periode_allowed_for_frequence(frequence_nom, periode):
+                # Convertir les codes en libellés complets
+                periode_labels = {
+                    'T1': '1er Trimestre',
+                    'T2': '2ème Trimestre', 
+                    'T3': '3ème Trimestre',
+                    'T4': '4ème Trimestre',
+                    'S1': '1er Semestre',
+                    'S2': '2ème Semestre',
+                    'A1': 'Année'
+                }
+                
+                periode_label = periode_labels.get(periode, periode)
+                allowed_periodes_labels = [
+                    periode_labels.get(p[0], p[0]) for p in Periodicite.get_periodes_for_frequence(frequence_nom)
+                ]
+                
+                raise serializers.ValidationError(
+                    f"La période {periode_label} n'est pas autorisée pour la fréquence \"{frequence_nom}\". "
+                    f"Périodes autorisées: {', '.join(allowed_periodes_labels)}"
+                )
+        
+        # Vérifier qu'il n'existe pas déjà une périodicité pour cet indicateur et cette période
+        if Periodicite.objects.filter(indicateur_id=indicateur, periode=periode).exists():
+            # Convertir le code en libellé complet
+            periode_labels = {
+                'T1': '1er Trimestre',
+                'T2': '2ème Trimestre', 
+                'T3': '3ème Trimestre',
+                'T4': '4ème Trimestre',
+                'S1': '1er Semestre',
+                'S2': '2ème Semestre',
+                'A1': 'Année'
+            }
+            periode_label = periode_labels.get(periode, periode)
+            raise serializers.ValidationError(
+                f"Une périodicité existe déjà pour cet indicateur en {periode_label}"
+            )
+        
+        # Valider que a_realiser est positif
+        if data.get('a_realiser', 0) < 0:
+            raise serializers.ValidationError("La valeur 'à réaliser' ne peut pas être négative")
+        
+        # Valider que realiser est positif
+        if data.get('realiser', 0) < 0:
+            raise serializers.ValidationError("La valeur 'réalisé' ne peut pas être négative")
+        
+        return data
+
+
+class PeriodiciteUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour de périodicités"""
+    
+    class Meta:
+        model = Periodicite
+        fields = ['a_realiser', 'realiser']
+    
+    def validate_a_realiser(self, value):
+        """Valider la valeur à réaliser"""
+        if value < 0:
+            raise serializers.ValidationError("La valeur 'à réaliser' ne peut pas être négative")
+        return value
+    
+    def validate_realiser(self, value):
+        """Valider la valeur réalisée"""
+        if value < 0:
+            raise serializers.ValidationError("La valeur 'réalisé' ne peut pas être négative")
+        return value
 
 
 # ==================== CIBLES ====================
