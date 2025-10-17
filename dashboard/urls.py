@@ -36,6 +36,14 @@ urlpatterns = [
     path('periodicites/<uuid:uuid>/delete/', views.periodicites_delete, name='periodicites_delete'),
     path('periodicites/indicateur/<uuid:indicateur_uuid>/', views.periodicites_by_indicateur, name='periodicites_by_indicateur'),
     
+    # ==================== API OBSERVATIONS ====================
+    path('observations/', views.observations_list, name='observations_list'),
+    path('observations/create/', views.observations_create, name='observations_create'),
+    path('observations/<uuid:uuid>/', views.observations_detail, name='observations_detail'),
+    path('observations/<uuid:uuid>/update/', views.observations_update, name='observations_update'),
+    path('observations/<uuid:uuid>/delete/', views.observations_delete, name='observations_delete'),
+    path('observations/indicateur/<uuid:indicateur_uuid>/', views.observations_by_indicateur, name='observations_by_indicateur'),
+    
     # ==================== STATISTIQUES ====================
     path('stats/', views.dashboard_stats, name='dashboard_stats'),
 ]

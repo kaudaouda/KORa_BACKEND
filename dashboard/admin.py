@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Objectives, Indicateur
+from .models import Objectives, Indicateur, Observation
 
 
 @admin.register(Objectives)
@@ -79,3 +79,51 @@ class IndicateurAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
         return super().get_queryset(request).select_related('objective_id', 'frequence_id')
+
+
+@admin.register(Observation)
+class ObservationAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les observations"""
+    
+    list_display = [
+        'indicateur_id', 'libelle', 'cree_par', 'created_at', 'updated_at'
+    ]
+    list_filter = [
+        'created_at', 'updated_at', 'cree_par', 'indicateur_id__objective_id'
+    ]
+    search_fields = [
+        'libelle', 'indicateur_id__libelle', 'indicateur_id__objective_id__number',
+        'cree_par__username', 'cree_par__first_name', 'cree_par__last_name'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['indicateur_id__objective_id', 'created_at']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'indicateur_id', 'libelle')
+        }),
+        ('Métadonnées', {
+            'fields': ('cree_par', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Rendre certains champs en lecture seule selon le contexte"""
+        if obj:  # Modification d'un objet existant
+            return self.readonly_fields + ['cree_par', 'indicateur_id']
+        return self.readonly_fields
+    
+    def save_model(self, request, obj, form, change):
+        """Sauvegarder le modèle avec l'utilisateur connecté"""
+        if not change:  # Création d'un nouvel objet
+            obj.cree_par = request.user
+        super().save_model(request, obj, form, change)
+    
+    def get_queryset(self, request):
+        """Optimiser les requêtes avec select_related"""
+        return super().get_queryset(request).select_related(
+            'indicateur_id', 'indicateur_id__objective_id', 'cree_par'
+        )

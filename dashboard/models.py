@@ -91,3 +91,36 @@ class Indicateur(models.Model):
 
     def __str__(self):
         return f"{self.objective_id.number} - {self.libelle}"
+
+
+class Observation(models.Model):
+    """
+    Modèle pour les observations des indicateurs
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    libelle = models.TextField(
+        help_text="Libellé de l'observation"
+    )
+    indicateur_id = models.OneToOneField(
+        Indicateur,
+        on_delete=models.CASCADE,
+        related_name='observation',
+        help_text="Indicateur associé à cette observation"
+    )
+    cree_par = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='observations_creees',
+        help_text="Utilisateur qui a créé l'observation"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'observation'
+        verbose_name = 'Observation'
+        verbose_name_plural = 'Observations'
+        ordering = ['indicateur_id', 'created_at']
+
+    def __str__(self):
+        return f"Observation pour {self.indicateur_id}"
