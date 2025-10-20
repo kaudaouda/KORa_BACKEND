@@ -363,11 +363,12 @@ class ObservationSerializer(serializers.ModelSerializer):
     createur_nom = serializers.SerializerMethodField()
     indicateur_libelle = serializers.SerializerMethodField()
     indicateur_number = serializers.SerializerMethodField()
+    indicateur_uuid = serializers.SerializerMethodField()
     
     class Meta:
         model = Observation
         fields = [
-            'uuid', 'libelle', 'indicateur_id', 'indicateur_libelle', 
+            'uuid', 'libelle', 'indicateur_id', 'indicateur_uuid', 'indicateur_libelle', 
             'indicateur_number', 'cree_par', 'createur_nom', 
             'created_at', 'updated_at'
         ]
@@ -376,6 +377,10 @@ class ObservationSerializer(serializers.ModelSerializer):
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
         return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+    
+    def get_indicateur_uuid(self, obj):
+        """Retourner l'UUID de l'indicateur"""
+        return obj.indicateur_id.uuid
     
     def get_indicateur_libelle(self, obj):
         """Retourner le libellé de l'indicateur"""
