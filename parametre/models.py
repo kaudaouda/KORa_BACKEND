@@ -620,11 +620,11 @@ class Periodicite(models.Model):
     ]
     
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    frequence_id = models.ForeignKey(
-        Frequence,
+    indicateur_id = models.ForeignKey(
+        'dashboard.Indicateur',
         on_delete=models.CASCADE,
         related_name='periodicites',
-        help_text="Fréquence associée à cette périodicité"
+        help_text="Indicateur associé à cette périodicité"
     )
     periode = models.CharField(
         max_length=3,
@@ -656,11 +656,12 @@ class Periodicite(models.Model):
         db_table = 'periodicite'
         verbose_name = 'Périodicité'
         verbose_name_plural = 'Périodicités'
-        ordering = ['frequence_id', 'created_at']
+        ordering = ['indicateur_id', 'periode', 'created_at']
+        unique_together = ['indicateur_id', 'periode']  # Un indicateur ne peut avoir qu'une seule entrée par période
 
     def __str__(self):
         periode_display = dict(self.PERIODE_CHOICES).get(self.periode, self.periode)
-        return f"{self.frequence_id.nom} - {periode_display} - {self.taux}% ({self.realiser}/{self.a_realiser})"
+        return f"{self.indicateur_id.libelle[:30]}... - {periode_display} - {self.taux}% ({self.realiser}/{self.a_realiser})"
 
     def save(self, *args, **kwargs):
         """
@@ -680,8 +681,8 @@ class Periodicite(models.Model):
         # Périodes prédéfinies pour les fréquences courantes
         periodes_predefinies = {
             'Trimestrielle': [('T1', '1er Trimestre'), ('T2', '2ème Trimestre'), ('T3', '3ème Trimestre'), ('T4', '4ème Trimestre')],
-            'Semestrielle': [('S1', '1er Semestre'), ('S2', '2ème Semestre')],
-            'Annuelle': [('A1', 'Année')],
+            'Semestrielle': [('T2', '2ème Trimestre'), ('T4', '4ème Trimestre')],  # Seulement T2 et T4
+            'Annuelle': [('T4', '4ème Trimestre')],  # Seulement T4
             'Mensuelle': [('M1', 'Janvier'), ('M2', 'Février'), ('M3', 'Mars'), ('M4', 'Avril'), ('M5', 'Mai'), ('M6', 'Juin'), ('M7', 'Juillet'), ('M8', 'Août'), ('M9', 'Septembre'), ('M10', 'Octobre'), ('M11', 'Novembre'), ('M12', 'Décembre')],
         }
         
@@ -691,6 +692,14 @@ class Periodicite(models.Model):
         
         # Pour les fréquences personnalisées, retourner une période générique
         return [('P1', f'Période {frequence_nom}')]
+
+    @classmethod
+    def is_periode_allowed_for_frequence(cls, frequence_nom, periode):
+        """
+        Vérifie si une période est autorisée pour une fréquence donnée
+        """
+        allowed_periodes = cls.get_periodes_for_frequence(frequence_nom)
+        return periode in [p[0] for p in allowed_periodes]
 
     @classmethod
     def get_periodes_choices_for_frequence(cls, frequence_nom):
@@ -760,103 +769,4 @@ class Cible(models.Model):
         elif self.condition == '≠':
             return valeur_reelle != self.valeur
         else:
-            return False
-
-
-class SourceDonnees(models.Model):
-    """
-    Modèle pour les sources des données
-    """
-    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    nom = models.CharField(
-        max_length=200,
-        help_text="Nom de la source (ex: Rapport annuel ANAC 2025)"
-    )
-    methode_id = models.ForeignKey(
-        Cible,
-        on_delete=models.CASCADE,
-        related_name='sources_donnees',
-        help_text="Méthode de cible associée à cette source"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'source_donnees'
-        verbose_name = 'Source des Données'
-        verbose_name_plural = 'Sources des Données'
-        ordering = ['nom', 'created_at']
-
-    def __str__(self):
-        return f"{self.nom} - {self.methode_id}"
-
-
-class MediaSource(models.Model):
-    """
-    Modèle pour les médias associés aux sources
-    
-    Types de médias acceptés :
-    - Images : .jpg, .jpeg, .png, .gif, .webp, .svg
-    - Vidéos : .mp4, .avi, .mov, .wmv, .flv, .webm
-    - Documents : .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .txt
-    - Liens : URLs externes vers des ressources web
-    """
-    
-    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    source_id = models.ForeignKey(
-        SourceDonnees,
-        on_delete=models.CASCADE,
-        related_name='medias',
-        help_text="Source associée à ce média"
-    )
-    url = models.URLField(
-        max_length=500,
-        help_text="URL du média (Images, Vidéos, Documents, Liens)"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'media_source'
-        verbose_name = 'Média Source'
-        verbose_name_plural = 'Médias Sources'
-        ordering = ['source_id', 'created_at']
-
-    def __str__(self):
-        return f"{self.source_id.nom} - {self.url}"
-
-    def get_type_from_url(self):
-        """
-        Détermine le type de média à partir de l'URL
-        """
-        url_lower = self.url.lower()
-        
-        # Images
-        image_extensions = ['.jpg', '.jpeg', '.png']
-        if any(ext in url_lower for ext in image_extensions):
-            return 'Image'
-        
-        # Vidéos
-        video_extensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
-        if any(ext in url_lower for ext in video_extensions):
-            return 'Vidéo'
-        
-        # Documents
-        doc_extensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt']
-        if any(ext in url_lower for ext in doc_extensions):
-            return 'Document'
-        
-        # Par défaut, considérer comme un lien
-        return 'Lien'
-
-
-    def is_valid_url(self):
-        """
-        Vérifie si l'URL est valide et accessible
-        """
-        import requests
-        try:
-            response = requests.head(self.url, timeout=5)
-            return response.status_code < 400
-        except:
             return False
