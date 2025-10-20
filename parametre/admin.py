@@ -4,8 +4,7 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, EmailSettings, ReminderEmailLog,
-    DysfonctionnementRecommandation, Frequence, Periodicite, Cible,
-    SourceDonnees, MediaSource
+    DysfonctionnementRecommandation, Frequence, Periodicite, Cible
 )
 
 
@@ -264,22 +263,22 @@ class PeriodiciteAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les périodicités"""
     
     list_display = [
-        'frequence_id', 'periode', 'a_realiser', 'realiser', 'taux', 'created_at', 'updated_at'
+        'indicateur_id', 'periode', 'a_realiser', 'realiser', 'taux', 'created_at', 'updated_at'
     ]
     list_filter = [
-        'frequence_id', 'periode', 'created_at', 'updated_at'
+        'periode', 'indicateur_id__objective_id', 'created_at', 'updated_at'
     ]
     search_fields = [
-        'frequence_id__nom'
+        'indicateur_id__libelle', 'indicateur_id__objective_id__libelle'
     ]
     readonly_fields = [
         'uuid', 'taux', 'created_at', 'updated_at'
     ]
-    ordering = ['frequence_id', 'periode', '-created_at']
+    ordering = ['indicateur_id', 'periode', '-created_at']
     
     fieldsets = (
         ('Informations générales', {
-            'fields': ('uuid', 'frequence_id', 'periode')
+            'fields': ('uuid', 'indicateur_id', 'periode')
         }),
         ('Mesures', {
             'fields': ('a_realiser', 'realiser', 'taux')
@@ -292,7 +291,7 @@ class PeriodiciteAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('indicateur_id')
+        return super().get_queryset(request).select_related('indicateur_id', 'indicateur_id__objective_id')
 
 
 @admin.register(Cible)
@@ -329,87 +328,3 @@ class CibleAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
         return super().get_queryset(request).select_related('indicateur_id')
-
-
-@admin.register(SourceDonnees)
-class SourceDonneesAdmin(admin.ModelAdmin):
-    """Configuration de l'interface d'administration pour les sources de données"""
-    
-    list_display = [
-        'nom', 'methode_id', 'medias_count', 'created_at', 'updated_at'
-    ]
-    list_filter = [
-        'methode_id__condition', 'created_at', 'updated_at'
-    ]
-    search_fields = [
-        'nom'
-    ]
-    readonly_fields = [
-        'uuid', 'created_at', 'updated_at'
-    ]
-    ordering = ['nom', '-created_at']
-    
-    fieldsets = (
-        ('Informations générales', {
-            'fields': ('uuid', 'nom', 'methode_id')
-        }),
-        ('Métadonnées', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def get_queryset(self, request):
-        """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('methode_id__frequence_id')
-    
-    def medias_count(self, obj):
-        """Afficher le nombre de médias associés"""
-        return obj.medias.count()
-    medias_count.short_description = 'Nb Médias'
-
-
-@admin.register(MediaSource)
-class MediaSourceAdmin(admin.ModelAdmin):
-    """Configuration de l'interface d'administration pour les médias"""
-    
-    list_display = [
-        'source_id', 'url', 'type_detected', 'url_valid', 'created_at', 'updated_at'
-    ]
-    list_filter = [
-        'created_at', 'updated_at'
-    ]
-    search_fields = [
-        'source_id__nom', 'url'
-    ]
-    readonly_fields = [
-        'uuid', 'type_detected', 'url_valid', 'created_at', 'updated_at'
-    ]
-    ordering = ['source_id', '-created_at']
-    
-    fieldsets = (
-        ('Informations générales', {
-            'fields': ('uuid', 'source_id')
-        }),
-        ('Média', {
-            'fields': ('url', 'type_detected', 'url_valid')
-        }),
-        ('Métadonnées', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def get_queryset(self, request):
-        """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('source_id__methode_id__frequence_id')
-    
-    def type_detected(self, obj):
-        """Afficher le type de média détecté"""
-        return obj.get_type_from_url()
-    type_detected.short_description = 'Type Détecté'
-    
-    def url_valid(self, obj):
-        """Afficher si l'URL est valide"""
-        return "✅ Valide" if obj.is_valid_url() else "❌ Invalide"
-    url_valid.short_description = 'URL Valide'

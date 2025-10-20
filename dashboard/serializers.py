@@ -3,7 +3,7 @@ Serializers pour l'application Dashboard
 """
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Objectives, Indicateur
+from .models import Objectives, Indicateur, Observation
 from parametre.models import Cible, Periodicite, Frequence
 
 
@@ -81,14 +81,20 @@ class IndicateurSerializer(serializers.ModelSerializer):
     objective_number = serializers.CharField(source='objective_id.number', read_only=True)
     objective_libelle = serializers.CharField(source='objective_id.libelle', read_only=True)
     frequence_nom = serializers.CharField(source='frequence_id.nom', read_only=True)
+    allowed_periodes = serializers.SerializerMethodField()
     
     class Meta:
         model = Indicateur
         fields = [
             'uuid', 'libelle', 'objective_id', 'objective_number', 'objective_libelle',
-            'frequence_id', 'frequence_nom', 'created_at', 'updated_at'
+            'frequence_id', 'frequence_nom', 'allowed_periodes', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def get_allowed_periodes(self, obj):
+        """Retourner les périodes autorisées pour la fréquence de cet indicateur"""
+        from parametre.models import Periodicite
+        return [p[0] for p in Periodicite.get_periodes_for_frequence(obj.frequence_id.nom)]
 
 
 class IndicateurCreateSerializer(serializers.ModelSerializer):
@@ -173,6 +179,107 @@ class IndicateurUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Format de fréquence invalide")
 
 
+# ==================== PERIODICITES ====================
+
+class PeriodiciteSerializer(serializers.ModelSerializer):
+    """Serializer pour les périodicités"""
+    indicateur_libelle = serializers.CharField(source='indicateur_id.libelle', read_only=True)
+    periode_display = serializers.CharField(source='get_periode_display', read_only=True)
+    
+    class Meta:
+        model = Periodicite
+        fields = [
+            'uuid', 'indicateur_id', 'indicateur_libelle', 'periode', 'periode_display',
+            'a_realiser', 'realiser', 'taux', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['uuid', 'taux', 'created_at', 'updated_at']
+
+
+class PeriodiciteCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour la création de périodicités"""
+    
+    class Meta:
+        model = Periodicite
+        fields = ['indicateur_id', 'periode', 'a_realiser', 'realiser']
+    
+    def validate(self, data):
+        """Valider les données"""
+        indicateur = data.get('indicateur_id')
+        periode = data.get('periode')
+        
+        # Vérifier que la période est autorisée pour la fréquence de l'indicateur
+        if indicateur and periode:
+            frequence_nom = indicateur.frequence_id.nom
+            if not Periodicite.is_periode_allowed_for_frequence(frequence_nom, periode):
+                # Convertir les codes en libellés complets
+                periode_labels = {
+                    'T1': '1er Trimestre',
+                    'T2': '2ème Trimestre', 
+                    'T3': '3ème Trimestre',
+                    'T4': '4ème Trimestre',
+                    'S1': '1er Semestre',
+                    'S2': '2ème Semestre',
+                    'A1': 'Année'
+                }
+                
+                periode_label = periode_labels.get(periode, periode)
+                allowed_periodes_labels = [
+                    periode_labels.get(p[0], p[0]) for p in Periodicite.get_periodes_for_frequence(frequence_nom)
+                ]
+                
+                raise serializers.ValidationError(
+                    f"La période {periode_label} n'est pas autorisée pour la fréquence \"{frequence_nom}\". "
+                    f"Périodes autorisées: {', '.join(allowed_periodes_labels)}"
+                )
+        
+        # Vérifier qu'il n'existe pas déjà une périodicité pour cet indicateur et cette période
+        if Periodicite.objects.filter(indicateur_id=indicateur, periode=periode).exists():
+            # Convertir le code en libellé complet
+            periode_labels = {
+                'T1': '1er Trimestre',
+                'T2': '2ème Trimestre', 
+                'T3': '3ème Trimestre',
+                'T4': '4ème Trimestre',
+                'S1': '1er Semestre',
+                'S2': '2ème Semestre',
+                'A1': 'Année'
+            }
+            periode_label = periode_labels.get(periode, periode)
+            raise serializers.ValidationError(
+                f"Une périodicité existe déjà pour cet indicateur en {periode_label}"
+            )
+        
+        # Valider que a_realiser est positif
+        if data.get('a_realiser', 0) < 0:
+            raise serializers.ValidationError("La valeur 'à réaliser' ne peut pas être négative")
+        
+        # Valider que realiser est positif
+        if data.get('realiser', 0) < 0:
+            raise serializers.ValidationError("La valeur 'réalisé' ne peut pas être négative")
+        
+        return data
+
+
+class PeriodiciteUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour de périodicités"""
+    
+    class Meta:
+        model = Periodicite
+        fields = ['a_realiser', 'realiser']
+    
+    def validate_a_realiser(self, value):
+        """Valider la valeur à réaliser"""
+        if value < 0:
+            raise serializers.ValidationError("La valeur 'à réaliser' ne peut pas être négative")
+        return value
+    
+    def validate_realiser(self, value):
+        """Valider la valeur réalisée"""
+        if value < 0:
+            raise serializers.ValidationError("La valeur 'réalisé' ne peut pas être négative")
+        return value
+
+
 # ==================== CIBLES ====================
 
 class CibleSerializer(serializers.ModelSerializer):
@@ -247,3 +354,72 @@ class CibleUpdateSerializer(serializers.ModelSerializer):
         if value < 0:
             raise serializers.ValidationError("La valeur de la cible ne peut pas être négative")
         return value
+
+
+# ==================== OBSERVATIONS ====================
+
+class ObservationSerializer(serializers.ModelSerializer):
+    """Serializer pour les observations"""
+    createur_nom = serializers.SerializerMethodField()
+    indicateur_libelle = serializers.SerializerMethodField()
+    indicateur_number = serializers.SerializerMethodField()
+    indicateur_uuid = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Observation
+        fields = [
+            'uuid', 'libelle', 'indicateur_id', 'indicateur_uuid', 'indicateur_libelle', 
+            'indicateur_number', 'cree_par', 'createur_nom', 
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def get_createur_nom(self, obj):
+        """Retourner le nom du créateur"""
+        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+    
+    def get_indicateur_uuid(self, obj):
+        """Retourner l'UUID de l'indicateur"""
+        return obj.indicateur_id.uuid
+    
+    def get_indicateur_libelle(self, obj):
+        """Retourner le libellé de l'indicateur"""
+        return obj.indicateur_id.libelle
+    
+    def get_indicateur_number(self, obj):
+        """Retourner le numéro de l'objectif associé"""
+        return obj.indicateur_id.objective_id.number
+
+
+class ObservationCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour la création d'observations"""
+    
+    class Meta:
+        model = Observation
+        fields = ['libelle', 'indicateur_id', 'cree_par']
+    
+    def validate_libelle(self, value):
+        """Valider le libellé de l'observation"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Le libellé de l'observation ne peut pas être vide")
+        return value.strip()
+    
+    def validate_indicateur_id(self, value):
+        """Valider que l'indicateur n'a pas déjà une observation"""
+        if Observation.objects.filter(indicateur_id=value).exists():
+            raise serializers.ValidationError("Cet indicateur a déjà une observation")
+        return value
+
+
+class ObservationUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour d'observations"""
+    
+    class Meta:
+        model = Observation
+        fields = ['libelle']
+    
+    def validate_libelle(self, value):
+        """Valider le libellé de l'observation"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Le libellé de l'observation ne peut pas être vide")
+        return value.strip()

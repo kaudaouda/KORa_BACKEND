@@ -28,6 +28,22 @@ urlpatterns = [
     path('cibles/<uuid:uuid>/delete/', views.cibles_delete, name='cibles_delete'),
     path('cibles/indicateur/<uuid:indicateur_uuid>/', views.cibles_by_indicateur, name='cibles_by_indicateur'),
     
+    # ==================== API PERIODICITES ====================
+    path('periodicites/', views.periodicites_list, name='periodicites_list'),
+    path('periodicites/create/', views.periodicites_create, name='periodicites_create'),
+    path('periodicites/<uuid:uuid>/', views.periodicites_detail, name='periodicites_detail'),
+    path('periodicites/<uuid:uuid>/update/', views.periodicites_update, name='periodicites_update'),
+    path('periodicites/<uuid:uuid>/delete/', views.periodicites_delete, name='periodicites_delete'),
+    path('periodicites/indicateur/<uuid:indicateur_uuid>/', views.periodicites_by_indicateur, name='periodicites_by_indicateur'),
+    
+    # ==================== API OBSERVATIONS ====================
+    path('observations/', views.observations_list, name='observations_list'),
+    path('observations/create/', views.observations_create, name='observations_create'),
+    path('observations/<uuid:uuid>/', views.observations_detail, name='observations_detail'),
+    path('observations/<uuid:uuid>/update/', views.observations_update, name='observations_update'),
+    path('observations/<uuid:uuid>/delete/', views.observations_delete, name='observations_delete'),
+    path('observations/indicateur/<uuid:indicateur_uuid>/', views.observations_by_indicateur, name='observations_by_indicateur'),
+    
     # ==================== STATISTIQUES ====================
     path('stats/', views.dashboard_stats, name='dashboard_stats'),
 ]
