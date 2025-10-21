@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Objectives, Indicateur, Observation
+from .models import Objectives, Indicateur, Observation, TableauBord
 
 
 @admin.register(Objectives)
@@ -22,7 +22,7 @@ class ObjectivesAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Informations générales', {
-            'fields': ('uuid', 'number', 'libelle')
+            'fields': ('uuid', 'number', 'libelle', 'tableau_bord')
         }),
         ('Métadonnées', {
             'fields': ('cree_par', 'created_at', 'updated_at'),
@@ -127,3 +127,27 @@ class ObservationAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related(
             'indicateur_id', 'indicateur_id__objective_id', 'cree_par'
         )
+
+
+@admin.register(TableauBord)
+class TableauBordAdmin(admin.ModelAdmin):
+    """Administration pour Tableau de bord"""
+    list_display = ['annee', 'processus', 'type_tableau', 'initial_ref', 'cree_par', 'created_at']
+    list_filter = ['annee', 'type_tableau', 'processus', 'created_at']
+    search_fields = ['processus__nom', 'processus__numero_processus']
+    readonly_fields = ['uuid', 'created_at', 'updated_at']
+    ordering = ['-annee', 'processus__numero_processus', 'type_tableau']
+    fieldsets = (
+        ('Informations', {
+            'fields': ('uuid', 'annee', 'processus', 'type_tableau', 'initial_ref')
+        }),
+        ('Métadonnées', {
+            'fields': ('cree_par', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.cree_par = request.user
+        super().save_model(request, obj, form, change)
