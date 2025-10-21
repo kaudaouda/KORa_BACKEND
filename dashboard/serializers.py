@@ -3,7 +3,7 @@ Serializers pour l'application Dashboard
 """
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Objectives, Indicateur, Observation
+from .models import Objectives, Indicateur, Observation, TableauBord
 from parametre.models import Cible, Periodicite, Frequence
 
 
@@ -30,11 +30,12 @@ class ObjectivesSerializer(serializers.ModelSerializer):
     """Serializer pour les objectifs"""
     createur_nom = serializers.SerializerMethodField()
     indicateurs_count = serializers.SerializerMethodField()
+    tableau_bord_uuid = serializers.SerializerMethodField()
     
     class Meta:
         model = Objectives
         fields = [
-            'uuid', 'number', 'libelle', 'cree_par', 'createur_nom',
+            'uuid', 'number', 'libelle', 'cree_par', 'createur_nom', 'tableau_bord_uuid',
             'indicateurs_count', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'number', 'created_at', 'updated_at']
@@ -47,31 +48,75 @@ class ObjectivesSerializer(serializers.ModelSerializer):
         """Retourner le nombre d'indicateurs associés"""
         return obj.indicateurs.count()
 
+    def get_tableau_bord_uuid(self, obj):
+        return str(obj.tableau_bord.uuid) if obj.tableau_bord else None
+
 
 class ObjectivesCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création d'objectifs"""
+    tableau_bord = serializers.UUIDField(required=True)
     
     class Meta:
         model = Objectives
-        fields = ['libelle']
+        fields = ['libelle', 'tableau_bord']
     
     def create(self, validated_data):
         """Créer un objectif avec l'utilisateur connecté"""
+        tableau_bord_uuid = validated_data.pop('tableau_bord')
+        try:
+            tb = TableauBord.objects.get(uuid=tableau_bord_uuid)
+            validated_data['tableau_bord'] = tb
+        except TableauBord.DoesNotExist:
+            raise serializers.ValidationError({'tableau_bord': 'Tableau de bord introuvable'})
+        
         validated_data['cree_par'] = self.context['request'].user
-        return super().create(validated_data)
+        
+        # Créer l'objectif
+        try:
+            return super().create(validated_data)
+        except Exception as e:
+            raise serializers.ValidationError({'general': f'Erreur lors de la création: {str(e)}'})
 
 
 class ObjectivesUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour la mise à jour d'objectifs"""
+    tableau_bord = serializers.UUIDField(required=False, allow_null=True)
     
     class Meta:
         model = Objectives
-        fields = ['libelle']
+        fields = ['libelle', 'tableau_bord']
     
     def update(self, instance, validated_data):
         """Mettre à jour un objectif"""
-        # Le numéro et le créateur ne peuvent pas être modifiés
+        tb_uuid = validated_data.pop('tableau_bord', None)
+        if tb_uuid is not None:
+            try:
+                instance.tableau_bord = TableauBord.objects.get(uuid=tb_uuid) if tb_uuid else None
+            except TableauBord.DoesNotExist:
+                raise serializers.ValidationError({'tableau_bord': 'Tableau de bord introuvable'})
         return super().update(instance, validated_data)
+
+
+# ==================== TABLEAUX DE BORD ====================
+
+class TableauBordSerializer(serializers.ModelSerializer):
+    processus_nom = serializers.CharField(source='processus.nom', read_only=True)
+    type_label = serializers.CharField(source='get_type_tableau_display', read_only=True)
+
+    class Meta:
+        model = TableauBord
+        fields = [
+            'uuid', 'annee', 'processus', 'processus_nom',
+            'type_tableau', 'type_label', 'initial_ref',
+            'cree_par', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['uuid', 'initial_ref', 'cree_par', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            validated_data['cree_par'] = request.user
+        return super().create(validated_data)
 
 
 # ==================== INDICATEURS ====================
@@ -80,7 +125,7 @@ class IndicateurSerializer(serializers.ModelSerializer):
     """Serializer pour les indicateurs"""
     objective_number = serializers.CharField(source='objective_id.number', read_only=True)
     objective_libelle = serializers.CharField(source='objective_id.libelle', read_only=True)
-    frequence_nom = serializers.CharField(source='frequence_id.nom', read_only=True)
+    frequence_nom = serializers.SerializerMethodField()
     allowed_periodes = serializers.SerializerMethodField()
     
     class Meta:
@@ -91,8 +136,14 @@ class IndicateurSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
     
+    def get_frequence_nom(self, obj):
+        """Retourner le nom de la fréquence si elle existe"""
+        return obj.frequence_id.nom if obj.frequence_id else None
+    
     def get_allowed_periodes(self, obj):
         """Retourner les périodes autorisées pour la fréquence de cet indicateur"""
+        if not obj.frequence_id:
+            return []
         from parametre.models import Periodicite
         return [p[0] for p in Periodicite.get_periodes_for_frequence(obj.frequence_id.nom)]
 
@@ -102,7 +153,7 @@ class IndicateurCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Indicateur
-        fields = ['libelle', 'objective_id', 'frequence_id']
+        fields = ['libelle', 'objective_id']
     
     def validate_objective_id(self, value):
         """Valider que l'objectif existe"""
@@ -119,23 +170,6 @@ class IndicateurCreateSerializer(serializers.ModelSerializer):
             return value
         else:
             raise serializers.ValidationError("Format d'objectif invalide")
-    
-    def validate_frequence_id(self, value):
-        """Valider que la fréquence existe"""
-        from parametre.models import Frequence
-        # Si value est une string UUID, convertir en objet Frequence
-        if isinstance(value, str):
-            try:
-                frequence = Frequence.objects.get(uuid=value)
-                return frequence
-            except Frequence.DoesNotExist:
-                raise serializers.ValidationError("La fréquence spécifiée n'existe pas")
-        elif hasattr(value, 'uuid'):
-            if not Frequence.objects.filter(uuid=value.uuid).exists():
-                raise serializers.ValidationError("La fréquence spécifiée n'existe pas")
-            return value
-        else:
-            raise serializers.ValidationError("Format de fréquence invalide")
 
 
 class IndicateurUpdateSerializer(serializers.ModelSerializer):
@@ -162,8 +196,11 @@ class IndicateurUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Format d'objectif invalide")
     
     def validate_frequence_id(self, value):
-        """Valider que la fréquence existe"""
+        """Valider que la fréquence existe (optionnel)"""
         from parametre.models import Frequence
+        # Si value est vide ou None, c'est OK
+        if not value:
+            return None
         # Si value est une string UUID, convertir en objet Frequence
         if isinstance(value, str):
             try:
