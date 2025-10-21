@@ -7,17 +7,151 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.http import JsonResponse
 from django.utils import timezone
-from .models import Objectives, Indicateur, Observation
+from .models import Objectives, Indicateur, Observation, TableauBord
 from .serializers import (
     ObjectivesSerializer, ObjectivesCreateSerializer, ObjectivesUpdateSerializer,
     IndicateurSerializer, IndicateurCreateSerializer, IndicateurUpdateSerializer,
     CibleSerializer, CibleCreateSerializer, CibleUpdateSerializer,
     PeriodiciteSerializer, PeriodiciteCreateSerializer, PeriodiciteUpdateSerializer,
-    ObservationSerializer, ObservationCreateSerializer, ObservationUpdateSerializer
+    ObservationSerializer, ObservationCreateSerializer, ObservationUpdateSerializer,
+    TableauBordSerializer
 )
 import logging
 
 logger = logging.getLogger(__name__)
+# ==================== TABLEAUX DE BORD ====================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def tableaux_bord_list_create(request):
+    """Lister ou créer des tableaux de bord"""
+    try:
+        if request.method == 'GET':
+            qs = TableauBord.objects.select_related('processus', 'initial_ref').order_by('-annee', 'processus__numero_processus', 'type_tableau')
+            serializer = TableauBordSerializer(qs, many=True)
+            return Response({
+                'success': True,
+                'data': serializer.data,
+                'count': qs.count()
+            }, status=status.HTTP_200_OK)
+        else:
+            data = request.data.copy()
+            # Option facultative: clone=true|false contrôle la copie depuis l'initial
+            clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
+            serializer = TableauBordSerializer(data=data, context={'request': request})
+            if serializer.is_valid():
+                try:
+                    instance = serializer.save()
+                    # Si amendement et clone demandé, copier les objectifs (+ éléments associés)
+                    if instance.type_tableau in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone and instance.initial_ref:
+                        initial = instance.initial_ref
+                        # cloner objectifs
+                        for obj in initial.objectives.all():
+                            new_obj = Objectives.objects.create(
+                                libelle=obj.libelle,
+                                cree_par=request.user,
+                                tableau_bord=instance
+                            )
+                            # cloner indicateurs et leur structure
+                            indicateurs = Indicateur.objects.filter(objective_id=obj)
+                            for ind in indicateurs:
+                                new_ind = Indicateur.objects.create(
+                                    libelle=ind.libelle,
+                                    objective_id=new_obj,
+                                    frequence_id=ind.frequence_id
+                                )
+                                # cibles (parametre.Cible)
+                                try:
+                                    from parametre.models import Cible as ParamCible, Periodicite as ParamPeriodicite
+                                    cible = ParamCible.objects.filter(indicateur_id=ind).first()
+                                    if cible:
+                                        ParamCible.objects.create(
+                                            valeur=cible.valeur,
+                                            condition=cible.condition,
+                                            indicateur_id=new_ind
+                                        )
+                                    # periodicites
+                                    for p in ParamPeriodicite.objects.filter(indicateur_id=ind):
+                                        ParamPeriodicite.objects.create(
+                                            indicateur_id=new_ind,
+                                            periode=p.periode,
+                                            a_realiser=p.a_realiser,
+                                            realiser=p.realiser
+                                        )
+                                except Exception:
+                                    # en cas d'erreur de copie d'éléments annexes, on continue quand même avec les objectifs/indicateurs
+                                    pass
+                    return Response({
+                        'success': True,
+                        'message': 'Tableau de bord créé avec succès',
+                        'data': TableauBordSerializer(instance).data
+                    }, status=status.HTTP_201_CREATED)
+                except Exception as e:
+                    return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur tableaux_bord_list_create: {str(e)}")
+        return Response({'success': False, 'error': 'Erreur lors du traitement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def tableau_bord_detail(request, uuid):
+    """Détail / mise à jour / suppression d'un tableau de bord"""
+    try:
+        tb = TableauBord.objects.get(uuid=uuid)
+    except TableauBord.DoesNotExist:
+        return Response({'success': False, 'error': 'Tableau de bord non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        return Response({'success': True, 'data': TableauBordSerializer(tb).data})
+    elif request.method == 'PATCH':
+        serializer = TableauBordSerializer(tb, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            try:
+                instance = serializer.save()
+                return Response({'success': True, 'data': TableauBordSerializer(instance).data})
+            except Exception as e:
+                return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        tb.delete()
+        return Response({'success': True, 'message': 'Tableau de bord supprimé avec succès'}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def tableau_bord_objectives(request, uuid):
+    """Récupérer tous les objectifs d'un tableau de bord spécifique"""
+    try:
+        # Vérifier que le tableau de bord existe
+        try:
+            tb = TableauBord.objects.get(uuid=uuid)
+        except TableauBord.DoesNotExist:
+            return Response({'success': False, 'error': 'Tableau de bord non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Récupérer les objectifs du tableau de bord
+        objectives = Objectives.objects.filter(tableau_bord=tb).order_by('number')
+        serializer = ObjectivesSerializer(objectives, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': objectives.count(),
+            'tableau_bord': {
+                'uuid': str(tb.uuid),
+                'annee': tb.annee,
+                'processus_nom': tb.processus.nom,
+                'type_label': tb.get_type_tableau_display()
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des objectifs du tableau de bord {uuid}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des objectifs'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== OBJECTIFS ====================
@@ -76,9 +210,13 @@ def objectives_detail(request, uuid):
 def objectives_create(request):
     """Créer un nouvel objectif"""
     try:
+        logger.info(f"Tentative de création d'objectif par {request.user.username}")
+        logger.info(f"Données reçues: {request.data}")
+        
         serializer = ObjectivesCreateSerializer(data=request.data, context={'request': request})
         
         if serializer.is_valid():
+            logger.info("Données validées, création de l'objectif...")
             objective = serializer.save()
             
             # Retourner l'objectif créé avec tous ses détails
@@ -92,6 +230,7 @@ def objectives_create(request):
                 'data': response_serializer.data
             }, status=status.HTTP_201_CREATED)
         else:
+            logger.error(f"Erreurs de validation: {serializer.errors}")
             return Response({
                 'success': False,
                 'error': 'Données invalides',
@@ -99,10 +238,10 @@ def objectives_create(request):
             }, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'objectif: {str(e)}")
+        logger.error(f"Erreur lors de la création de l'objectif: {str(e)}", exc_info=True)
         return Response({
             'success': False,
-            'error': 'Erreur lors de la création de l\'objectif'
+            'error': f'Erreur lors de la création de l\'objectif: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
