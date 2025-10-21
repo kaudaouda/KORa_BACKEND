@@ -46,4 +46,9 @@ urlpatterns = [
     
     # ==================== STATISTIQUES ====================
     path('stats/', views.dashboard_stats, name='dashboard_stats'),
+
+    # ==================== TABLEAUX DE BORD ====================
+    path('tableaux-bord/', views.tableaux_bord_list_create, name='tableaux_bord_list_create'),
+    path('tableaux-bord/<uuid:uuid>/', views.tableau_bord_detail, name='tableau_bord_detail'),
+    path('tableaux-bord/<uuid:uuid>/objectives/', views.tableau_bord_objectives, name='tableau_bord_objectives'),
 ]
