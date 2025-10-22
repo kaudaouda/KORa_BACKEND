@@ -248,6 +248,42 @@ class Service(HasActiveStatus):
         return f"{self.sous_direction.direction.nom} - {self.sous_direction.nom} - {self.nom}"
 
 
+class TypeTableau(HasActiveStatus):
+    """
+    Modèle pour les types de tableau de bord (Initial, Amendement 1, Amendement 2)
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(
+        max_length=20, 
+        unique=True,
+        help_text="Code du type (ex: INITIAL, AMENDEMENT_1, AMENDEMENT_2)"
+    )
+    nom = models.CharField(
+        max_length=100,
+        help_text="Nom affiché du type (ex: Tableau Initial, Amendement 1)"
+    )
+    description = models.TextField(
+        blank=True, 
+        null=True,
+        help_text="Description du type de tableau"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'type_tableau'
+        verbose_name = 'Type de Tableau'
+        verbose_name_plural = 'Types de Tableaux'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+    def get_display_name(self):
+        """Retourne le nom d'affichage"""
+        return self.nom
+
+
 class Processus(HasActiveStatus):
     """
     Modèle pour les processus (déplacé depuis l'app pac)
