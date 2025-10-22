@@ -101,14 +101,16 @@ class ObjectivesUpdateSerializer(serializers.ModelSerializer):
 
 class TableauBordSerializer(serializers.ModelSerializer):
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
-    type_label = serializers.CharField(source='get_type_tableau_display', read_only=True)
+    type_label = serializers.CharField(source='get_type_display', read_only=True)
+    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True)
+    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True)
 
     class Meta:
         model = TableauBord
         fields = [
             'uuid', 'annee', 'processus', 'processus_nom',
-            'type_tableau', 'type_label', 'initial_ref',
-            'cree_par', 'created_at', 'updated_at'
+            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 
+            'type_label', 'initial_ref', 'cree_par', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'initial_ref', 'cree_par', 'created_at', 'updated_at']
 

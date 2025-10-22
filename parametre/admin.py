@@ -4,7 +4,7 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, EmailSettings, ReminderEmailLog,
-    DysfonctionnementRecommandation, Frequence, Periodicite, Cible
+    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, TypeTableau
 )
 
 
@@ -328,3 +328,35 @@ class CibleAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
         return super().get_queryset(request).select_related('indicateur_id')
+
+
+@admin.register(TypeTableau)
+class TypeTableauAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les types de tableaux"""
+    
+    list_display = [
+        'code', 'nom', 'is_active', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'code', 'nom', 'description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['nom']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'code', 'nom', 'description')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
