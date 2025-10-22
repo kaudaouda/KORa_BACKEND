@@ -7,7 +7,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.http import JsonResponse
 from django.utils import timezone
+import logging
 from .models import Objectives, Indicateur, Observation, TableauBord
+
+logger = logging.getLogger(__name__)
 from .serializers import (
     ObjectivesSerializer, ObjectivesCreateSerializer, ObjectivesUpdateSerializer,
     IndicateurSerializer, IndicateurCreateSerializer, IndicateurUpdateSerializer,
@@ -27,7 +30,7 @@ def tableaux_bord_list_create(request):
     """Lister ou créer des tableaux de bord"""
     try:
         if request.method == 'GET':
-            qs = TableauBord.objects.select_related('processus', 'initial_ref').order_by('-annee', 'processus__numero_processus', 'type_tableau')
+            qs = TableauBord.objects.select_related('processus', 'initial_ref', 'type_tableau').order_by('-annee', 'processus__numero_processus', 'type_tableau__code')
             serializer = TableauBordSerializer(qs, many=True)
             return Response({
                 'success': True,
@@ -38,12 +41,95 @@ def tableaux_bord_list_create(request):
             data = request.data.copy()
             # Option facultative: clone=true|false contrôle la copie depuis l'initial
             clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
+            
+            # ========== VALIDATION STRICTE ==========
+            from parametre.models import TypeTableau
+            
+            annee = data.get('annee')
+            processus_uuid = data.get('processus')
+            type_tableau_uuid = data.get('type_tableau')
+            
+            try:
+                type_tableau_obj = TypeTableau.objects.get(uuid=type_tableau_uuid)
+            except TypeTableau.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': 'Type de tableau introuvable'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            type_code = type_tableau_obj.code
+            
+            # VALIDATION 1 : Si INITIAL, vérifier qu'il n'existe pas déjà
+            if type_code == 'INITIAL':
+                existing = TableauBord.objects.filter(
+                    annee=annee,
+                    processus=processus_uuid,
+                    type_tableau__code='INITIAL'
+                ).exists()
+                if existing:
+                    return Response({
+                        'success': False,
+                        'error': f'Un tableau INITIAL existe déjà pour l\'année {annee} et ce processus. Vous ne pouvez créer que des amendements.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # VALIDATION 2 : Si AMENDEMENT_1, vérifier qu'INITIAL existe
+            elif type_code == 'AMENDEMENT_1':
+                initial_exists = TableauBord.objects.filter(
+                    annee=annee,
+                    processus=processus_uuid,
+                    type_tableau__code='INITIAL'
+                ).exists()
+                if not initial_exists:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer AMENDEMENT_1 : aucun tableau INITIAL n\'existe pour cette année et ce processus'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Vérifier aussi qu'AMENDEMENT_1 n'existe pas déjà
+                existing_a1 = TableauBord.objects.filter(
+                    annee=annee,
+                    processus=processus_uuid,
+                    type_tableau__code='AMENDEMENT_1'
+                ).exists()
+                if existing_a1:
+                    return Response({
+                        'success': False,
+                        'error': 'AMENDEMENT_1 existe déjà pour cette année et ce processus. Vous pouvez créer AMENDEMENT_2.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # VALIDATION 3 : Si AMENDEMENT_2, vérifier qu'AMENDEMENT_1 existe
+            elif type_code == 'AMENDEMENT_2':
+                a1_exists = TableauBord.objects.filter(
+                    annee=annee,
+                    processus=processus_uuid,
+                    type_tableau__code='AMENDEMENT_1'
+                ).exists()
+                if not a1_exists:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 n\'existe pas. Créez d\'abord AMENDEMENT_1.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Vérifier aussi qu'AMENDEMENT_2 n'existe pas déjà
+                existing_a2 = TableauBord.objects.filter(
+                    annee=annee,
+                    processus=processus_uuid,
+                    type_tableau__code='AMENDEMENT_2'
+                ).exists()
+                if existing_a2:
+                    return Response({
+                        'success': False,
+                        'error': 'AMENDEMENT_2 existe déjà pour cette année et ce processus. Maximum 2 amendements autorisés.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # ========== FIN VALIDATION ==========
+            
             serializer = TableauBordSerializer(data=data, context={'request': request})
             if serializer.is_valid():
                 try:
                     instance = serializer.save()
                     # Si amendement et clone demandé, copier les objectifs (+ éléments associés)
-                    if instance.type_tableau in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone and instance.initial_ref:
+                    if instance.type_tableau.code in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone and instance.initial_ref:
                         initial = instance.initial_ref
                         # cloner objectifs
                         for obj in initial.objectives.all():
@@ -119,6 +205,185 @@ def tableau_bord_detail(request, uuid):
         return Response({'success': True, 'message': 'Tableau de bord supprimé avec succès'}, status=status.HTTP_200_OK)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_amendement(request, tableau_initial_uuid):
+    """Créer un amendement pour un tableau initial"""
+    try:
+        # Récupérer le tableau initial
+        try:
+            initial_tableau = TableauBord.objects.get(uuid=tableau_initial_uuid, type_tableau__code='INITIAL')
+        except TableauBord.DoesNotExist:
+            return Response({
+                'success': False, 
+                'error': 'Tableau initial introuvable'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        data = request.data.copy()
+        clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
+        
+        # Déterminer le type d'amendement
+        from parametre.models import TypeTableau
+        
+        existing_amendements = TableauBord.objects.filter(
+            annee=initial_tableau.annee,
+            processus=initial_tableau.processus,
+            type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
+        ).count()
+        
+        logger.info(f"Nombre d'amendements existants: {existing_amendements}")
+        
+        if existing_amendements == 0:
+            type_amendement = TypeTableau.objects.get(code='AMENDEMENT_1')
+            data['type_tableau'] = type_amendement.uuid
+        elif existing_amendements == 1:
+            type_amendement = TypeTableau.objects.get(code='AMENDEMENT_2')
+            data['type_tableau'] = type_amendement.uuid
+        else:
+            return Response({
+                'success': False, 
+                'error': 'Maximum 2 amendements autorisés par tableau initial'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Créer l'amendement
+        data.update({
+            'annee': initial_tableau.annee,
+            'processus': initial_tableau.processus.uuid,
+            'initial_ref': initial_tableau.uuid
+        })
+        
+        serializer = TableauBordSerializer(data=data, context={'request': request})
+        if serializer.is_valid():
+            try:
+                instance = serializer.save()
+                
+                # Si clone demandé, copier les objectifs et éléments associés
+                if clone:
+                    # Déterminer le tableau source pour le clonage
+                    # Si c'est le premier amendement, copier depuis l'initial
+                    # Sinon, copier depuis le dernier amendement créé
+                    if existing_amendements == 0:
+                        source_tableau = initial_tableau
+                    else:
+                        # Trouver le dernier amendement créé pour ce processus/année
+                        # Exclure l'amendement qu'on vient de créer
+                        last_amendement = TableauBord.objects.filter(
+                            annee=initial_tableau.annee,
+                            processus=initial_tableau.processus,
+                            type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
+                        ).exclude(uuid=instance.uuid).order_by('-created_at').first()
+                        source_tableau = last_amendement
+                    
+                    # Log pour déboguer
+                    logger.info(f"Clonage depuis {source_tableau.uuid} ({source_tableau.type_tableau.code})")
+                    logger.info(f"Nombre d'objectifs à cloner: {source_tableau.objectives.count()}")
+                    
+                    # Cloner objectifs depuis le tableau source
+                    for obj in source_tableau.objectives.all():
+                        new_obj = Objectives.objects.create(
+                            number=obj.number,
+                            libelle=obj.libelle,
+                            cree_par=request.user,
+                            tableau_bord=instance
+                        )
+                        # Cloner indicateurs et leur structure
+                        indicateurs = Indicateur.objects.filter(objective_id=obj)
+                        for ind in indicateurs:
+                            new_ind = Indicateur.objects.create(
+                                libelle=ind.libelle,
+                                objective_id=new_obj,
+                                frequence_id=ind.frequence_id
+                            )
+                            # Cloner cibles et périodicités
+                            try:
+                                from parametre.models import Cible as ParamCible, Periodicite as ParamPeriodicite
+                                cible = ParamCible.objects.filter(indicateur_id=ind).first()
+                                if cible:
+                                    ParamCible.objects.create(
+                                        valeur=cible.valeur,
+                                        condition=cible.condition,
+                                        indicateur_id=new_ind
+                                    )
+                                # Cloner périodicités
+                                for p in ParamPeriodicite.objects.filter(indicateur_id=ind):
+                                    ParamPeriodicite.objects.create(
+                                        indicateur_id=new_ind,
+                                        periode=p.periode,
+                                        a_realiser=p.a_realiser,
+                                        realiser=p.realiser
+                                    )
+                            except Exception as e:
+                                logger.warning(f"Erreur lors du clonage des éléments annexes: {str(e)}")
+                                # Continue même en cas d'erreur
+                                pass
+                
+                return Response({
+                    'success': True,
+                    'message': f'Amendement {instance.get_type_display()} créé avec succès',
+                    'data': TableauBordSerializer(instance).data
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                logger.error(f"Erreur lors de la création de l'amendement: {str(e)}")
+                return Response({
+                    'success': False, 
+                    'error': f'Erreur lors de la création: {str(e)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        return Response({
+            'success': False, 
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+    except Exception as e:
+        logger.error(f"Erreur create_amendement: {str(e)}")
+        return Response({
+            'success': False, 
+            'error': 'Erreur lors de la création de l\'amendement'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_amendements_by_initial(request, tableau_initial_uuid):
+    """Récupérer tous les amendements d'un tableau initial"""
+    try:
+        # Vérifier que le tableau initial existe
+        try:
+            initial_tableau = TableauBord.objects.get(uuid=tableau_initial_uuid, type_tableau__code='INITIAL')
+        except TableauBord.DoesNotExist:
+            return Response({
+                'success': False, 
+                'error': 'Tableau initial introuvable'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Récupérer tous les amendements liés, triés par date de création (du plus récent au plus ancien)
+        amendements = TableauBord.objects.filter(
+            initial_ref=initial_tableau
+        ).order_by('-created_at')
+        
+        serializer = TableauBordSerializer(amendements, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': amendements.count(),
+            'initial_tableau': {
+                'uuid': str(initial_tableau.uuid),
+                'annee': initial_tableau.annee,
+                'processus_nom': initial_tableau.processus.nom,
+                'type_tableau': initial_tableau.type_tableau.code
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur get_amendements_by_initial: {str(e)}")
+        return Response({
+            'success': False, 
+            'error': 'Erreur lors de la récupération des amendements'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def tableau_bord_objectives(request, uuid):
@@ -142,7 +407,7 @@ def tableau_bord_objectives(request, uuid):
                 'uuid': str(tb.uuid),
                 'annee': tb.annee,
                 'processus_nom': tb.processus.nom,
-                'type_label': tb.get_type_tableau_display()
+                'type_label': tb.get_type_display()
             }
         }, status=status.HTTP_200_OK)
         
