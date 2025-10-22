@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 import uuid
-from parametre.models import Processus
+from parametre.models import Processus, TypeTableau
 
 
 class Objectives(models.Model):
@@ -159,12 +159,6 @@ class TableauBord(models.Model):
     """
     Tableau de bord par année et processus, avec types: Initial, Amendement 1, Amendement 2
     """
-    TYPE_CHOICES = [
-        ('INITIAL', 'Initial'),
-        ('AMENDEMENT_1', 'Amendement 1'),
-        ('AMENDEMENT_2', 'Amendement 2'),
-    ]
-
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     annee = models.PositiveIntegerField(help_text="Année du tableau de bord (ex: 2025)")
     processus = models.ForeignKey(
@@ -172,7 +166,12 @@ class TableauBord(models.Model):
         on_delete=models.CASCADE,
         related_name='tableaux_bord'
     )
-    type_tableau = models.CharField(max_length=20, choices=TYPE_CHOICES, default='INITIAL')
+    type_tableau = models.ForeignKey(
+        TypeTableau,
+        on_delete=models.CASCADE,
+        related_name='tableaux_bord',
+        help_text="Type de tableau de bord"
+    )
     initial_ref = models.ForeignKey(
         'self',
         on_delete=models.CASCADE,
@@ -194,51 +193,60 @@ class TableauBord(models.Model):
         verbose_name_plural = 'Tableaux de bord'
         constraints = [
             models.UniqueConstraint(
-                fields=['annee', 'processus'],
-                condition=models.Q(type_tableau='INITIAL'),
-                name='uniq_initial_par_annee_processus'
-            ),
-            models.UniqueConstraint(
-                fields=['annee', 'processus'],
-                condition=models.Q(type_tableau='AMENDEMENT_1'),
-                name='uniq_amendement1_par_annee_processus'
-            ),
-            models.UniqueConstraint(
-                fields=['annee', 'processus'],
-                condition=models.Q(type_tableau='AMENDEMENT_2'),
-                name='uniq_amendement2_par_annee_processus'
-            ),
+                fields=['annee', 'processus', 'type_tableau'],
+                name='uniq_tableau_per_annee_processus_type'
+            )
         ]
-        ordering = ['-annee', 'processus__numero_processus', 'type_tableau']
+        ordering = ['-annee', 'processus__numero_processus', 'type_tableau__code']
 
     def __str__(self):
-        return f"{self.processus.nom} - {self.annee} - {self.get_type_tableau_display()}"
+        return f"{self.processus.nom} - {self.annee} - {self.type_tableau.nom}"
+
+    def get_type_display(self):
+        """Retourne le nom d'affichage du type avec icône"""
+        return self.type_tableau.get_display_name()
 
     def clean(self):
-        # Les amendements doivent référencer l'initial correspondant
-        if self.type_tableau != 'INITIAL':
-            initial = TableauBord.objects.filter(
-                annee=self.annee,
-                processus=self.processus,
-                type_tableau='INITIAL'
-            ).first()
-            if not initial:
-                raise ValidationError("Aucun tableau de bord initial n'existe pour ce processus et cette année.")
+        """
+        Validation personnalisée pour s'assurer de la cohérence des données
+        """
+        from django.core.exceptions import ValidationError
+        
+        # Si c'est un amendement, initial_ref doit être défini
+        if self.type_tableau and self.type_tableau.code != 'INITIAL':
             if not self.initial_ref:
+                # Auto-assigner l'initial si pas défini
+                initial = TableauBord.objects.filter(
+                    annee=self.annee,
+                    processus=self.processus,
+                    type_tableau__code='INITIAL'
+                ).first()
+                if not initial:
+                    raise ValidationError("Aucun tableau de bord initial n'existe pour ce processus et cette année.")
                 self.initial_ref = initial
+            
+            # L'initial_ref doit être un tableau initial
+            if self.initial_ref.type_tableau.code != 'INITIAL':
+                raise ValidationError({
+                    'initial_ref': 'La référence doit pointer vers un tableau initial.'
+                })
         else:
+            # Si c'est un tableau initial, initial_ref doit être null
             self.initial_ref = None
 
         # Optionnel: empêcher Amendement 2 sans Amendement 1
-        if self.type_tableau == 'AMENDEMENT_2':
+        if self.type_tableau and self.type_tableau.code == 'AMENDEMENT_2':
             has_a1 = TableauBord.objects.filter(
                 annee=self.annee,
                 processus=self.processus,
-                type_tableau='AMENDEMENT_1'
+                type_tableau__code='AMENDEMENT_1'
             ).exists()
             if not has_a1:
                 raise ValidationError("Amendement 2 nécessite un Amendement 1 existant.")
 
     def save(self, *args, **kwargs):
+        """
+        Validation avant sauvegarde
+        """
         self.full_clean()
         super().save(*args, **kwargs)
