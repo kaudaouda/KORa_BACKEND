@@ -59,6 +59,9 @@ class ObjectivesCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Objectives
         fields = ['libelle', 'tableau_bord']
+        extra_kwargs = {
+            'number': {'required': False, 'allow_blank': True}
+        }
     
     def create(self, validated_data):
         """Créer un objectif avec l'utilisateur connecté"""
@@ -70,6 +73,12 @@ class ObjectivesCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'tableau_bord': 'Tableau de bord introuvable'})
         
         validated_data['cree_par'] = self.context['request'].user
+        
+        # Générer automatiquement le numéro d'objectif si non fourni
+        if 'number' not in validated_data or not validated_data['number']:
+            # Compter les objectifs existants pour ce tableau
+            existing_count = Objectives.objects.filter(tableau_bord=tb).count()
+            validated_data['number'] = f"OB{existing_count + 1:02d}"
         
         # Créer l'objectif
         try:
@@ -104,15 +113,22 @@ class TableauBordSerializer(serializers.ModelSerializer):
     type_label = serializers.CharField(source='get_type_display', read_only=True)
     type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True)
     type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True)
+    valide_par_nom = serializers.CharField(source='valide_par.get_full_name', read_only=True)
+    has_amendements = serializers.SerializerMethodField()
+    
+    def get_has_amendements(self, obj):
+        """Vérifier si le tableau initial a des amendements"""
+        return obj.has_amendements()
 
     class Meta:
         model = TableauBord
         fields = [
             'uuid', 'annee', 'processus', 'processus_nom',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 
-            'type_label', 'initial_ref', 'cree_par', 'created_at', 'updated_at'
+            'type_label', 'initial_ref', 'cree_par', 'created_at', 'updated_at',
+            'is_validated', 'date_validation', 'valide_par', 'valide_par_nom', 'has_amendements'
         ]
-        read_only_fields = ['uuid', 'initial_ref', 'cree_par', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'initial_ref', 'cree_par', 'created_at', 'updated_at', 'date_validation', 'valide_par']
 
     def create(self, validated_data):
         request = self.context.get('request')
