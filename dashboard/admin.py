@@ -40,6 +40,14 @@ class ObjectivesAdmin(admin.ModelAdmin):
         """Sauvegarder le modèle avec l'utilisateur connecté"""
         if not change:  # Création d'un nouvel objet
             obj.cree_par = request.user
+        
+        # Vérifier si le tableau initial a des amendements
+        if obj.tableau_bord and obj.tableau_bord.type_tableau and obj.tableau_bord.type_tableau.code == 'INITIAL':
+            if obj.tableau_bord.has_amendements():
+                from django.contrib import messages
+                messages.error(request, 'Impossible de modifier cet objectif : le tableau initial a des amendements associés.')
+                return
+        
         super().save_model(request, obj, form, change)
     
     def indicateurs_count(self, obj):
@@ -132,14 +140,18 @@ class ObservationAdmin(admin.ModelAdmin):
 @admin.register(TableauBord)
 class TableauBordAdmin(admin.ModelAdmin):
     """Administration pour Tableau de bord"""
-    list_display = ['annee', 'processus', 'type_tableau', 'initial_ref', 'cree_par', 'created_at']
-    list_filter = ['annee', 'type_tableau', 'processus', 'created_at']
+    list_display = ['annee', 'processus', 'type_tableau', 'is_validated', 'valide_par', 'date_validation', 'cree_par', 'created_at']
+    list_filter = ['annee', 'type_tableau', 'processus', 'is_validated', 'created_at']
     search_fields = ['processus__nom', 'processus__numero_processus']
-    readonly_fields = ['uuid', 'created_at', 'updated_at']
+    readonly_fields = ['uuid', 'created_at', 'updated_at', 'date_validation', 'valide_par']
     ordering = ['-annee', 'processus__numero_processus', 'type_tableau']
     fieldsets = (
         ('Informations', {
             'fields': ('uuid', 'annee', 'processus', 'type_tableau', 'initial_ref')
+        }),
+        ('Validation', {
+            'fields': ('is_validated', 'date_validation', 'valide_par'),
+            'description': 'État de validation du tableau de bord'
         }),
         ('Métadonnées', {
             'fields': ('cree_par', 'created_at', 'updated_at'),
@@ -150,4 +162,18 @@ class TableauBordAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         if not change:
             obj.cree_par = request.user
+        
+        # Vérifier si c'est un tableau initial avec des amendements
+        if change and obj.type_tableau and obj.type_tableau.code == 'INITIAL':
+            if obj.has_amendements():
+                from django.contrib import messages
+                messages.error(request, 'Impossible de modifier ce tableau initial : il a des amendements associés.')
+                return
+        
+        # Si le tableau est validé et que ce n'était pas le cas avant
+        if obj.is_validated and (not change or not form.initial.get('is_validated', False)):
+            from django.utils import timezone
+            obj.date_validation = timezone.now()
+            obj.valide_par = request.user
+        
         super().save_model(request, obj, form, change)
