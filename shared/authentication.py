@@ -18,31 +18,24 @@ class CookieJWTAuthentication(JWTAuthentication):
     """
     
     def authenticate(self, request):
-        # Debug: logger les cookies reçus
-        logger.debug(f"Cookies reçus: {dict(request.COOKIES)}")
-        
         # Essayer d'abord l'authentification par cookie
         access_token = request.COOKIES.get('access_token')
         
         if access_token:
-            logger.debug(f"Access token trouvé: {access_token[:20]}...")
             try:
                 # Valider le token depuis le cookie
                 try:
                     validated_token = self.get_validated_token(access_token)
                     user = self.get_user(validated_token)
-                    logger.debug(f"Utilisateur authentifié via cookie: {user.username}")
                     return (user, validated_token)
                 except AuthenticationFailed as e:
-                    logger.warning(f"Authentification échouée (utilisateur introuvable): {str(e)}")
+                    pass
                 except (InvalidToken, TokenError) as e:
-                    logger.warning(f"Token invalide depuis cookie: {str(e)}")
+                    pass
             except (InvalidToken, TokenError) as e:
-                logger.warning(f"Token invalide depuis cookie: {str(e)}")
                 # Essayer de rafraîchir le token
                 refresh_token = request.COOKIES.get('refresh_token')
                 if refresh_token:
-                    logger.debug(f"Tentative de rafraîchissement avec refresh token: {refresh_token[:20]}...")
                     try:
                         refresh = RefreshToken(refresh_token)
                         new_access_token = refresh.access_token
@@ -50,17 +43,13 @@ class CookieJWTAuthentication(JWTAuthentication):
                         request._new_access_token = str(new_access_token)
                         validated_token = self.get_validated_token(str(new_access_token))
                         user = self.get_user(validated_token)
-                        logger.debug(f"Token rafraîchi avec succès pour: {user.username}")
                         return (user, validated_token)
                     except AuthenticationFailed as e:
-                        logger.warning(f"Utilisateur introuvable après rafraîchissement: {str(e)}")
+                        pass
                     except (InvalidToken, TokenError) as e:
-                        logger.warning(f"Refresh token invalide: {str(e)}")
-        else:
-            logger.debug("Aucun access token trouvé dans les cookies")
+                        pass
         
         # Fallback sur l'authentification par header Authorization
-        logger.debug("Tentative d'authentification par header Authorization")
         return super().authenticate(request)
 
 
