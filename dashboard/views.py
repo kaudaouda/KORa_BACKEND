@@ -47,14 +47,24 @@ def tableaux_bord_list_create(request):
             
             annee = data.get('annee')
             processus_uuid = data.get('processus')
-            type_tableau_uuid = data.get('type_tableau')
+            type_tableau_value = data.get('type_tableau')
             
+            # Gérer le type de tableau (peut être un UUID ou un code)
             try:
-                type_tableau_obj = TypeTableau.objects.get(uuid=type_tableau_uuid)
+                if type_tableau_value in ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']:
+                    # C'est un code, récupérer l'objet par code
+                    type_tableau_obj = TypeTableau.objects.get(code=type_tableau_value)
+                else:
+                    # C'est probablement un UUID, récupérer par UUID
+                    type_tableau_obj = TypeTableau.objects.get(uuid=type_tableau_value)
+                
+                # Mettre à jour les données avec l'UUID du type
+                data['type_tableau'] = type_tableau_obj.uuid
+                
             except TypeTableau.DoesNotExist:
                 return Response({
                     'success': False,
-                    'error': 'Type de tableau introuvable'
+                    'error': f'Type de tableau introuvable: {type_tableau_value}'
                 }, status=status.HTTP_404_NOT_FOUND)
             
             type_code = type_tableau_obj.code
@@ -124,16 +134,21 @@ def tableaux_bord_list_create(request):
             
             # ========== FIN VALIDATION ==========
             
+            logger.info(f"Données reçues pour création tableau: {data}")
+            
             serializer = TableauBordSerializer(data=data, context={'request': request})
             if serializer.is_valid():
+                logger.info("Serializer valide, sauvegarde en cours...")
                 try:
                     instance = serializer.save()
+                    logger.info(f"Tableau créé avec succès: {instance.uuid}")
                     # Si amendement et clone demandé, copier les objectifs (+ éléments associés)
                     if instance.type_tableau.code in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone and instance.initial_ref:
                         initial = instance.initial_ref
                         # cloner objectifs
                         for obj in initial.objectives.all():
                             new_obj = Objectives.objects.create(
+                                number=obj.number,
                                 libelle=obj.libelle,
                                 cree_par=request.user,
                                 tableau_bord=instance
@@ -173,8 +188,11 @@ def tableaux_bord_list_create(request):
                         'data': TableauBordSerializer(instance).data
                     }, status=status.HTTP_201_CREATED)
                 except Exception as e:
+                    logger.error(f"Erreur lors de la sauvegarde du tableau: {str(e)}")
                     return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                logger.error(f"Erreurs de validation serializer: {serializer.errors}")
+                return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Erreur tableaux_bord_list_create: {str(e)}")
         return Response({'success': False, 'error': 'Erreur lors du traitement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -249,7 +267,8 @@ def create_amendement(request, tableau_initial_uuid):
         data.update({
             'annee': initial_tableau.annee,
             'processus': initial_tableau.processus.uuid,
-            'initial_ref': initial_tableau.uuid
+            'initial_ref': initial_tableau.uuid,
+            'is_validated': False  # Les amendements commencent toujours non validés
         })
         
         serializer = TableauBordSerializer(data=data, context={'request': request})
@@ -384,6 +403,77 @@ def get_amendements_by_initial(request, tableau_initial_uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def validate_tableau_bord(request, uuid):
+    """Valider un tableau de bord pour permettre la saisie des trimestres"""
+    try:
+        tableau = TableauBord.objects.get(uuid=uuid)
+        
+        # Vérifier que le tableau n'est pas déjà validé
+        if tableau.is_validated:
+            return Response({
+                'success': False,
+                'error': 'Ce tableau est déjà validé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier qu'il y a au moins un objectif avec indicateurs et cibles
+        objectives_count = tableau.objectives.count()
+        if objectives_count == 0:
+            return Response({
+                'success': False,
+                'error': 'Le tableau doit contenir au moins un objectif pour être validé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que chaque objectif a au moins un indicateur avec une cible
+        for objective in tableau.objectives.all():
+            indicateurs_count = objective.indicateurs.count()
+            if indicateurs_count == 0:
+                return Response({
+                    'success': False,
+                    'error': f'L\'objectif "{objective.number}" doit avoir au moins un indicateur pour être validé'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier que chaque indicateur a une cible
+            for indicateur in objective.indicateurs.all():
+                try:
+                    from parametre.models import Cible
+                    cible = Cible.objects.filter(indicateur_id=indicateur).first()
+                    if not cible:
+                        return Response({
+                            'success': False,
+                            'error': f'L\'indicateur "{indicateur.libelle}" doit avoir une cible définie pour être validé'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                except Exception:
+                    pass
+        
+        # Valider le tableau
+        tableau.is_validated = True
+        tableau.date_validation = timezone.now()
+        tableau.valide_par = request.user
+        tableau.save()
+        
+        logger.info(f"Tableau {tableau.uuid} validé par {request.user.username}")
+        
+        return Response({
+            'success': True,
+            'message': 'Tableau validé avec succès',
+            'data': TableauBordSerializer(tableau).data
+        }, status=status.HTTP_200_OK)
+        
+    except TableauBord.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Tableau de bord non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur validation tableau: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la validation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def tableau_bord_objectives(request, uuid):
@@ -475,19 +565,53 @@ def objectives_detail(request, uuid):
 def objectives_create(request):
     """Créer un nouvel objectif"""
     try:
-        logger.info(f"Tentative de création d'objectif par {request.user.username}")
-        logger.info(f"Données reçues: {request.data}")
+        
+        # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        tableau_bord_uuid = request.data.get('tableau_bord')
+        if tableau_bord_uuid:
+            try:
+                tableau = TableauBord.objects.get(uuid=tableau_bord_uuid)
+                if tableau.is_validated:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer un objectif : le tableau est déjà validé'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Bloquer selon le type de tableau et les amendements suivants de manière précise
+                from django.db.models import Q
+                if tableau.type_tableau and tableau.type_tableau.code == 'INITIAL':
+                    # L'initial ne peut pas être modifié s'il a des amendements (A1 ou A2)
+                    if tableau.has_amendements():
+                        return Response({
+                            'success': False,
+                            'error': 'Impossible de créer un objectif : ce tableau initial a des amendements'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                elif tableau.type_tableau and tableau.type_tableau.code == 'AMENDEMENT_1':
+                    # A1 est modifiable UNIQUEMENT s'il n'existe pas déjà un A2 pour le même initial
+                    if TableauBord.objects.filter(
+                        annee=tableau.annee,
+                        processus=tableau.processus,
+                        type_tableau__code='AMENDEMENT_2'
+                    ).exists():
+                        return Response({
+                            'success': False,
+                            'error': "Impossible de créer un objectif : l'amendement 1 a un amendement 2 suivant"
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                # AMENDEMENT_2: autorisé (pas d'amendements suivants possibles)
+                    
+            except TableauBord.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': 'Tableau de bord non trouvé'
+                }, status=status.HTTP_404_NOT_FOUND)
         
         serializer = ObjectivesCreateSerializer(data=request.data, context={'request': request})
         
         if serializer.is_valid():
-            logger.info("Données validées, création de l'objectif...")
             objective = serializer.save()
             
             # Retourner l'objectif créé avec tous ses détails
             response_serializer = ObjectivesSerializer(objective)
-            
-            logger.info(f"Objectif créé: {objective.number} par {request.user.username}")
             
             return Response({
                 'success': True,
@@ -495,7 +619,6 @@ def objectives_create(request):
                 'data': response_serializer.data
             }, status=status.HTTP_201_CREATED)
         else:
-            logger.error(f"Erreurs de validation: {serializer.errors}")
             return Response({
                 'success': False,
                 'error': 'Données invalides',
@@ -516,6 +639,22 @@ def objectives_update(request, uuid):
     """Mettre à jour un objectif"""
     try:
         objective = Objectives.objects.get(uuid=uuid)
+        
+        # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        if objective.tableau_bord:
+            if objective.tableau_bord.is_validated:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de modifier l\'objectif : le tableau est déjà validé'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier que le tableau n'a pas d'amendements suivants
+            if objective.tableau_bord.has_amendements():
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de modifier l\'objectif : ce tableau a des amendements suivants'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = ObjectivesUpdateSerializer(objective, data=request.data, partial=True)
         
         if serializer.is_valid():
@@ -616,11 +755,10 @@ def dashboard_stats(request):
         # Calculer les pourcentages de cibles atteintes et non atteintes
         from parametre.models import Cible, Periodicite
         from django.db.models import Q, Count, Case, When, DecimalField, F
+        import decimal
         
         # Récupérer toutes les cibles avec leurs indicateurs
-        cibles_with_periodicites = Cible.objects.select_related('indicateur_id').prefetch_related(
-            'indicateur_id__periodicites'
-        ).all()
+        cibles_with_periodicites = Cible.objects.select_related('indicateur_id').all()
         
         total_cibles = cibles_with_periodicites.count()
         cibles_atteintes = 0
@@ -634,10 +772,16 @@ def dashboard_stats(request):
             ).order_by('-created_at').first()
             
             if derniere_periodicite and derniere_periodicite.taux is not None:
-                # Utiliser la méthode is_objectif_atteint pour vérifier si la cible est atteinte
-                if cible.is_objectif_atteint(float(derniere_periodicite.taux)):
-                    cibles_atteintes += 1
-                else:
+                try:
+                    # Convertir le Decimal en float de manière sécurisée
+                    taux_value = float(derniere_periodicite.taux)
+                    # Utiliser la méthode is_objectif_atteint pour vérifier si la cible est atteinte
+                    if cible.is_objectif_atteint(taux_value):
+                        cibles_atteintes += 1
+                    else:
+                        cibles_non_atteintes += 1
+                except (ValueError, TypeError, decimal.InvalidOperation):
+                    # Si la conversion échoue, considérer comme non atteinte
                     cibles_non_atteintes += 1
         
         # Calculer les pourcentages
@@ -727,6 +871,31 @@ def indicateurs_detail(request, uuid):
 def indicateurs_create(request):
     """Créer un nouvel indicateur"""
     try:
+        # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        objective_uuid = request.data.get('objective_id')
+        if objective_uuid:
+            try:
+                objective = Objectives.objects.get(uuid=objective_uuid)
+                if objective.tableau_bord:
+                    tableau = objective.tableau_bord
+                    if tableau.is_validated:
+                        return Response({
+                            'success': False,
+                            'error': 'Impossible de créer un indicateur : le tableau est déjà validé'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Vérifier que le tableau n'a pas d'amendements suivants
+                    if tableau.has_amendements():
+                        return Response({
+                            'success': False,
+                            'error': 'Impossible de créer un indicateur : ce tableau a des amendements suivants'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+            except Objectives.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': 'Objectif non trouvé'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
         serializer = IndicateurCreateSerializer(data=request.data)
         
         if serializer.is_valid():
@@ -763,6 +932,23 @@ def indicateurs_update(request, uuid):
     """Mettre à jour un indicateur"""
     try:
         indicateur = Indicateur.objects.get(uuid=uuid)
+        
+        # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        if indicateur.objective_id.tableau_bord:
+            tableau = indicateur.objective_id.tableau_bord
+            if tableau.is_validated:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de modifier l\'indicateur : le tableau est déjà validé'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier que le tableau n'a pas d'amendements suivants
+            if tableau.has_amendements():
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de modifier l\'indicateur : ce tableau a des amendements suivants'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = IndicateurUpdateSerializer(indicateur, data=request.data, partial=True)
         
         if serializer.is_valid():
@@ -927,6 +1113,32 @@ def cibles_create(request):
     """Créer une nouvelle cible"""
     try:
         from parametre.models import Cible
+        
+        # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        indicateur_uuid = request.data.get('indicateur_id')
+        if indicateur_uuid:
+            try:
+                indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
+                if indicateur.objective_id.tableau_bord:
+                    tableau = indicateur.objective_id.tableau_bord
+                    if tableau.is_validated:
+                        return Response({
+                            'success': False,
+                            'error': 'Impossible de créer une cible : le tableau est déjà validé'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Vérifier que le tableau n'a pas d'amendements suivants
+                    if tableau.has_amendements():
+                        return Response({
+                            'success': False,
+                            'error': 'Impossible de créer une cible : ce tableau a des amendements suivants'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+            except Indicateur.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': 'Indicateur non trouvé'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
         serializer = CibleCreateSerializer(data=request.data)
         
         if serializer.is_valid():
@@ -962,6 +1174,27 @@ def cibles_update(request, uuid):
     try:
         from parametre.models import Cible
         cible = Cible.objects.get(uuid=uuid)
+        
+        # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        try:
+            indicateur = Indicateur.objects.get(uuid=cible.indicateur_id.uuid)
+            if indicateur.objective_id.tableau_bord:
+                tableau = indicateur.objective_id.tableau_bord
+                if tableau.is_validated:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de modifier la cible : le tableau est déjà validé'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Vérifier que le tableau n'a pas d'amendements suivants
+                if tableau.has_amendements():
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de modifier la cible : ce tableau a des amendements suivants'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        except Indicateur.DoesNotExist:
+            pass  # Continuer avec la validation normale
+        
         serializer = CibleUpdateSerializer(cible, data=request.data, partial=True)
         
         if serializer.is_valid():
@@ -1074,13 +1307,49 @@ def periodicites_list(request):
     """Liste toutes les périodicités"""
     try:
         from parametre.models import Periodicite
+        import decimal
+        
+        # Récupérer les périodicités avec gestion d'erreur pour les données corrompues
+        periodicites_data = []
         periodicites = Periodicite.objects.all().order_by('indicateur_id', 'periode')
-        serializer = PeriodiciteSerializer(periodicites, many=True)
+        
+        for periodicite in periodicites:
+            try:
+                # Créer un dictionnaire avec les données sérialisées manuellement
+                periodicite_data = {
+                    'uuid': str(periodicite.uuid),
+                    'indicateur_id': str(periodicite.indicateur_id.uuid),
+                    'indicateur_libelle': periodicite.indicateur_id.libelle,
+                    'periode': periodicite.periode,
+                    'periode_display': periodicite.get_periode_display(),
+                    'a_realiser': float(periodicite.a_realiser),
+                    'realiser': float(periodicite.realiser),
+                    'taux': float(periodicite.taux) if periodicite.taux is not None else 0.0,
+                    'created_at': periodicite.created_at,
+                    'updated_at': periodicite.updated_at
+                }
+                periodicites_data.append(periodicite_data)
+            except (ValueError, TypeError, decimal.InvalidOperation) as e:
+                logger.warning(f"Périodicité {periodicite.uuid} ignorée à cause de données corrompues: {str(e)}")
+                # Ajouter une entrée avec des valeurs par défaut pour les données corrompues
+                periodicite_data = {
+                    'uuid': str(periodicite.uuid),
+                    'indicateur_id': str(periodicite.indicateur_id.uuid) if periodicite.indicateur_id else None,
+                    'indicateur_libelle': periodicite.indicateur_id.libelle if periodicite.indicateur_id else 'Indicateur supprimé',
+                    'periode': periodicite.periode,
+                    'periode_display': periodicite.get_periode_display(),
+                    'a_realiser': 0.0,
+                    'realiser': 0.0,
+                    'taux': 0.0,
+                    'created_at': periodicite.created_at,
+                    'updated_at': periodicite.updated_at
+                }
+                periodicites_data.append(periodicite_data)
 
         return Response({
             'success': True,
-            'data': serializer.data,
-            'count': periodicites.count()
+            'data': periodicites_data,
+            'count': len(periodicites_data)
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -1123,6 +1392,32 @@ def periodicites_detail(request, uuid):
 def periodicites_create(request):
     """Créer une nouvelle périodicité"""
     try:
+        # Vérifier que le tableau est validé et n'a pas d'amendements avant de permettre la création de périodicités
+        indicateur_uuid = request.data.get('indicateur_id')
+        if indicateur_uuid:
+            try:
+                indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
+                tableau = indicateur.objective_id.tableau_bord
+                
+                if not tableau.is_validated:
+                    return Response({
+                        'success': False,
+                        'error': 'Vous devez d\'abord valider le tableau avant de saisir les données trimestrielles'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Vérifier que le tableau n'a pas d'amendements suivants
+                if tableau.has_amendements():
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer une périodicité : ce tableau a des amendements suivants'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+            except Indicateur.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': 'Indicateur non trouvé'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
         serializer = PeriodiciteCreateSerializer(data=request.data)
         
         if serializer.is_valid():
@@ -1156,6 +1451,28 @@ def periodicites_update(request, uuid):
     try:
         from parametre.models import Periodicite
         periodicite = Periodicite.objects.get(uuid=uuid)
+        
+        # Vérifier que le tableau est validé et n'a pas d'amendements avant de permettre la modification de périodicités
+        try:
+            indicateur = periodicite.indicateur_id
+            tableau = indicateur.objective_id.tableau_bord
+            
+            if not tableau.is_validated:
+                return Response({
+                    'success': False,
+                    'error': 'Vous devez d\'abord valider le tableau avant de modifier les données trimestrielles'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier que le tableau n'a pas d'amendements suivants
+            if tableau.has_amendements():
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de modifier la périodicité : ce tableau a des amendements suivants'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception:
+            pass  # En cas d'erreur, continuer avec la validation normale
+        
         serializer = PeriodiciteUpdateSerializer(periodicite, data=request.data)
         
         if serializer.is_valid():
@@ -1288,6 +1605,30 @@ def observations_create(request):
         data = request.data.copy()
         data['cree_par'] = request.user.id
         
+        # Vérifier que l'indicateur existe et récupérer le tableau
+        indicateur_id = data.get('indicateur_id')
+        if not indicateur_id:
+            return Response({
+                'success': False,
+                'error': 'Indicateur requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            indicateur = Indicateur.objects.get(uuid=indicateur_id)
+            tableau = indicateur.objective.tableau_bord
+        except Indicateur.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Indicateur non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Vérifier si le tableau est validé
+        if not tableau.is_validated:
+            return Response({
+                'success': False,
+                'error': 'Vous devez d\'abord valider le tableau pour ajouter des observations'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = ObservationCreateSerializer(data=data)
         
         if serializer.is_valid():
@@ -1348,6 +1689,17 @@ def observations_update(request, uuid):
     """Mettre à jour une observation"""
     try:
         observation = Observation.objects.get(uuid=uuid)
+        
+        # Récupérer le tableau via l'indicateur
+        tableau = observation.indicateur.objective.tableau_bord
+        
+        # Vérifier si le tableau est validé
+        if not tableau.is_validated:
+            return Response({
+                'success': False,
+                'error': 'Vous devez d\'abord valider le tableau pour modifier les observations'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = ObservationUpdateSerializer(observation, data=request.data, partial=True)
         
         if serializer.is_valid():

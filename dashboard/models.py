@@ -12,6 +12,7 @@ class Objectives(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     number = models.CharField(
         max_length=20,
+        blank=True,
         help_text="Numéro de l'objectif (ex: OB01)"
     )
     libelle = models.CharField(
@@ -184,6 +185,28 @@ class TableauBord(models.Model):
         on_delete=models.CASCADE,
         related_name='tableaux_bord_crees'
     )
+    
+    # Nouveaux champs pour l'état de validation
+    is_validated = models.BooleanField(
+        default=False,
+        help_text="Indique si le tableau de bord est validé pour la saisie des trimestres"
+    )
+    
+    date_validation = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date de validation du tableau"
+    )
+    
+    valide_par = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tableaux_valides',
+        help_text="Utilisateur qui a validé le tableau"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -243,6 +266,29 @@ class TableauBord(models.Model):
             ).exists()
             if not has_a1:
                 raise ValidationError("Amendement 2 nécessite un Amendement 1 existant.")
+
+    def has_amendements(self):
+        """
+        Vérifier si ce tableau a des amendements suivants
+        """
+        if self.type_tableau and self.type_tableau.code == 'INITIAL':
+            # Pour un tableau initial, vérifier s'il a des amendements
+            return TableauBord.objects.filter(
+                annee=self.annee,
+                processus=self.processus,
+                type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
+            ).exists()
+        elif self.type_tableau and self.type_tableau.code == 'AMENDEMENT_1':
+            # Pour un amendement 1, vérifier s'il y a un amendement 2
+            return TableauBord.objects.filter(
+                annee=self.annee,
+                processus=self.processus,
+                type_tableau__code='AMENDEMENT_2'
+            ).exists()
+        elif self.type_tableau and self.type_tableau.code == 'AMENDEMENT_2':
+            # L'amendement 2 ne peut pas avoir d'amendements suivants
+            return False
+        return False
 
     def save(self, *args, **kwargs):
         """
