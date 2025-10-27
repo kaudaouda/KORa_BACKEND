@@ -16,12 +16,12 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
     SousDirection, Service, Processus, Preuve, ActivityLog,
-    NotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence
+    NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
     SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
-    EmailSettingsSerializer, FrequenceSerializer
+    DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -235,6 +235,43 @@ def notification_settings_effective(request):
         logger.error(f"Erreur lors de la résolution des paramètres effectifs: {str(e)}")
         return Response({'error': 'Impossible de résoudre les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# ==================== DASHBOARD NOTIFICATION SETTINGS ====================
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_notification_settings_get(request):
+    """
+    Récupère les paramètres de notification pour les tableaux de bord
+    """
+    try:
+        settings_instance = DashboardNotificationSettings.get_solo()
+        serializer = DashboardNotificationSettingsSerializer(settings_instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des paramètres dashboard: {str(e)}")
+        return Response({'error': 'Impossible de récupérer les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def dashboard_notification_settings_update(request):
+    """
+    Met à jour les paramètres de notification pour les tableaux de bord
+    """
+    try:
+        settings_instance = DashboardNotificationSettings.get_solo()
+        serializer = DashboardNotificationSettingsSerializer(
+            settings_instance, 
+            data=request.data, 
+            partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour des paramètres dashboard: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
