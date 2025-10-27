@@ -3,7 +3,7 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
-    ActivityLog, NotificationSettings, EmailSettings, ReminderEmailLog,
+    ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
     DysfonctionnementRecommandation, Frequence, Periodicite, Cible, TypeTableau
 )
 
@@ -173,6 +173,26 @@ class NotificationSettingsAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Paramètres de notification', {
             'fields': ('traitement_delai_notice_days', 'traitement_reminder_frequency_days')
+        }),
+        ('Métadonnées', {
+            'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
+            'classes': ('collapse',)
+        }),
+    )
+    readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
+
+
+@admin.register(DashboardNotificationSettings)
+class DashboardNotificationSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        'days_before_period_end',
+        'days_after_period_end',
+        'reminder_frequency_days',
+        'updated_at',
+    )
+    fieldsets = (
+        ('Paramètres de notification tableau de bord', {
+            'fields': ('days_before_period_end', 'days_after_period_end', 'reminder_frequency_days')
         }),
         ('Métadonnées', {
             'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
