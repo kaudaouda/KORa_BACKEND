@@ -530,6 +530,56 @@ class NotificationSettings(models.Model):
         return instance
 
 
+class DashboardNotificationSettings(models.Model):
+    """
+    Paramètres de notification pour les indicateurs des tableaux de bord
+    Basés sur les fréquences (trimestre, semestre, annuelle)
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Délai d'alerte avant la fin d'une période pour envoyer la première notification
+    days_before_period_end = models.PositiveIntegerField(
+        default=7,
+        help_text="Nombre de jours avant la fin de la période pour envoyer la première notification"
+    )
+    
+    # Délai après la fin d'une période pour envoyer une relance
+    days_after_period_end = models.PositiveIntegerField(
+        default=7,
+        help_text="Nombre de jours après la fin de la période pour envoyer une relance si non complété"
+    )
+    
+    # Fréquence de relance après expiration
+    reminder_frequency_days = models.PositiveIntegerField(
+        default=7,
+        help_text="Fréquence des rappels après expiration (en jours). 1 = chaque jour, 7 = chaque semaine"
+    )
+    
+    # Enforce singleton
+    singleton_enforcer = models.BooleanField(default=True, unique=True, editable=False)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'dashboard_notification_settings'
+        verbose_name = 'Paramètre de notification tableau de bord'
+        verbose_name_plural = 'Paramètres de notification tableaux de bord'
+
+    def __str__(self):
+        return 'Paramètres de notification tableau de bord'
+
+    @classmethod
+    def get_solo(cls):
+        """Retourne l'unique instance des paramètres (créée si absente)."""
+        instance, _ = cls.objects.get_or_create(singleton_enforcer=True, defaults={
+            'days_before_period_end': 7,
+            'days_after_period_end': 7,
+            'reminder_frequency_days': 7
+        })
+        return instance
+
+
 
 
 # ==================== LOG D'ENVOI DE RELANCES ====================
