@@ -65,6 +65,10 @@ urlpatterns = [
     path('notification-settings/update/', views.notification_settings_update, name='notification_settings_update'),
     path('notification-settings/effective/', views.notification_settings_effective, name='notification_settings_effective'),
     
+    # ==================== DASHBOARD NOTIFICATION SETTINGS ====================
+    path('dashboard-notification-settings/', views.dashboard_notification_settings_get, name='dashboard_notification_settings_get'),
+    path('dashboard-notification-settings/update/', views.dashboard_notification_settings_update, name='dashboard_notification_settings_update'),
+    
     
     # ==================== UPCOMING NOTIFICATIONS ====================
     path('upcoming-notifications/', views.upcoming_notifications, name='upcoming_notifications'),

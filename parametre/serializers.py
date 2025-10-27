@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
-    NotificationSettings, EmailSettings, Nature, Source, Processus, 
+    NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus, 
     Service, EtatMiseEnOeuvre, Frequence
 )
 
@@ -88,6 +88,20 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
             'uuid',
             'traitement_delai_notice_days',
             'traitement_reminder_frequency_days',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class DashboardNotificationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DashboardNotificationSettings
+        fields = [
+            'uuid',
+            'days_before_period_end',
+            'days_after_period_end',
+            'reminder_frequency_days',
             'created_at',
             'updated_at',
         ]
