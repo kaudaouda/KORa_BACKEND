@@ -625,8 +625,11 @@ def pac_list(request):
 def pac_create(request):
     """Créer un nouveau PAC"""
     try:
+        logger.info(f"Données reçues pour la création de PAC: {request.data}")
         serializer = PacCreateSerializer(data=request.data, context={'request': request})
+        
         if serializer.is_valid():
+            logger.info(f"Serializer valide, données validées: {serializer.validated_data}")
             pac = serializer.save()
             
             # Log de l'activité
@@ -638,11 +641,17 @@ def pac_create(request):
             )
             
             return Response(PacSerializer(pac).data, status=status.HTTP_201_CREATED)
+        
+        logger.error(f"Erreurs de validation: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
     except Exception as e:
+        import traceback
         logger.error(f"Erreur lors de la création du PAC: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return Response({
-            'error': 'Impossible de créer le PAC'
+            'error': 'Impossible de créer le PAC',
+            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -870,7 +879,7 @@ def traitement_update(request, uuid):
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = TraitementUpdateSerializer(traitement, data=request.data)
+        serializer = TraitementUpdateSerializer(traitement, data=request.data, partial=True)
         if serializer.is_valid():
             traitement = serializer.save()
             return Response(TraitementSerializer(traitement).data)

@@ -279,13 +279,14 @@ def log_pac_creation(user, pac, ip_address=None, user_agent=None):
     """
     Log spécifique pour la création d'un PAC
     """
+    libelle = pac.libelle if pac.libelle else "(sans libellé)"
     return log_activity(
         user=user,
         action='create',
         entity_type='pac',
         entity_id=str(pac.uuid),
         entity_name=f"PAC {pac.numero_pac}",
-        description=f"Création du PAC {pac.numero_pac}: {pac.libelle}",
+        description=f"Création du PAC {pac.numero_pac}: {libelle}",
         ip_address=ip_address,
         user_agent=user_agent
     )
@@ -494,7 +495,7 @@ def natures_list(request):
                 'is_active': nature.is_active,
             })
 
-            return Response({
+        return Response({
             'success': True,
             'data': data
         }, status=status.HTTP_200_OK)
@@ -594,7 +595,7 @@ def action_types_list(request):
             'success': True,
             'data': data
         }, status=status.HTTP_200_OK)
-            
+        
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des types d'action: {e}")
         return Response({
@@ -626,7 +627,7 @@ def statuts_list(request):
             'success': True,
             'data': data
         }, status=status.HTTP_200_OK)
-            
+        
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des statuts: {e}")
         return Response({
@@ -761,7 +762,7 @@ def sous_directions_list(request):
                 'is_active': sous_direction.is_active,
             })
 
-            return Response({
+        return Response({
             'success': True,
             'data': data
         }, status=status.HTTP_200_OK)

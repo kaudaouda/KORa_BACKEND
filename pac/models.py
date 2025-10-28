@@ -15,23 +15,29 @@ class Pac(models.Model):
         on_delete=models.CASCADE, 
         related_name='pacs'
     )
-    libelle = models.CharField(max_length=500)
+    libelle = models.CharField(max_length=500, null=True, blank=True)
     
     # Relations vers les modèles de l'app parametre
     nature = models.ForeignKey(
         'parametre.Nature', 
         on_delete=models.CASCADE, 
-        related_name='pacs'
+        related_name='pacs',
+        null=True,
+        blank=True
     )
     categorie = models.ForeignKey(
         'parametre.Categorie', 
         on_delete=models.CASCADE, 
-        related_name='pacs'
+        related_name='pacs',
+        null=True,
+        blank=True
     )
     source = models.ForeignKey(
         'parametre.Source', 
         on_delete=models.CASCADE, 
-        related_name='pacs'
+        related_name='pacs',
+        null=True,
+        blank=True
     )
     dysfonctionnement_recommandation = models.ForeignKey(
         'parametre.DysfonctionnementRecommandation', 
@@ -41,7 +47,7 @@ class Pac(models.Model):
         blank=True
     )
     
-    periode_de_realisation = models.DateField()
+    periode_de_realisation = models.DateField(null=True, blank=True)
     cree_par = models.ForeignKey(
         User, 
         on_delete=models.CASCADE, 
@@ -75,7 +81,9 @@ class Traitement(models.Model):
     type_action = models.ForeignKey(
         'parametre.ActionType',
         on_delete=models.CASCADE,
-        related_name='traitements'
+        related_name='traitements',
+        null=True,
+        blank=True
     )
     responsable_direction = models.ForeignKey(
         'parametre.Direction',
@@ -109,7 +117,7 @@ class Traitement(models.Model):
         blank=True,
         null=True
     )
-    delai_realisation = models.DateField()
+    delai_realisation = models.DateField(null=True, blank=True)
 
     class Meta:
         db_table = 'traitement'

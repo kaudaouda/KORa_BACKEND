@@ -59,12 +59,12 @@ class PacSerializer(serializers.ModelSerializer):
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
     processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
     processus_uuid = serializers.UUIDField(source='processus.uuid', read_only=True)
-    nature_nom = serializers.CharField(source='nature.nom', read_only=True)
-    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True)
-    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
-    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True)
-    source_nom = serializers.CharField(source='source.nom', read_only=True)
-    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True)
+    nature_nom = serializers.CharField(source='nature.nom', read_only=True, allow_null=True)
+    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True, allow_null=True)
+    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True, allow_null=True)
+    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True, allow_null=True)
+    source_nom = serializers.CharField(source='source.nom', read_only=True, allow_null=True)
+    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
@@ -88,6 +88,8 @@ class PacSerializer(serializers.ModelSerializer):
     
     def get_jours_restants(self, obj):
         """Calculer les jours restants"""
+        if not obj.periode_de_realisation:
+            return None
         from django.utils import timezone
         delta = obj.periode_de_realisation - timezone.now().date()
         return delta.days if delta.days > 0 else 0
@@ -102,11 +104,23 @@ class PacCreateSerializer(serializers.ModelSerializer):
             'processus', 'libelle', 'nature', 
             'categorie', 'source', 'dysfonctionnement_recommandation', 'periode_de_realisation'
         ]
+        extra_kwargs = {
+            'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'nature': {'required': False, 'allow_null': True},
+            'categorie': {'required': False, 'allow_null': True},
+            'source': {'required': False, 'allow_null': True},
+            'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
+            'periode_de_realisation': {'required': False, 'allow_null': True},
+        }
     
     def validate_periode_de_realisation(self, value):
         """Valider que la période de réalisation est >= aujourd'hui"""
         from django.utils import timezone
         today = timezone.now().date()
+        
+        # Si la valeur est None, on ne valide pas
+        if value is None:
+            return value
         
         if value < today:
             raise serializers.ValidationError(
@@ -121,6 +135,10 @@ class PacCreateSerializer(serializers.ModelSerializer):
         
         # Générer le numéro PAC automatiquement
         validated_data['numero_pac'] = self.generate_numero_pac()
+        
+        # S'assurer que processus est toujours fourni
+        if 'processus' not in validated_data or validated_data['processus'] is None:
+            raise serializers.ValidationError("Le champ 'processus' est requis")
         
         return super().create(validated_data)
     
@@ -147,9 +165,20 @@ class PacUpdateSerializer(serializers.ModelSerializer):
             'processus', 'libelle', 'nature', 
             'categorie', 'source', 'dysfonctionnement_recommandation', 'periode_de_realisation'
         ]
+        extra_kwargs = {
+            'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'nature': {'required': False, 'allow_null': True},
+            'categorie': {'required': False, 'allow_null': True},
+            'source': {'required': False, 'allow_null': True},
+            'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
+            'periode_de_realisation': {'required': False, 'allow_null': True},
+        }
     
     def validate_periode_de_realisation(self, value):
         """Valider que la période de réalisation est >= aujourd'hui"""
+        if value is None:
+            return value
+        
         from django.utils import timezone
         today = timezone.now().date()
         
@@ -168,13 +197,13 @@ class PacUpdateSerializer(serializers.ModelSerializer):
 
 class TraitementSerializer(serializers.ModelSerializer):
     """Serializer pour les traitements"""
-    type_action_nom = serializers.CharField(source='type_action.nom', read_only=True)
-    preuve_description = serializers.CharField(source='preuve.description', read_only=True)
+    type_action_nom = serializers.CharField(source='type_action.nom', read_only=True, allow_null=True)
+    preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     pac_numero = serializers.CharField(source='pac.numero_pac', read_only=True)
     pac_uuid = serializers.UUIDField(source='pac.uuid', read_only=True)
-    responsable_direction_nom = serializers.CharField(source='responsable_direction.nom', read_only=True)
-    responsable_sous_direction_nom = serializers.CharField(source='responsable_sous_direction.nom', read_only=True)
+    responsable_direction_nom = serializers.CharField(source='responsable_direction.nom', read_only=True, allow_null=True)
+    responsable_sous_direction_nom = serializers.CharField(source='responsable_sous_direction.nom', read_only=True, allow_null=True)
     
     # Exposer aussi les M2M (lecture seule pour compat)
     responsables_directions = serializers.PrimaryKeyRelatedField(
@@ -228,9 +257,17 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
             'responsable_sous_direction', 'responsables_directions', 'responsables_sous_directions',
             'preuve', 'delai_realisation'
         ]
+        extra_kwargs = {
+            'type_action': {'required': False, 'allow_null': True},
+            'delai_realisation': {'required': False, 'allow_null': True}
+        }
     
     def validate_delai_realisation(self, value):
         """Valider que le délai de réalisation est >= aujourd'hui et >= période de réalisation du PAC"""
+        # Si le champ est null/None, ne pas valider (champ optionnel)
+        if value is None:
+            return None
+            
         from django.utils import timezone
         today = timezone.now().date()
         
@@ -244,7 +281,7 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
         if pac:
             try:
                 pac_obj = Pac.objects.get(uuid=pac)
-                if value < pac_obj.periode_de_realisation:
+                if pac_obj.periode_de_realisation and value < pac_obj.periode_de_realisation:
                     raise serializers.ValidationError(
                         f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du PAC ({pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
                     )
@@ -294,9 +331,23 @@ class TraitementUpdateSerializer(serializers.ModelSerializer):
             'responsable_sous_direction', 'responsables_directions', 'responsables_sous_directions',
             'preuve', 'delai_realisation'
         ]
+        extra_kwargs = {
+            'action': {'required': False},
+            'type_action': {'required': False, 'allow_null': True},
+            'responsable_direction': {'required': False, 'allow_null': True},
+            'responsable_sous_direction': {'required': False, 'allow_null': True},
+            'preuve': {'required': False, 'allow_null': True},
+            'delai_realisation': {'required': False, 'allow_null': True},
+            'responsables_directions': {'required': False},
+            'responsables_sous_directions': {'required': False}
+        }
     
     def validate_delai_realisation(self, value):
         """Valider que le délai de réalisation est >= aujourd'hui et >= période de réalisation du PAC"""
+        # Si le champ est null/None, ne pas valider (champ optionnel)
+        if value is None:
+            return None
+            
         from django.utils import timezone
         today = timezone.now().date()
         
@@ -308,7 +359,7 @@ class TraitementUpdateSerializer(serializers.ModelSerializer):
         # Pour la mise à jour, on peut accéder au PAC via l'instance
         if hasattr(self, 'instance') and self.instance and self.instance.pac:
             pac_obj = self.instance.pac
-            if value < pac_obj.periode_de_realisation:
+            if pac_obj.periode_de_realisation and value < pac_obj.periode_de_realisation:
                 raise serializers.ValidationError(
                     f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du PAC ({pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
                 )
@@ -449,12 +500,12 @@ class PacCompletSerializer(serializers.ModelSerializer):
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
     processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
     processus_uuid = serializers.UUIDField(source='processus.uuid', read_only=True)
-    nature_nom = serializers.CharField(source='nature.nom', read_only=True)
-    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True)
-    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
-    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True)
-    source_nom = serializers.CharField(source='source.nom', read_only=True)
-    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True)
+    nature_nom = serializers.CharField(source='nature.nom', read_only=True, allow_null=True)
+    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True, allow_null=True)
+    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True, allow_null=True)
+    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True, allow_null=True)
+    source_nom = serializers.CharField(source='source.nom', read_only=True, allow_null=True)
+    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
@@ -481,6 +532,8 @@ class PacCompletSerializer(serializers.ModelSerializer):
     
     def get_jours_restants(self, obj):
         """Calculer les jours restants"""
+        if not obj.periode_de_realisation:
+            return None
         from django.utils import timezone
         delta = obj.periode_de_realisation - timezone.now().date()
         return delta.days if delta.days > 0 else 0
