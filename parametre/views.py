@@ -1809,3 +1809,95 @@ def periodicites_list(request):
         logger.error(f"Erreur lors de la liste des périodicités: {str(e)}")
         return Response({'error': 'Impossible de lister les périodicités'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# ==================== ANNÉES ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def annees_list(request):
+    """
+    Liste des années actives pour les formulaires
+    """
+    try:
+        from .models import Annee
+        from .serializers import AnneeSerializer
+        
+        annees = Annee.objects.filter(is_active=True).order_by('-annee')
+        serializer = AnneeSerializer(annees, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des années: {str(e)}")
+        return Response({'error': 'Impossible de lister les années'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def annees_all_list(request):
+    """
+    Liste de toutes les années (actives et inactives)
+    """
+    try:
+        from .models import Annee
+        from .serializers import AnneeSerializer
+        
+        annees = Annee.objects.all().order_by('-annee')
+        serializer = AnneeSerializer(annees, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des années: {str(e)}")
+        return Response({'error': 'Impossible de lister les années'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== TYPES DE TABLEAU ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def types_tableau_list(request):
+    """
+    Liste des types de tableau actifs pour les formulaires
+    """
+    try:
+        from .models import TypeTableau
+        from .serializers import TypeTableauSerializer
+        
+        types_tableau = TypeTableau.objects.filter(is_active=True).order_by('nom')
+        serializer = TypeTableauSerializer(types_tableau, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des types de tableau: {str(e)}")
+        return Response({'error': 'Impossible de lister les types de tableau'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def types_tableau_all_list(request):
+    """
+    Liste de tous les types de tableau (actifs et inactifs)
+    """
+    try:
+        from .models import TypeTableau
+        from .serializers import TypeTableauSerializer
+        
+        types_tableau = TypeTableau.objects.all().order_by('nom')
+        serializer = TypeTableauSerializer(types_tableau, many=True)
+        
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des types de tableau: {str(e)}")
+        return Response({'error': 'Impossible de lister les types de tableau'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

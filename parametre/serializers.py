@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus, 
-    Service, EtatMiseEnOeuvre, Frequence
+    Service, EtatMiseEnOeuvre, Frequence, TypeTableau, Annee
 )
 
 
@@ -135,5 +135,25 @@ class FrequenceSerializer(serializers.ModelSerializer):
         model = Frequence
         fields = ['uuid', 'nom', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class TypeTableauSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TypeTableau
+        fields = ['uuid', 'code', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class AnneeSerializer(serializers.ModelSerializer):
+    pacs_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Annee
+        fields = ['uuid', 'annee', 'libelle', 'description', 'is_active', 'pacs_count', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def get_pacs_count(self, obj):
+        """Retourner le nombre de PACs associés à cette année"""
+        return obj.pacs.count()
 
 

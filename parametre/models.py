@@ -284,6 +284,41 @@ class TypeTableau(HasActiveStatus):
         return self.nom
 
 
+class Annee(HasActiveStatus):
+    """
+    Modèle pour les années - utilisé pour filtrer les PAC par année
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    annee = models.IntegerField(
+        unique=True,
+        help_text="Année (ex: 2024, 2025)"
+    )
+    libelle = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Libellé optionnel (ex: 'Année fiscale 2024')"
+    )
+    description = models.TextField(
+        blank=True, 
+        null=True,
+        help_text="Description de l'année"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'annee'
+        verbose_name = 'Année'
+        verbose_name_plural = 'Années'
+        ordering = ['-annee']  # Ordre décroissant pour avoir les années récentes en premier
+
+    def __str__(self):
+        if self.libelle:
+            return f"{self.annee} - {self.libelle}"
+        return str(self.annee)
+
+
 class Processus(HasActiveStatus):
     """
     Modèle pour les processus (déplacé depuis l'app pac)
