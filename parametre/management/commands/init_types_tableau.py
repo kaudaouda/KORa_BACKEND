@@ -11,25 +11,19 @@ class Command(BaseCommand):
                 'code': 'INITIAL',
                 'nom': 'Tableau Initial',
                 'description': 'Tableau de bord de référence pour une année et un processus',
-                'ordre': 1,
-                'couleur': '#3B82F6',
-                'icone': '📊'
+                'is_active': True
             },
             {
                 'code': 'AMENDEMENT_1',
                 'nom': 'Amendement 1',
                 'description': 'Premier amendement du tableau initial',
-                'ordre': 2,
-                'couleur': '#10B981',
-                'icone': '📝'
+                'is_active': True
             },
             {
                 'code': 'AMENDEMENT_2',
                 'nom': 'Amendement 2',
                 'description': 'Deuxième amendement du tableau initial',
-                'ordre': 3,
-                'couleur': '#F59E0B',
-                'icone': '📝'
+                'is_active': True
             }
         ]
 

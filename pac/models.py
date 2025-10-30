@@ -46,6 +46,22 @@ class Pac(models.Model):
         null=True,
         blank=True
     )
+    annee = models.ForeignKey(
+        'parametre.Annee',
+        on_delete=models.SET_NULL,
+        related_name='pacs',
+        null=True,
+        blank=True,
+        help_text='Année associée au PAC'
+    )
+    type_tableau = models.ForeignKey(
+        'parametre.TypeTableau',
+        on_delete=models.SET_NULL,
+        related_name='pacs',
+        null=True,
+        blank=True,
+        help_text='Type de tableau associé au PAC (Initial, Amendement, etc.)'
+    )
     
     periode_de_realisation = models.DateField(null=True, blank=True)
     cree_par = models.ForeignKey(
