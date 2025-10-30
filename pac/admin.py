@@ -11,11 +11,27 @@ from parametre.models import Processus
 
 @admin.register(Pac)
 class PacAdmin(admin.ModelAdmin):
-    list_display = ('numero_pac', 'libelle', 'processus', 'nature', 'categorie', 'source', 'cree_par', 'created_at')
-    list_filter = ('nature', 'categorie', 'source', 'processus', 'cree_par', 'created_at')
+    list_display = ('numero_pac', 'libelle', 'processus', 'annee', 'type_tableau', 'nature', 'categorie', 'source', 'cree_par', 'created_at')
+    list_filter = ('annee', 'type_tableau', 'nature', 'categorie', 'source', 'processus', 'cree_par', 'created_at')
     search_fields = ('numero_pac', 'libelle', 'processus__nom', 'cree_par__username', 'cree_par__email')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
-    raw_id_fields = ('processus', 'nature', 'categorie', 'source', 'cree_par')
+    raw_id_fields = ('processus', 'nature', 'categorie', 'source', 'dysfonctionnement_recommandation', 'annee', 'type_tableau', 'cree_par')
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'numero_pac', 'processus', 'libelle')
+        }),
+        ('Classification', {
+            'fields': ('annee', 'type_tableau', 'nature', 'categorie', 'source', 'dysfonctionnement_recommandation')
+        }),
+        ('Période', {
+            'fields': ('periode_de_realisation',)
+        }),
+        ('Métadonnées', {
+            'fields': ('cree_par', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 

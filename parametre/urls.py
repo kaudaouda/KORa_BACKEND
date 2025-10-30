@@ -91,4 +91,12 @@ urlpatterns = [
     
     # ==================== PÉRIODICITÉS ====================
     path('periodicites/', views.periodicites_list, name='periodicites_list'),
+    
+    # ==================== ANNÉES ====================
+    path('annees/', views.annees_list, name='annees_list'),
+    path('annees/all/', views.annees_all_list, name='annees_all_list'),
+    
+    # ==================== TYPES DE TABLEAU ====================
+    path('types-tableau/', views.types_tableau_list, name='types_tableau_list'),
+    path('types-tableau/all/', views.types_tableau_all_list, name='types_tableau_all_list'),
 ]
