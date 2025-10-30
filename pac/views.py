@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.utils import timezone
 from .models import Pac, Traitement, Suivi
-from parametre.models import Processus, Media, Preuve
+from parametre.models import Processus, Media, Preuve, TypeTableau
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
@@ -27,6 +27,31 @@ import json
 import logging
 
 logger = logging.getLogger(__name__)
+# ==================== UTILITAIRES TYPE TABLEAU ====================
+
+def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
+    """
+    Retourne l'instance TypeTableau à utiliser automatiquement pour (annee, processus) d'un user.
+    Ordre: INITIAL -> AMENDEMENT_1 -> AMENDEMENT_2. Si tous existent déjà, retourne AMENDEMENT_2.
+    """
+    try:
+        codes_order = ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
+        existing_types = set(
+            Pac.objects.filter(
+                cree_par=user,
+                annee_id=annee_uuid,
+                processus_id=processus_uuid
+            ).values_list('type_tableau__code', flat=True)
+        )
+        for code in codes_order:
+            if code not in existing_types:
+                return TypeTableau.objects.get(code=code)
+        # Tous déjà présents: retourner le dernier
+        return TypeTableau.objects.get(code=codes_order[-1])
+    except TypeTableau.DoesNotExist:
+        # En cas de configuration incomplète, fallback sur le premier disponible
+        return TypeTableau.objects.order_by('nom').first()
+
 
 
 # ==================== AUTHENTIFICATION ====================
@@ -634,6 +659,14 @@ def pac_create(request):
         processus_uuid = data.get('processus')
         type_tableau_uuid = data.get('type_tableau')
 
+        # 0-bis) S'il manque type_tableau mais annee + processus sont fournis, déterminer automatiquement le type
+        if annee_uuid and processus_uuid and not type_tableau_uuid:
+            auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
+            if auto_tt:
+                # Copier les données pour mutation sûre
+                data = data.copy()
+                data['type_tableau'] = str(auto_tt.uuid)
+
         existing_pac = None
         if annee_uuid and processus_uuid and type_tableau_uuid:
             try:
@@ -756,9 +789,17 @@ def pac_get_or_create(request):
         processus_uuid = data.get('processus')
         type_tableau_uuid = data.get('type_tableau')
 
+        # Si type_tableau est absent mais annee + processus sont fournis, l'attribuer automatiquement
+        if annee_uuid and processus_uuid and not type_tableau_uuid:
+            auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
+            if auto_tt:
+                data = data.copy()
+                data['type_tableau'] = str(auto_tt.uuid)
+                type_tableau_uuid = data['type_tableau']
+
         if not (annee_uuid and processus_uuid and type_tableau_uuid):
             return Response({
-                'error': "Les champs 'annee', 'processus' et 'type_tableau' sont requis"
+                'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
