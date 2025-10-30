@@ -67,6 +67,12 @@ class PacSerializer(serializers.ModelSerializer):
     source_uuid = serializers.UUIDField(source='source.uuid', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
+    annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
+    annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
+    annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
+    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
+    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
+    type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     jours_restants = serializers.SerializerMethodField()
     
@@ -77,6 +83,8 @@ class PacSerializer(serializers.ModelSerializer):
             'libelle', 'nature', 'nature_nom', 'nature_uuid', 'categorie', 'categorie_nom', 'categorie_uuid',
             'source', 'source_nom', 'source_uuid', 'dysfonctionnement_recommandation', 
             'dysfonctionnement_recommandation_nom', 'dysfonctionnement_recommandation_uuid',
+            'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
+            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'periode_de_realisation', 'jours_restants',
             'cree_par', 'createur_nom', 'created_at', 'updated_at'
         ]
@@ -102,7 +110,8 @@ class PacCreateSerializer(serializers.ModelSerializer):
         model = Pac
         fields = [
             'processus', 'libelle', 'nature', 
-            'categorie', 'source', 'dysfonctionnement_recommandation', 'periode_de_realisation'
+            'categorie', 'source', 'dysfonctionnement_recommandation', 
+            'annee', 'type_tableau', 'periode_de_realisation'
         ]
         extra_kwargs = {
             'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
@@ -110,6 +119,8 @@ class PacCreateSerializer(serializers.ModelSerializer):
             'categorie': {'required': False, 'allow_null': True},
             'source': {'required': False, 'allow_null': True},
             'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
+            'annee': {'required': False, 'allow_null': True},
+            'type_tableau': {'required': False, 'allow_null': True},
             'periode_de_realisation': {'required': False, 'allow_null': True},
         }
     
@@ -163,7 +174,8 @@ class PacUpdateSerializer(serializers.ModelSerializer):
         model = Pac
         fields = [
             'processus', 'libelle', 'nature', 
-            'categorie', 'source', 'dysfonctionnement_recommandation', 'periode_de_realisation'
+            'categorie', 'source', 'dysfonctionnement_recommandation', 
+            'annee', 'type_tableau', 'periode_de_realisation'
         ]
         extra_kwargs = {
             'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
@@ -171,6 +183,8 @@ class PacUpdateSerializer(serializers.ModelSerializer):
             'categorie': {'required': False, 'allow_null': True},
             'source': {'required': False, 'allow_null': True},
             'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
+            'annee': {'required': False, 'allow_null': True},
+            'type_tableau': {'required': False, 'allow_null': True},
             'periode_de_realisation': {'required': False, 'allow_null': True},
         }
     
@@ -508,6 +522,12 @@ class PacCompletSerializer(serializers.ModelSerializer):
     source_uuid = serializers.UUIDField(source='source.uuid', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
     dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
+    annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
+    annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
+    annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
+    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
+    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
+    type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     jours_restants = serializers.SerializerMethodField()
     
@@ -521,6 +541,8 @@ class PacCompletSerializer(serializers.ModelSerializer):
             'libelle', 'nature', 'nature_nom', 'nature_uuid', 'categorie', 'categorie_nom', 'categorie_uuid',
             'source', 'source_nom', 'source_uuid', 'dysfonctionnement_recommandation',
             'dysfonctionnement_recommandation_nom', 'dysfonctionnement_recommandation_uuid',
+            'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
+            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'periode_de_realisation', 'jours_restants',
             'cree_par', 'createur_nom', 'created_at', 'updated_at', 'traitements'
         ]

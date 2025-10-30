@@ -4,7 +4,7 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
-    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, TypeTableau
+    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, TypeTableau, Annee
 )
 
 
@@ -380,3 +380,40 @@ class TypeTableauAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+@admin.register(Annee)
+class AnneeAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les années"""
+    
+    list_display = [
+        'annee', 'libelle', 'is_active', 'pacs_count', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'annee', 'libelle', 'description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['-annee']  # Années récentes en premier
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'annee', 'libelle', 'description')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def pacs_count(self, obj):
+        """Afficher le nombre de PACs associés à cette année"""
+        return obj.pacs.count()
+    pacs_count.short_description = 'Nb PACs'
