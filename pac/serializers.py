@@ -157,12 +157,12 @@ class PacCreateSerializer(serializers.ModelSerializer):
         """Générer un numéro PAC unique"""
         from django.db.models import Count
         count = Pac.objects.count()
-        numero = f"PAC{count + 1:04d}"
+        numero = f"PAC{count + 1:02d}"
         
         # Vérifier l'unicité
         while Pac.objects.filter(numero_pac=numero).exists():
             count += 1
-            numero = f"PAC{count + 1:04d}"
+            numero = f"PAC{count + 1:02d}"
         
         return numero
 
