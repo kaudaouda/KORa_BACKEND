@@ -64,6 +64,26 @@ class Pac(models.Model):
     )
     
     periode_de_realisation = models.DateField(null=True, blank=True)
+    
+    # Champs de validation
+    is_validated = models.BooleanField(
+        default=False,
+        help_text='Indique si le PAC est validé (verrouille les champs PAC et Traitement)'
+    )
+    date_validation = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Date de validation du PAC'
+    )
+    validated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pacs_valides',
+        help_text='Utilisateur qui a validé le PAC'
+    )
+    
     cree_par = models.ForeignKey(
         User, 
         on_delete=models.CASCADE, 
