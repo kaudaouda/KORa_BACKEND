@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus, 
-    Service, EtatMiseEnOeuvre, Frequence, TypeTableau, Annee
+    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee
 )
 
 
@@ -137,9 +137,9 @@ class FrequenceSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
-class TypeTableauSerializer(serializers.ModelSerializer):
+class VersionsSerializer(serializers.ModelSerializer):
     class Meta:
-        model = TypeTableau
+        model = Versions
         fields = ['uuid', 'code', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 

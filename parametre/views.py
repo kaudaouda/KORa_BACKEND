@@ -1862,36 +1862,36 @@ def annees_all_list(request):
 @permission_classes([IsAuthenticated])
 def types_tableau_list(request):
     """
-    Liste des types de tableau actifs pour les formulaires
+    Liste des versions actives pour les formulaires
     """
     try:
-        from .models import TypeTableau
-        from .serializers import TypeTableauSerializer
+        from .models import Versions
+        from .serializers import VersionsSerializer
         
-        types_tableau = TypeTableau.objects.filter(is_active=True).order_by('nom')
-        serializer = TypeTableauSerializer(types_tableau, many=True)
+        versions = Versions.objects.filter(is_active=True).order_by('nom')
+        serializer = VersionsSerializer(versions, many=True)
         
         return Response({
             'success': True,
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des types de tableau: {str(e)}")
-        return Response({'error': 'Impossible de lister les types de tableau'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Erreur lors de la liste des versions: {str(e)}")
+        return Response({'error': 'Impossible de lister les versions'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def types_tableau_all_list(request):
     """
-    Liste de tous les types de tableau (actifs et inactifs)
+    Liste de toutes les versions (actives et inactives)
     """
     try:
-        from .models import TypeTableau
-        from .serializers import TypeTableauSerializer
+        from .models import Versions
+        from .serializers import VersionsSerializer
         
-        types_tableau = TypeTableau.objects.all().order_by('nom')
-        serializer = TypeTableauSerializer(types_tableau, many=True)
+        versions = Versions.objects.all().order_by('nom')
+        serializer = VersionsSerializer(versions, many=True)
         
         return Response({
             'success': True,

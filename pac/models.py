@@ -9,42 +9,32 @@ class Pac(models.Model):
     Modèle pour les PAC (Plan d'Action Corrective)
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    numero_pac = models.CharField(max_length=50, unique=True)
+    cree_par = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='pacs_crees'
+    )
+    validated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pacs_valides',
+        help_text='Utilisateur qui a validé le PAC'
+    )
+    is_validated = models.BooleanField(
+        default=False,
+        help_text='Indique que tous les détails et traitements sont renseignés. Permet la création des suivis.'
+    )
+    validated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Date de validation des détails et traitements'
+    )
     processus = models.ForeignKey(
         Processus, 
         on_delete=models.CASCADE, 
         related_name='pacs'
-    )
-    libelle = models.CharField(max_length=500, null=True, blank=True)
-    
-    # Relations vers les modèles de l'app parametre
-    nature = models.ForeignKey(
-        'parametre.Nature', 
-        on_delete=models.CASCADE, 
-        related_name='pacs',
-        null=True,
-        blank=True
-    )
-    categorie = models.ForeignKey(
-        'parametre.Categorie', 
-        on_delete=models.CASCADE, 
-        related_name='pacs',
-        null=True,
-        blank=True
-    )
-    source = models.ForeignKey(
-        'parametre.Source', 
-        on_delete=models.CASCADE, 
-        related_name='pacs',
-        null=True,
-        blank=True
-    )
-    dysfonctionnement_recommandation = models.ForeignKey(
-        'parametre.DysfonctionnementRecommandation', 
-        on_delete=models.CASCADE, 
-        related_name='pacs',
-        null=True,
-        blank=True
     )
     annee = models.ForeignKey(
         'parametre.Annee',
@@ -55,22 +45,13 @@ class Pac(models.Model):
         help_text='Année associée au PAC'
     )
     type_tableau = models.ForeignKey(
-        'parametre.TypeTableau',
+        'parametre.Versions',
         on_delete=models.SET_NULL,
         related_name='pacs',
         null=True,
         blank=True,
-        help_text='Type de tableau associé au PAC (Initial, Amendement, etc.)'
+        help_text='Version associée au PAC (Initial, Amendement, etc.)'
     )
-    
-    periode_de_realisation = models.DateField(null=True, blank=True)
-    cree_par = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='pacs_crees'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'pac'
@@ -78,20 +59,88 @@ class Pac(models.Model):
         verbose_name_plural = 'PACs'
 
     def __str__(self):
-        return f"PAC {self.numero_pac} - {self.libelle}"
+        return f"PAC {self.uuid}"
 
 
-
-
-class Traitement(models.Model):
+class DetailsPac(models.Model):
     """
-    Modèle pour les traitements
+    Modèle pour les détails d'un PAC
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    numero_pac = models.CharField(max_length=50, unique=True, null=True, blank=True, help_text='Numéro unique du détail PAC')
     pac = models.ForeignKey(
         Pac,
         on_delete=models.CASCADE,
-        related_name='traitements'
+        related_name='details',
+        null=True,
+        blank=True,
+        help_text='PAC associé'
+    )
+    dysfonctionnement_recommandation = models.ForeignKey(
+        'parametre.DysfonctionnementRecommandation',
+        on_delete=models.CASCADE,
+        related_name='details_pacs',
+        null=True,
+        blank=True,
+        help_text='Dysfonctionnement ou recommandation'
+    )
+    libelle = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text='Libellé du détail'
+    )
+    nature = models.ForeignKey(
+        'parametre.Nature',
+        on_delete=models.CASCADE,
+        related_name='details_pacs',
+        null=True,
+        blank=True,
+        help_text='Nature du détail'
+    )
+    categorie = models.ForeignKey(
+        'parametre.Categorie',
+        on_delete=models.CASCADE,
+        related_name='details_pacs',
+        null=True,
+        blank=True,
+        help_text='Catégorie du détail'
+    )
+    source = models.ForeignKey(
+        'parametre.Source',
+        on_delete=models.CASCADE,
+        related_name='details_pacs',
+        null=True,
+        blank=True,
+        help_text='Source du détail'
+    )
+    periode_de_realisation = models.DateField(
+        null=True,
+        blank=True,
+        help_text='Période de réalisation'
+    )
+
+    class Meta:
+        db_table = 'details_pac'
+        verbose_name = 'Détail PAC'
+        verbose_name_plural = 'Détails PAC'
+
+    def __str__(self):
+        return f"Détail {self.numero_pac} - {self.uuid}"
+
+
+class TraitementPac(models.Model):
+    """
+    Modèle pour les traitements PAC
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    details_pac = models.OneToOneField(
+        DetailsPac,
+        on_delete=models.CASCADE,
+        related_name='traitement',
+        null=True,
+        blank=True,
+        help_text='Détails PAC associé'
     )
     action = models.TextField()
     type_action = models.ForeignKey(
@@ -137,22 +186,25 @@ class Traitement(models.Model):
 
     class Meta:
         db_table = 'traitement'
-        verbose_name = 'Traitement'
-        verbose_name_plural = 'Traitements'
+        verbose_name = 'Traitement PAC'
+        verbose_name_plural = 'Traitements PAC'
 
     def __str__(self):
-        return f"Traitement {self.uuid} - {self.action[:50]}..."
+        return f"Traitement PAC {self.uuid} - {self.action[:50]}..."
 
 
-class Suivi(models.Model):
+class PacSuivi(models.Model):
     """
-    Modèle pour le suivi des traitements
+    Modèle pour le suivi des traitements PAC
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    traitement = models.ForeignKey(
-        Traitement, 
+    traitement = models.OneToOneField(
+        TraitementPac, 
         on_delete=models.CASCADE, 
-        related_name='suivis'
+        related_name='suivi',
+        null=True,
+        blank=True,
+        help_text='Traitement PAC associé'
     )
     etat_mise_en_oeuvre = models.ForeignKey(
         'parametre.EtatMiseEnOeuvre',
@@ -190,8 +242,8 @@ class Suivi(models.Model):
 
     class Meta:
         db_table = 'suivi'
-        verbose_name = 'Suivi'
-        verbose_name_plural = 'Suivis'
+        verbose_name = 'Suivi PAC'
+        verbose_name_plural = 'Suivis PAC'
 
     def __str__(self):
-        return f"Suivi {self.uuid} - {self.etat_mise_en_oeuvre.nom}"
+        return f"Suivi PAC {self.uuid} - {self.etat_mise_en_oeuvre.nom}"
