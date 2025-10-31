@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.utils import timezone
 from .models import Pac, Traitement, Suivi
-from parametre.models import Processus, Media, Preuve
+from parametre.models import Processus, Media, Preuve, TypeTableau
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
@@ -27,6 +27,31 @@ import json
 import logging
 
 logger = logging.getLogger(__name__)
+# ==================== UTILITAIRES TYPE TABLEAU ====================
+
+def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
+    """
+    Retourne l'instance TypeTableau à utiliser automatiquement pour (annee, processus) d'un user.
+    Ordre: INITIAL -> AMENDEMENT_1 -> AMENDEMENT_2. Si tous existent déjà, retourne AMENDEMENT_2.
+    """
+    try:
+        codes_order = ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
+        existing_types = set(
+            Pac.objects.filter(
+                cree_par=user,
+                annee_id=annee_uuid,
+                processus_id=processus_uuid
+            ).values_list('type_tableau__code', flat=True)
+        )
+        for code in codes_order:
+            if code not in existing_types:
+                return TypeTableau.objects.get(code=code)
+        # Tous déjà présents: retourner le dernier
+        return TypeTableau.objects.get(code=codes_order[-1])
+    except TypeTableau.DoesNotExist:
+        # En cas de configuration incomplète, fallback sur le premier disponible
+        return TypeTableau.objects.order_by('nom').first()
+
 
 
 # ==================== AUTHENTIFICATION ====================
@@ -609,7 +634,8 @@ def pac_list(request):
     """Liste des PACs de l'utilisateur connecté"""
     try:
         pacs = Pac.objects.filter(cree_par=request.user).select_related(
-            'processus', 'nature', 'categorie', 'source', 'cree_par'
+            'processus', 'nature', 'categorie', 'source', 'cree_par',
+            'annee', 'type_tableau'
         ).order_by('-created_at')
         serializer = PacSerializer(pacs, many=True)
         return Response(serializer.data)
@@ -626,7 +652,50 @@ def pac_create(request):
     """Créer un nouveau PAC"""
     try:
         logger.info(f"Données reçues pour la création de PAC: {request.data}")
-        serializer = PacCreateSerializer(data=request.data, context={'request': request})
+        # 1) Si le trio (annee, processus, type_tableau) est fourni, appliquer une logique de déduplication
+        data = request.data
+
+        annee_uuid = data.get('annee')
+        processus_uuid = data.get('processus')
+        type_tableau_uuid = data.get('type_tableau')
+
+        # 0-bis) S'il manque type_tableau mais annee + processus sont fournis, déterminer automatiquement le type
+        if annee_uuid and processus_uuid and not type_tableau_uuid:
+            auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
+            if auto_tt:
+                # Copier les données pour mutation sûre
+                data = data.copy()
+                data['type_tableau'] = str(auto_tt.uuid)
+
+        existing_pac = None
+        if annee_uuid and processus_uuid and type_tableau_uuid:
+            try:
+                existing_pac = Pac.objects.select_related(
+                    'processus', 'annee', 'type_tableau', 'nature', 'categorie', 'source', 'cree_par'
+                ).get(
+                    cree_par=request.user,
+                    processus_id=processus_uuid,
+                    annee_id=annee_uuid,
+                    type_tableau_id=type_tableau_uuid
+                )
+                logger.info(
+                    f"PAC existant trouvé pour (annee={annee_uuid}, processus={processus_uuid}, type_tableau={type_tableau_uuid})"
+                )
+            except Pac.DoesNotExist:
+                existing_pac = None
+
+        # 2) Si un PAC existe déjà pour ce contexte, on le met à jour partiellement avec les champs fournis
+        if existing_pac is not None:
+            partial_serializer = PacUpdateSerializer(existing_pac, data=data, partial=True)
+            if partial_serializer.is_valid():
+                updated_pac = partial_serializer.save()
+                return Response(PacSerializer(updated_pac).data, status=status.HTTP_200_OK)
+            else:
+                logger.error(f"Erreurs de validation (update existing): {partial_serializer.errors}")
+                return Response(partial_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3) Sinon, créer un nouveau PAC normalement
+        serializer = PacCreateSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
             logger.info(f"Serializer valide, données validées: {serializer.validated_data}")
@@ -680,7 +749,7 @@ def pac_complet(request, uuid):
     """Récupérer un PAC complet avec tous ses traitements et suivis"""
     try:
         pac = Pac.objects.select_related(
-            'processus', 'nature', 'categorie', 'source', 'cree_par'
+            'processus', 'nature', 'categorie', 'source', 'cree_par', 'annee', 'type_tableau'
         ).prefetch_related(
             'traitements__type_action',
             'traitements__responsable_direction',
@@ -703,6 +772,72 @@ def pac_complet(request, uuid):
         logger.error(f"Erreur lors de la récupération du PAC complet: {str(e)}")
         return Response({
             'error': 'Impossible de récupérer le PAC complet'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pac_get_or_create(request):
+    """
+    Trouver ou créer un PAC par (annee, processus, type_tableau) pour l'utilisateur connecté.
+    Si trouvé: retourne 200 avec le PAC (mise à jour partielle avec les champs fournis).
+    Si non trouvé: crée un nouveau PAC et retourne 201.
+    """
+    try:
+        data = request.data
+        annee_uuid = data.get('annee')
+        processus_uuid = data.get('processus')
+        type_tableau_uuid = data.get('type_tableau')
+
+        # Si type_tableau est absent mais annee + processus sont fournis, l'attribuer automatiquement
+        if annee_uuid and processus_uuid and not type_tableau_uuid:
+            auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
+            if auto_tt:
+                data = data.copy()
+                data['type_tableau'] = str(auto_tt.uuid)
+                type_tableau_uuid = data['type_tableau']
+
+        if not (annee_uuid and processus_uuid and type_tableau_uuid):
+            return Response({
+                'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            pac = Pac.objects.select_related(
+                'processus', 'annee', 'type_tableau', 'nature', 'categorie', 'source', 'cree_par'
+            ).get(
+                cree_par=request.user,
+                processus_id=processus_uuid,
+                annee_id=annee_uuid,
+                type_tableau_id=type_tableau_uuid
+            )
+
+            # Mise à jour partielle optionnelle avec les champs fournis
+            partial_serializer = PacUpdateSerializer(pac, data=data, partial=True)
+            if partial_serializer.is_valid():
+                pac = partial_serializer.save()
+            else:
+                return Response(partial_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
+        except Pac.DoesNotExist:
+            # Créer un nouveau PAC
+            create_serializer = PacCreateSerializer(data=data, context={'request': request})
+            if create_serializer.is_valid():
+                pac = create_serializer.save()
+                log_pac_creation(
+                    user=request.user,
+                    pac=pac,
+                    ip_address=get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT')
+                )
+                return Response(PacSerializer(pac).data, status=status.HTTP_201_CREATED)
+            return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception as e:
+        logger.error(f"Erreur pac_get_or_create: {str(e)}")
+        return Response({
+            'error': 'Impossible de traiter la demande'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
