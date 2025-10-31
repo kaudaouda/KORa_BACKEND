@@ -12,14 +12,15 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.utils import timezone
-from .models import Pac, Traitement, Suivi
-from parametre.models import Processus, Media, Preuve, TypeTableau
+from .models import Pac, TraitementPac, PacSuivi, DetailsPac
+from parametre.models import Processus, Media, Preuve, Versions
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
     PacSerializer, PacCreateSerializer, PacUpdateSerializer, PacCompletSerializer,
-    TraitementSerializer, TraitementCreateSerializer, TraitementUpdateSerializer, 
-    SuiviSerializer, SuiviCreateSerializer, SuiviUpdateSerializer
+    TraitementPacSerializer, TraitementPacCreateSerializer, TraitementPacUpdateSerializer, 
+    PacSuiviSerializer, PacSuiviCreateSerializer, PacSuiviUpdateSerializer,
+    DetailsPacSerializer, DetailsPacCreateSerializer, DetailsPacUpdateSerializer
 )
 from shared.authentication import AuthService
 from shared.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
     """
-    Retourne l'instance TypeTableau à utiliser automatiquement pour (annee, processus) d'un user.
+    Retourne l'instance Versions à utiliser automatiquement pour (annee, processus) d'un user.
     Ordre: INITIAL -> AMENDEMENT_1 -> AMENDEMENT_2. Si tous existent déjà, retourne AMENDEMENT_2.
     """
     try:
@@ -45,12 +46,12 @@ def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
         )
         for code in codes_order:
             if code not in existing_types:
-                return TypeTableau.objects.get(code=code)
+                return Versions.objects.get(code=code)
         # Tous déjà présents: retourner le dernier
-        return TypeTableau.objects.get(code=codes_order[-1])
-    except TypeTableau.DoesNotExist:
+        return Versions.objects.get(code=codes_order[-1])
+    except Versions.DoesNotExist:
         # En cas de configuration incomplète, fallback sur le premier disponible
-        return TypeTableau.objects.order_by('nom').first()
+        return Versions.objects.order_by('nom').first()
 
 
 
@@ -722,17 +723,21 @@ def pac_complet(request, uuid):
     """Récupérer un PAC complet avec tous ses traitements et suivis"""
     try:
         pac = Pac.objects.select_related(
-            'processus', 'nature', 'categorie', 'source', 'cree_par', 'annee', 'type_tableau'
+            'processus', 'cree_par', 'annee', 'type_tableau'
         ).prefetch_related(
-            'traitements__type_action',
-            'traitements__responsable_direction',
-            'traitements__responsable_sous_direction',
-            'traitements__preuve__medias',
-            'traitements__suivis__etat_mise_en_oeuvre',
-            'traitements__suivis__appreciation',
-            'traitements__suivis__statut',
-            'traitements__suivis__cree_par',
-            'traitements__suivis__preuve__medias'
+            'details__dysfonctionnement_recommandation',
+            'details__nature',
+            'details__categorie',
+            'details__source',
+            'details__traitement__type_action',
+            'details__traitement__responsable_direction',
+            'details__traitement__responsable_sous_direction',
+            'details__traitement__preuve__medias',
+            'details__traitement__suivi__etat_mise_en_oeuvre',
+            'details__traitement__suivi__appreciation',
+            'details__traitement__suivi__statut',
+            'details__traitement__suivi__cree_par',
+            'details__traitement__suivi__preuve__medias'
         ).get(uuid=uuid, cree_par=request.user)
         
         serializer = PacCompletSerializer(pac)
@@ -879,20 +884,39 @@ def pac_validate(request, uuid):
         if pac.is_validated:
             return Response({
                 'error': 'Ce PAC est déjà validé',
-                'date_validation': pac.date_validation,
+                'validated_at': pac.validated_at,
                 'validated_by': f"{pac.validated_by.first_name} {pac.validated_by.last_name}".strip() or pac.validated_by.username if pac.validated_by else None
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que tous les détails et traitements sont renseignés
+        details = pac.details.all()
+        if not details.exists():
+            return Response({
+                'error': 'Le PAC doit avoir au moins un détail avant d\'être validé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        for detail in details:
+            if not hasattr(detail, 'traitement') or not detail.traitement:
+                return Response({
+                    'error': f'Le détail {detail.uuid} n\'a pas de traitement. Tous les détails doivent avoir un traitement avant validation.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            traitement = detail.traitement
+            if not traitement.action:
+                return Response({
+                    'error': f'Le traitement du détail {detail.uuid} n\'a pas d\'action. Tous les traitements doivent être complets avant validation.'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         # Valider le PAC
         from django.utils import timezone
         pac.is_validated = True
-        pac.date_validation = timezone.now()
+        pac.validated_at = timezone.now()
         pac.validated_by = request.user
         pac.save()
         
         logger.info(
             f"PAC validé par {request.user.username}: "
-            f"PAC N°{pac.numero_pac}, UUID: {uuid}, "
+            f"PAC UUID: {uuid}, "
             f"IP: {get_client_ip(request)}"
         )
         
@@ -929,15 +953,26 @@ def pac_unvalidate(request, uuid):
                 'error': 'Ce PAC n\'est pas validé'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Vérifier qu'aucun suivi n'existe avant de dévalider
+        from pac.models import DetailsPac, TraitementPac, PacSuivi
+        details = pac.details.all()
+        for detail in details:
+            if hasattr(detail, 'traitement') and detail.traitement:
+                traitement = detail.traitement
+                if hasattr(traitement, 'suivi') and traitement.suivi:
+                    return Response({
+                        'error': 'Impossible de dévalider le PAC : des suivis existent déjà. Supprimez d\'abord les suivis.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        
         # Dévalider le PAC
         pac.is_validated = False
-        pac.date_validation = None
+        pac.validated_at = None
         pac.validated_by = None
         pac.save()
         
         logger.info(
             f"PAC dévalidé par {request.user.username}: "
-            f"PAC N°{pac.numero_pac}, UUID: {uuid}, "
+            f"PAC UUID: {uuid}, "
             f"IP: {get_client_ip(request)}"
         )
         
@@ -962,8 +997,8 @@ def pac_unvalidate(request, uuid):
 def traitement_list(request):
     """Liste des traitements"""
     try:
-        traitements = Traitement.objects.filter(pac__cree_par=request.user).order_by('-delai_realisation')
-        serializer = TraitementSerializer(traitements, many=True)
+        traitements = TraitementPac.objects.filter(details_pac__pac__cree_par=request.user).order_by('-delai_realisation')
+        serializer = TraitementPacSerializer(traitements, many=True)
         return Response(serializer.data)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des traitements: {str(e)}")
@@ -977,7 +1012,7 @@ def traitement_list(request):
 def traitement_create(request):
     """Créer un nouveau traitement"""
     try:
-        serializer = TraitementCreateSerializer(data=request.data)
+        serializer = TraitementPacCreateSerializer(data=request.data)
         if serializer.is_valid():
             traitement = serializer.save()
             
@@ -989,7 +1024,7 @@ def traitement_create(request):
                 user_agent=request.META.get('HTTP_USER_AGENT')
             )
             
-            return Response(TraitementSerializer(traitement).data, status=status.HTTP_201_CREATED)
+            return Response(TraitementPacSerializer(traitement).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Erreur lors de la création du traitement: {str(e)}")
@@ -1006,9 +1041,9 @@ def pac_traitements(request, uuid):
         # Vérifier que le PAC appartient à l'utilisateur connecté
         pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
         
-        # Récupérer les traitements du PAC
-        traitements = Traitement.objects.filter(pac=pac).order_by('-delai_realisation')
-        serializer = TraitementSerializer(traitements, many=True)
+        # Récupérer les traitements du PAC via les détails (OneToOne)
+        traitements = TraitementPac.objects.filter(details_pac__pac=pac).order_by('-delai_realisation')
+        serializer = TraitementPacSerializer(traitements, many=True)
         return Response(serializer.data)
     except Pac.DoesNotExist:
         return Response({
@@ -1026,17 +1061,17 @@ def pac_traitements(request, uuid):
 def traitement_detail(request, uuid):
     """Récupérer un traitement spécifique"""
     try:
-        traitement = Traitement.objects.get(uuid=uuid)
+        traitement = TraitementPac.objects.select_related('details_pac', 'details_pac__pac').get(uuid=uuid)
         
-        # Vérifier que le PAC du traitement appartient à l'utilisateur connecté
-        if traitement.pac.cree_par != request.user:
+        # Vérifier que le PAC du détail du traitement appartient à l'utilisateur connecté
+        if traitement.details_pac.pac.cree_par != request.user:
             return Response({
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = TraitementSerializer(traitement)
+        serializer = TraitementPacSerializer(traitement)
         return Response(serializer.data)
-    except Traitement.DoesNotExist:
+    except TraitementPac.DoesNotExist:
         return Response({
             'error': 'Traitement non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
@@ -1052,20 +1087,20 @@ def traitement_detail(request, uuid):
 def traitement_update(request, uuid):
     """Mettre à jour un traitement"""
     try:
-        traitement = Traitement.objects.get(uuid=uuid)
+        traitement = TraitementPac.objects.select_related('details_pac', 'details_pac__pac').get(uuid=uuid)
         
-        # Vérifier que le PAC du traitement appartient à l'utilisateur connecté
-        if traitement.pac.cree_par != request.user:
+        # Vérifier que le PAC du détail du traitement appartient à l'utilisateur connecté
+        if traitement.details_pac.pac.cree_par != request.user:
             return Response({
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = TraitementUpdateSerializer(traitement, data=request.data, partial=True)
+        serializer = TraitementPacUpdateSerializer(traitement, data=request.data, partial=True)
         if serializer.is_valid():
             traitement = serializer.save()
-            return Response(TraitementSerializer(traitement).data)
+            return Response(TraitementPacSerializer(traitement).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    except Traitement.DoesNotExist:
+    except TraitementPac.DoesNotExist:
         return Response({
             'error': 'Traitement non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
@@ -1083,8 +1118,8 @@ def traitement_update(request, uuid):
 def suivi_list(request):
     """Liste des suivis"""
     try:
-        suivis = Suivi.objects.filter(cree_par=request.user).order_by('-created_at')
-        serializer = SuiviSerializer(suivis, many=True)
+        suivis = PacSuivi.objects.filter(cree_par=request.user).order_by('-created_at')
+        serializer = PacSuiviSerializer(suivis, many=True)
         return Response(serializer.data)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des suivis: {str(e)}")
@@ -1096,21 +1131,30 @@ def suivi_list(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def traitement_suivis(request, uuid):
-    """Récupérer les suivis d'un traitement"""
+    """Récupérer les suivis d'un traitement PAC"""
     try:
-        # Charger les relations nécessaires pour éviter les requêtes N+1
-        suivis = Suivi.objects.filter(traitement__uuid=uuid).select_related(
-            'preuve',
-            'etat_mise_en_oeuvre',
-            'appreciation',
-            'statut',
-            'cree_par'
-        ).prefetch_related(
-            'preuve__medias'
-        ).order_by('-created_at')
-        
-        serializer = SuiviSerializer(suivis, many=True)
-        return Response(serializer.data)
+        # Charger les relations nécessaires (OneToOne : un seul suivi par traitement)
+        try:
+            traitement = TraitementPac.objects.select_related('suivi').get(uuid=uuid)
+            # Vérifier que le traitement appartient à un PAC de l'utilisateur connecté
+            if traitement.details_pac.pac.cree_par != request.user:
+                return Response({
+                    'error': 'Accès non autorisé'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            if hasattr(traitement, 'suivi') and traitement.suivi:
+                suivi = traitement.suivi
+                serializer = PacSuiviSerializer(suivi)
+                return Response(serializer.data)
+            else:
+                return Response({
+                    'message': 'Aucun suivi pour ce traitement',
+                    'suivi': None
+                }, status=status.HTTP_200_OK)
+        except TraitementPac.DoesNotExist:
+            return Response({
+                'error': 'Traitement non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des suivis du traitement: {str(e)}")
         return Response({
@@ -1123,7 +1167,7 @@ def traitement_suivis(request, uuid):
 def suivi_create(request):
     """Créer un nouveau suivi"""
     try:
-        serializer = SuiviCreateSerializer(data=request.data, context={'request': request})
+        serializer = PacSuiviCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             statut = serializer.validated_data.get('statut')
             date_cloture = serializer.validated_data.get('date_cloture')
@@ -1142,7 +1186,7 @@ def suivi_create(request):
                 user_agent=request.META.get('HTTP_USER_AGENT')
             )
             
-            return Response(SuiviSerializer(suivi).data, status=status.HTTP_201_CREATED)
+            return Response(PacSuiviSerializer(suivi).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Erreur lors de la création du suivi: {str(e)}")
@@ -1156,13 +1200,13 @@ def suivi_create(request):
 def suivi_detail(request, uuid):
     """Récupérer le détail d'un suivi"""
     try:
-        suivi = Suivi.objects.select_related(
+        suivi = PacSuivi.objects.select_related(
             'traitement', 'etat_mise_en_oeuvre', 'appreciation', 'preuve', 'statut'
         ).prefetch_related(
             'preuve__medias'
         ).get(uuid=uuid, cree_par=request.user)
-        return Response(SuiviSerializer(suivi).data)
-    except Suivi.DoesNotExist:
+        return Response(PacSuiviSerializer(suivi).data)
+    except PacSuivi.DoesNotExist:
         return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération du suivi: {str(e)}")
@@ -1174,11 +1218,11 @@ def suivi_detail(request, uuid):
 def suivi_update(request, uuid):
     """Mettre à jour un suivi"""
     try:
-        suivi = Suivi.objects.get(uuid=uuid)
+        suivi = PacSuivi.objects.get(uuid=uuid)
         if suivi.cree_par != request.user:
             return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = SuiviUpdateSerializer(suivi, data=request.data, partial=True)
+        serializer = PacSuiviUpdateSerializer(suivi, data=request.data, partial=True)
         if serializer.is_valid():
             statut = serializer.validated_data.get('statut', suivi.statut)
             date_cloture = serializer.validated_data.get('date_cloture')
@@ -1188,10 +1232,149 @@ def suivi_update(request, uuid):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             suivi = serializer.save()
-            return Response(SuiviSerializer(suivi).data)
+            return Response(PacSuiviSerializer(suivi).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    except Suivi.DoesNotExist:
+    except PacSuivi.DoesNotExist:
         return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Erreur lors de la mise à jour du suivi: {str(e)}")
         return Response({'error': "Impossible de mettre à jour le suivi"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== API DETAILS PAC ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def details_pac_list(request, uuid):
+    """Liste des détails d'un PAC spécifique"""
+    try:
+        # Vérifier que le PAC appartient à l'utilisateur connecté
+        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        
+        # Récupérer les détails du PAC
+        details = DetailsPac.objects.filter(pac=pac).select_related(
+            'pac', 'dysfonctionnement_recommandation', 'nature', 'categorie', 'source'
+        ).order_by('periode_de_realisation')
+        
+        serializer = DetailsPacSerializer(details, many=True)
+        return Response(serializer.data)
+    except Pac.DoesNotExist:
+        return Response({
+            'error': 'PAC non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des détails du traitement: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer les détails'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def details_pac_create(request):
+    """Créer un nouveau détail de PAC"""
+    try:
+        serializer = DetailsPacCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            detail = serializer.save()
+            return Response(DetailsPacSerializer(detail).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du détail: {str(e)}")
+        return Response({
+            'error': 'Impossible de créer le détail'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def details_pac_detail(request, uuid):
+    """Récupérer un détail spécifique"""
+    try:
+        detail = DetailsPac.objects.select_related(
+            'pac', 'dysfonctionnement_recommandation', 'nature', 'categorie', 'source'
+        ).get(uuid=uuid)
+        
+        # Vérifier que le PAC du détail appartient à l'utilisateur connecté
+        if detail.pac.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = DetailsPacSerializer(detail)
+        return Response(serializer.data)
+    except DetailsPac.DoesNotExist:
+        return Response({
+            'error': 'Détail non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du détail: {str(e)}")
+        return Response({
+            'error': 'Impossible de récupérer le détail'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def details_pac_update(request, uuid):
+    """Mettre à jour un détail de PAC"""
+    try:
+        detail = DetailsPac.objects.select_related('pac').get(uuid=uuid)
+        
+        # Vérifier que le PAC du détail appartient à l'utilisateur connecté
+        if detail.pac.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = DetailsPacUpdateSerializer(detail, data=request.data, partial=True)
+        if serializer.is_valid():
+            detail = serializer.save()
+            return Response(DetailsPacSerializer(detail).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except DetailsPac.DoesNotExist:
+        return Response({
+            'error': 'Détail non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du détail: {str(e)}")
+        return Response({
+            'error': 'Impossible de mettre à jour le détail'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def details_pac_delete(request, uuid):
+    """Supprimer un détail de PAC"""
+    try:
+        detail = DetailsPac.objects.select_related('pac').get(uuid=uuid)
+        
+        # Vérifier que le PAC du détail appartient à l'utilisateur connecté
+        if detail.pac.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        detail_info = {
+            'uuid': str(detail.uuid),
+            'libelle': detail.libelle,
+            'pac': detail.pac.uuid if detail.pac else None
+        }
+        
+        # Suppression du détail
+        detail.delete()
+        
+        return Response({
+            'message': 'Détail supprimé avec succès',
+            'detail': detail_info
+        }, status=status.HTTP_200_OK)
+    except DetailsPac.DoesNotExist:
+        return Response({
+            'error': 'Détail non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du détail: {str(e)}")
+        return Response({
+            'error': 'Impossible de supprimer le détail'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
