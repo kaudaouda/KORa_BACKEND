@@ -649,17 +649,16 @@ def pac_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def pac_create(request):
-    """Créer un nouveau PAC"""
+    """Créer un nouveau PAC (nouvelle ligne)"""
     try:
         logger.info(f"Données reçues pour la création de PAC: {request.data}")
-        # 1) Si le trio (annee, processus, type_tableau) est fourni, appliquer une logique de déduplication
         data = request.data
 
         annee_uuid = data.get('annee')
         processus_uuid = data.get('processus')
         type_tableau_uuid = data.get('type_tableau')
 
-        # 0-bis) S'il manque type_tableau mais annee + processus sont fournis, déterminer automatiquement le type
+        # Si type_tableau manque mais annee + processus sont fournis, déterminer automatiquement le type
         if annee_uuid and processus_uuid and not type_tableau_uuid:
             auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
             if auto_tt:
@@ -667,34 +666,8 @@ def pac_create(request):
                 data = data.copy()
                 data['type_tableau'] = str(auto_tt.uuid)
 
-        existing_pac = None
-        if annee_uuid and processus_uuid and type_tableau_uuid:
-            try:
-                existing_pac = Pac.objects.select_related(
-                    'processus', 'annee', 'type_tableau', 'nature', 'categorie', 'source', 'cree_par'
-                ).get(
-                    cree_par=request.user,
-                    processus_id=processus_uuid,
-                    annee_id=annee_uuid,
-                    type_tableau_id=type_tableau_uuid
-                )
-                logger.info(
-                    f"PAC existant trouvé pour (annee={annee_uuid}, processus={processus_uuid}, type_tableau={type_tableau_uuid})"
-                )
-            except Pac.DoesNotExist:
-                existing_pac = None
-
-        # 2) Si un PAC existe déjà pour ce contexte, on le met à jour partiellement avec les champs fournis
-        if existing_pac is not None:
-            partial_serializer = PacUpdateSerializer(existing_pac, data=data, partial=True)
-            if partial_serializer.is_valid():
-                updated_pac = partial_serializer.save()
-                return Response(PacSerializer(updated_pac).data, status=status.HTTP_200_OK)
-            else:
-                logger.error(f"Erreurs de validation (update existing): {partial_serializer.errors}")
-                return Response(partial_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        # 3) Sinon, créer un nouveau PAC normalement
+        # Toujours créer un nouveau PAC (nouvelle ligne)
+        # Plusieurs lignes peuvent avoir le même (processus, année, type_tableau)
         serializer = PacCreateSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
@@ -779,9 +752,8 @@ def pac_complet(request, uuid):
 @permission_classes([IsAuthenticated])
 def pac_get_or_create(request):
     """
-    Trouver ou créer un PAC par (annee, processus, type_tableau) pour l'utilisateur connecté.
-    Si trouvé: retourne 200 avec le PAC (mise à jour partielle avec les champs fournis).
-    Si non trouvé: crée un nouveau PAC et retourne 201.
+    Créer une nouvelle ligne de PAC (même si le trio existe déjà).
+    Plusieurs lignes peuvent avoir le même (processus, année, type_tableau).
     """
     try:
         data = request.data
@@ -797,42 +769,23 @@ def pac_get_or_create(request):
                 data['type_tableau'] = str(auto_tt.uuid)
                 type_tableau_uuid = data['type_tableau']
 
-        if not (annee_uuid and processus_uuid and type_tableau_uuid):
+        if not (annee_uuid and processus_uuid):
             return Response({
                 'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            pac = Pac.objects.select_related(
-                'processus', 'annee', 'type_tableau', 'nature', 'categorie', 'source', 'cree_par'
-            ).get(
-                cree_par=request.user,
-                processus_id=processus_uuid,
-                annee_id=annee_uuid,
-                type_tableau_id=type_tableau_uuid
+        # Toujours créer une nouvelle ligne de PAC
+        create_serializer = PacCreateSerializer(data=data, context={'request': request})
+        if create_serializer.is_valid():
+            pac = create_serializer.save()
+            log_pac_creation(
+                user=request.user,
+                pac=pac,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT')
             )
-
-            # Mise à jour partielle optionnelle avec les champs fournis
-            partial_serializer = PacUpdateSerializer(pac, data=data, partial=True)
-            if partial_serializer.is_valid():
-                pac = partial_serializer.save()
-            else:
-                return Response(partial_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-            return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
-        except Pac.DoesNotExist:
-            # Créer un nouveau PAC
-            create_serializer = PacCreateSerializer(data=data, context={'request': request})
-            if create_serializer.is_valid():
-                pac = create_serializer.save()
-                log_pac_creation(
-                    user=request.user,
-                    pac=pac,
-                    ip_address=get_client_ip(request),
-                    user_agent=request.META.get('HTTP_USER_AGENT')
-                )
-                return Response(PacSerializer(pac).data, status=status.HTTP_201_CREATED)
-            return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(PacSerializer(pac).data, status=status.HTTP_201_CREATED)
+        return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
         logger.error(f"Erreur pac_get_or_create: {str(e)}")
