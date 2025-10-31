@@ -4,7 +4,7 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
-    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, TypeTableau, Annee
+    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, Versions, Annee
 )
 
 
@@ -350,9 +350,9 @@ class CibleAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related('indicateur_id')
 
 
-@admin.register(TypeTableau)
-class TypeTableauAdmin(admin.ModelAdmin):
-    """Configuration de l'interface d'administration pour les types de tableaux"""
+@admin.register(Versions)
+class VersionsAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les versions"""
     
     list_display = [
         'code', 'nom', 'is_active', 'created_at'

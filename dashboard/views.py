@@ -43,7 +43,7 @@ def tableaux_bord_list_create(request):
             clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
             
             # ========== VALIDATION STRICTE ==========
-            from parametre.models import TypeTableau
+            from parametre.models import Versions
             
             annee = data.get('annee')
             processus_uuid = data.get('processus')
@@ -53,15 +53,15 @@ def tableaux_bord_list_create(request):
             try:
                 if type_tableau_value in ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']:
                     # C'est un code, récupérer l'objet par code
-                    type_tableau_obj = TypeTableau.objects.get(code=type_tableau_value)
+                    type_tableau_obj = Versions.objects.get(code=type_tableau_value)
                 else:
                     # C'est probablement un UUID, récupérer par UUID
-                    type_tableau_obj = TypeTableau.objects.get(uuid=type_tableau_value)
+                    type_tableau_obj = Versions.objects.get(uuid=type_tableau_value)
                 
                 # Mettre à jour les données avec l'UUID du type
                 data['type_tableau'] = type_tableau_obj.uuid
                 
-            except TypeTableau.DoesNotExist:
+            except Versions.DoesNotExist:
                 return Response({
                     'success': False,
                     'error': f'Type de tableau introuvable: {type_tableau_value}'
@@ -252,10 +252,10 @@ def create_amendement(request, tableau_initial_uuid):
         logger.info(f"Nombre d'amendements existants: {existing_amendements}")
         
         if existing_amendements == 0:
-            type_amendement = TypeTableau.objects.get(code='AMENDEMENT_1')
+            type_amendement = Versions.objects.get(code='AMENDEMENT_1')
             data['type_tableau'] = type_amendement.uuid
         elif existing_amendements == 1:
-            type_amendement = TypeTableau.objects.get(code='AMENDEMENT_2')
+            type_amendement = Versions.objects.get(code='AMENDEMENT_2')
             data['type_tableau'] = type_amendement.uuid
         else:
             return Response({

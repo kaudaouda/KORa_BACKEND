@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from parametre.models import TypeTableau
+from parametre.models import Versions
 
 
 class Command(BaseCommand):
@@ -31,7 +31,7 @@ class Command(BaseCommand):
         updated_count = 0
 
         for type_data in types_tableau:
-            type_tableau, created = TypeTableau.objects.get_or_create(
+            version, created = Versions.objects.get_or_create(
                 code=type_data['code'],
                 defaults=type_data
             )
@@ -39,25 +39,25 @@ class Command(BaseCommand):
             if created:
                 created_count += 1
                 self.stdout.write(
-                    self.style.SUCCESS(f'✓ Créé: {type_tableau.nom}')
+                    self.style.SUCCESS(f'✓ Créé: {version.nom}')
                 )
             else:
                 # Mettre à jour les champs si nécessaire
                 updated = False
                 for field, value in type_data.items():
-                    if getattr(type_tableau, field) != value:
-                        setattr(type_tableau, field, value)
+                    if getattr(version, field) != value:
+                        setattr(version, field, value)
                         updated = True
                 
                 if updated:
-                    type_tableau.save()
+                    version.save()
                     updated_count += 1
                     self.stdout.write(
-                        self.style.WARNING(f'↻ Mis à jour: {type_tableau.nom}')
+                        self.style.WARNING(f'↻ Mis à jour: {version.nom}')
                     )
                 else:
                     self.stdout.write(
-                        self.style.SUCCESS(f'✓ Déjà existant: {type_tableau.nom}')
+                        self.style.SUCCESS(f'✓ Déjà existant: {version.nom}')
                     )
 
         self.stdout.write(

@@ -40,4 +40,11 @@ urlpatterns = [
     path('pac/suivis/<uuid:uuid>/', views.suivi_detail, name='suivi_detail'),
     path('pac/suivis/<uuid:uuid>/update/', views.suivi_update, name='suivi_update'),
     path('pac/traitements/<uuid:uuid>/suivis/', views.traitement_suivis, name='traitement_suivis'),
+    
+    # ==================== API DETAILS PAC ====================
+    path('pac/<uuid:uuid>/details/', views.details_pac_list, name='details_pac_list'),
+    path('pac/details/create/', views.details_pac_create, name='details_pac_create'),
+    path('pac/details/<uuid:uuid>/', views.details_pac_detail, name='details_pac_detail'),
+    path('pac/details/<uuid:uuid>/update/', views.details_pac_update, name='details_pac_update'),
+    path('pac/details/<uuid:uuid>/delete/', views.details_pac_delete, name='details_pac_delete'),
 ]
