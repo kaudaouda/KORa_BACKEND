@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 import uuid
-from parametre.models import Processus, TypeTableau
+from parametre.models import Processus, Versions
 
 
 class Objectives(models.Model):
@@ -168,7 +168,7 @@ class TableauBord(models.Model):
         related_name='tableaux_bord'
     )
     type_tableau = models.ForeignKey(
-        TypeTableau,
+        Versions,
         on_delete=models.CASCADE,
         related_name='tableaux_bord',
         help_text="Type de tableau de bord"

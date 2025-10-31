@@ -3,7 +3,7 @@ Serializers pour l'application PAC
 """
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Pac, Traitement, Suivi
+from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Preuve, Media
 
 
@@ -74,33 +74,30 @@ class PacSerializer(serializers.ModelSerializer):
     type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
     type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
+    validateur_nom = serializers.SerializerMethodField()
     jours_restants = serializers.SerializerMethodField()
     
     class Meta:
         model = Pac
         fields = [
-            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
-            'libelle', 'nature', 'nature_nom', 'nature_uuid', 'categorie', 'categorie_nom', 'categorie_uuid',
-            'source', 'source_nom', 'source_uuid', 'dysfonctionnement_recommandation', 
-            'dysfonctionnement_recommandation_nom', 'dysfonctionnement_recommandation_uuid',
+            'uuid', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
-            'periode_de_realisation', 'jours_restants',
-            'cree_par', 'createur_nom', 'created_at', 'updated_at'
+            'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
+            'cree_par', 'createur_nom'
         ]
-        read_only_fields = ['uuid', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'is_validated', 'validated_at', 'validated_by']
     
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
         return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
     
-    def get_jours_restants(self, obj):
-        """Calculer les jours restants"""
-        if not obj.periode_de_realisation:
-            return None
-        from django.utils import timezone
-        delta = obj.periode_de_realisation - timezone.now().date()
-        return delta.days if delta.days > 0 else 0
+    def get_validateur_nom(self, obj):
+        """Retourner le nom du validateur"""
+        if obj.validated_by:
+            return f"{obj.validated_by.first_name} {obj.validated_by.last_name}".strip() or obj.validated_by.username
+        return None
+    
 
 
 class PacCreateSerializer(serializers.ModelSerializer):
@@ -109,62 +106,22 @@ class PacCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pac
         fields = [
-            'processus', 'libelle', 'nature', 
-            'categorie', 'source', 'dysfonctionnement_recommandation', 
-            'annee', 'type_tableau', 'periode_de_realisation'
+            'processus', 'annee', 'type_tableau'
         ]
         extra_kwargs = {
-            'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
-            'nature': {'required': False, 'allow_null': True},
-            'categorie': {'required': False, 'allow_null': True},
-            'source': {'required': False, 'allow_null': True},
-            'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
             'annee': {'required': False, 'allow_null': True},
             'type_tableau': {'required': False, 'allow_null': True},
-            'periode_de_realisation': {'required': False, 'allow_null': True},
         }
     
-    def validate_periode_de_realisation(self, value):
-        """Valider que la période de réalisation est >= aujourd'hui"""
-        from django.utils import timezone
-        today = timezone.now().date()
-        
-        # Si la valeur est None, on ne valide pas
-        if value is None:
-            return value
-        
-        if value < today:
-            raise serializers.ValidationError(
-                "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
-            )
-        
-        return value
-    
     def create(self, validated_data):
-        """Créer un PAC avec l'utilisateur connecté et générer le numéro"""
+        """Créer un PAC avec l'utilisateur connecté"""
         validated_data['cree_par'] = self.context['request'].user
-        
-        # Générer le numéro PAC automatiquement
-        validated_data['numero_pac'] = self.generate_numero_pac()
         
         # S'assurer que processus est toujours fourni
         if 'processus' not in validated_data or validated_data['processus'] is None:
             raise serializers.ValidationError("Le champ 'processus' est requis")
         
         return super().create(validated_data)
-    
-    def generate_numero_pac(self):
-        """Générer un numéro PAC unique"""
-        from django.db.models import Count
-        count = Pac.objects.count()
-        numero = f"PAC{count + 1:02d}"
-        
-        # Vérifier l'unicité
-        while Pac.objects.filter(numero_pac=numero).exists():
-            count += 1
-            numero = f"PAC{count + 1:02d}"
-        
-        return numero
 
 
 class PacUpdateSerializer(serializers.ModelSerializer):
@@ -173,35 +130,12 @@ class PacUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pac
         fields = [
-            'processus', 'libelle', 'nature', 
-            'categorie', 'source', 'dysfonctionnement_recommandation', 
-            'annee', 'type_tableau', 'periode_de_realisation'
+            'processus', 'annee', 'type_tableau'
         ]
         extra_kwargs = {
-            'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
-            'nature': {'required': False, 'allow_null': True},
-            'categorie': {'required': False, 'allow_null': True},
-            'source': {'required': False, 'allow_null': True},
-            'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
             'annee': {'required': False, 'allow_null': True},
             'type_tableau': {'required': False, 'allow_null': True},
-            'periode_de_realisation': {'required': False, 'allow_null': True},
         }
-    
-    def validate_periode_de_realisation(self, value):
-        """Valider que la période de réalisation est >= aujourd'hui"""
-        if value is None:
-            return value
-        
-        from django.utils import timezone
-        today = timezone.now().date()
-        
-        if value < today:
-            raise serializers.ValidationError(
-                "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
-            )
-        
-        return value
     
     def update(self, instance, validated_data):
         """Mettre à jour un PAC"""
@@ -209,13 +143,15 @@ class PacUpdateSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class TraitementSerializer(serializers.ModelSerializer):
-    """Serializer pour les traitements"""
+class TraitementPacSerializer(serializers.ModelSerializer):
+    """Serializer pour les traitements PAC"""
     type_action_nom = serializers.CharField(source='type_action.nom', read_only=True, allow_null=True)
     preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
-    pac_numero = serializers.CharField(source='pac.numero_pac', read_only=True)
-    pac_uuid = serializers.UUIDField(source='pac.uuid', read_only=True)
+    details_pac_uuid = serializers.UUIDField(source='details_pac.uuid', read_only=True, allow_null=True)
+    details_pac_libelle = serializers.CharField(source='details_pac.libelle', read_only=True, allow_null=True)
+    pac_numero = serializers.CharField(source='details_pac.numero_pac', read_only=True, allow_null=True)
+    pac_uuid = serializers.UUIDField(source='details_pac.pac.uuid', read_only=True, allow_null=True)
     responsable_direction_nom = serializers.CharField(source='responsable_direction.nom', read_only=True, allow_null=True)
     responsable_sous_direction_nom = serializers.CharField(source='responsable_sous_direction.nom', read_only=True, allow_null=True)
     
@@ -228,9 +164,10 @@ class TraitementSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = Traitement
+        model = TraitementPac
         fields = [
-            'uuid', 'pac', 'pac_uuid', 'pac_numero', 'action', 'type_action', 
+            'uuid', 'details_pac', 'details_pac_uuid', 'details_pac_libelle',
+            'pac_uuid', 'pac_numero', 'action', 'type_action', 
             'type_action_nom', 'responsable_direction', 'responsable_direction_nom',
             'responsable_sous_direction', 'responsable_sous_direction_nom',
             'responsables_directions', 'responsables_sous_directions',
@@ -254,8 +191,8 @@ class TraitementSerializer(serializers.ModelSerializer):
         return None
 
 
-class TraitementCreateSerializer(serializers.ModelSerializer):
-    """Serializer pour la création de traitements"""
+class TraitementPacCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour la création de traitements PAC"""
     # Nouveau: accepter des listes d'UUID en entrée pour M2M
     responsables_directions = serializers.ListField(
         child=serializers.UUIDField(), required=False, allow_empty=True
@@ -265,9 +202,9 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
     )
     
     class Meta:
-        model = Traitement
+        model = TraitementPac
         fields = [
-            'pac', 'action', 'type_action', 'responsable_direction', 
+            'details_pac', 'action', 'type_action', 'responsable_direction', 
             'responsable_sous_direction', 'responsables_directions', 'responsables_sous_directions',
             'preuve', 'delai_realisation'
         ]
@@ -275,6 +212,14 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
             'type_action': {'required': False, 'allow_null': True},
             'delai_realisation': {'required': False, 'allow_null': True}
         }
+    
+    def validate_details_pac(self, value):
+        """Valider qu'il n'y a pas déjà un traitement pour ce détail (OneToOne)"""
+        if value and TraitementPac.objects.filter(details_pac=value).exists():
+            raise serializers.ValidationError(
+                "Un traitement existe déjà pour ce détail PAC. Un détail ne peut avoir qu'un seul traitement."
+            )
+        return value
     
     def validate_delai_realisation(self, value):
         """Valider que le délai de réalisation est >= aujourd'hui et >= période de réalisation du PAC"""
@@ -290,16 +235,16 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
                 "Le délai de réalisation doit être égal ou supérieur à la date d'aujourd'hui."
             )
         
-        # Vérifier si on a accès au PAC pour comparer avec sa période de réalisation
-        pac = self.initial_data.get('pac') if hasattr(self, 'initial_data') else None
-        if pac:
+        # Vérifier si on a accès aux détails PAC pour comparer avec sa période de réalisation
+        details_pac = self.initial_data.get('details_pac') if hasattr(self, 'initial_data') else None
+        if details_pac:
             try:
-                pac_obj = Pac.objects.get(uuid=pac)
-                if pac_obj.periode_de_realisation and value < pac_obj.periode_de_realisation:
+                details_pac_obj = DetailsPac.objects.get(uuid=details_pac)
+                if details_pac_obj.periode_de_realisation and value < details_pac_obj.periode_de_realisation:
                     raise serializers.ValidationError(
-                        f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du PAC ({pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
+                        f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du détail PAC ({details_pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
                     )
-            except Pac.DoesNotExist:
+            except DetailsPac.DoesNotExist:
                 pass
         
         return value
@@ -329,8 +274,8 @@ class TraitementCreateSerializer(serializers.ModelSerializer):
         return instance
 
 
-class TraitementUpdateSerializer(serializers.ModelSerializer):
-    """Serializer pour la mise à jour de traitements"""
+class TraitementPacUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour de traitements PAC"""
     responsables_directions = serializers.ListField(
         child=serializers.UUIDField(), required=False, allow_empty=True
     )
@@ -339,7 +284,7 @@ class TraitementUpdateSerializer(serializers.ModelSerializer):
     )
     
     class Meta:
-        model = Traitement
+        model = TraitementPac
         fields = [
             'action', 'type_action', 'responsable_direction', 
             'responsable_sous_direction', 'responsables_directions', 'responsables_sous_directions',
@@ -370,12 +315,12 @@ class TraitementUpdateSerializer(serializers.ModelSerializer):
                 "Le délai de réalisation doit être égal ou supérieur à la date d'aujourd'hui."
             )
         
-        # Pour la mise à jour, on peut accéder au PAC via l'instance
-        if hasattr(self, 'instance') and self.instance and self.instance.pac:
-            pac_obj = self.instance.pac
-            if pac_obj.periode_de_realisation and value < pac_obj.periode_de_realisation:
+        # Pour la mise à jour, on peut accéder aux détails PAC via l'instance
+        if hasattr(self, 'instance') and self.instance and self.instance.details_pac:
+            details_pac_obj = self.instance.details_pac
+            if details_pac_obj.periode_de_realisation and value < details_pac_obj.periode_de_realisation:
                 raise serializers.ValidationError(
-                    f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du PAC ({pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
+                    f"Le délai de réalisation doit être égal ou supérieur à la période de réalisation du détail PAC ({details_pac_obj.periode_de_realisation.strftime('%d/%m/%Y')})."
                 )
         
         return value
@@ -402,11 +347,12 @@ class TraitementUpdateSerializer(serializers.ModelSerializer):
         return instance
 
 
-class SuiviSerializer(serializers.ModelSerializer):
-    """Serializer pour les suivis"""
+class PacSuiviSerializer(serializers.ModelSerializer):
+    """Serializer pour les suivis PAC"""
     etat_nom = serializers.CharField(source='etat_mise_en_oeuvre.nom', read_only=True)
     appreciation_nom = serializers.CharField(source='appreciation.nom', read_only=True)
-    traitement_action = serializers.CharField(source='traitement.action', read_only=True)
+    traitement_action = serializers.CharField(source='traitement.action', read_only=True, allow_null=True)
+    traitement_uuid = serializers.UUIDField(source='traitement.uuid', read_only=True, allow_null=True)
     statut_nom = serializers.CharField(source='statut.nom', read_only=True)
     preuve_description = serializers.CharField(source='preuve.description', read_only=True)
     preuve_media_url = serializers.SerializerMethodField()
@@ -414,9 +360,9 @@ class SuiviSerializer(serializers.ModelSerializer):
     createur_nom = serializers.SerializerMethodField()
     
     class Meta:
-        model = Suivi
+        model = PacSuivi
         fields = [
-            'uuid', 'traitement', 'traitement_action', 'etat_mise_en_oeuvre',
+            'uuid', 'traitement', 'traitement_uuid', 'traitement_action', 'etat_mise_en_oeuvre',
             'etat_nom', 'resultat', 'appreciation', 'appreciation_nom',
             'preuve', 'preuve_description', 'preuve_media_url', 'preuve_media_urls',
             'statut', 'statut_nom', 'date_mise_en_oeuvre_effective',
@@ -467,15 +413,31 @@ class SuiviSerializer(serializers.ModelSerializer):
         return urls
 
 
-class SuiviCreateSerializer(serializers.ModelSerializer):
-    """Serializer pour la création de suivis"""
+class PacSuiviCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour la création de suivis PAC"""
     
     class Meta:
-        model = Suivi
+        model = PacSuivi
         fields = [
             'traitement', 'etat_mise_en_oeuvre', 'resultat', 'appreciation',
             'preuve', 'statut', 'date_mise_en_oeuvre_effective', 'date_cloture'
         ]
+    
+    def validate_traitement(self, value):
+        """Valider que le traitement est dans un PAC validé et qu'il n'y a pas déjà un suivi (OneToOne)"""
+        if value:
+            # Vérifier que le PAC parent est validé
+            if not value.details_pac.pac.is_validated:
+                raise serializers.ValidationError(
+                    "Le PAC doit être validé avant de pouvoir créer un suivi. "
+                    "Veuillez d'abord valider tous les détails et traitements du PAC."
+                )
+            # Vérifier qu'il n'y a pas déjà un suivi (OneToOne)
+            if PacSuivi.objects.filter(traitement=value).exists():
+                raise serializers.ValidationError(
+                    "Un suivi existe déjà pour ce traitement. Un traitement ne peut avoir qu'un seul suivi."
+                )
+        return value
     
     def validate_date_mise_en_oeuvre_effective(self, value):
         """Valider que la date de mise en œuvre effective est >= aujourd'hui"""
@@ -531,20 +493,16 @@ class PacCompletSerializer(serializers.ModelSerializer):
     createur_nom = serializers.SerializerMethodField()
     jours_restants = serializers.SerializerMethodField()
     
-    # Inclure tous les traitements avec leurs suivis
-    traitements = serializers.SerializerMethodField()
+    # Inclure tous les détails avec leurs traitements et suivis
+    details = serializers.SerializerMethodField()
     
     class Meta:
         model = Pac
         fields = [
-            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
-            'libelle', 'nature', 'nature_nom', 'nature_uuid', 'categorie', 'categorie_nom', 'categorie_uuid',
-            'source', 'source_nom', 'source_uuid', 'dysfonctionnement_recommandation',
-            'dysfonctionnement_recommandation_nom', 'dysfonctionnement_recommandation_uuid',
+            'uuid', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
-            'periode_de_realisation', 'jours_restants',
-            'cree_par', 'createur_nom', 'created_at', 'updated_at', 'traitements'
+            'cree_par', 'createur_nom', 'created_at', 'updated_at', 'details'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
     
@@ -552,62 +510,71 @@ class PacCompletSerializer(serializers.ModelSerializer):
         """Retourner le nom du créateur"""
         return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
     
-    def get_jours_restants(self, obj):
-        """Calculer les jours restants"""
-        if not obj.periode_de_realisation:
-            return None
-        from django.utils import timezone
-        delta = obj.periode_de_realisation - timezone.now().date()
-        return delta.days if delta.days > 0 else 0
-    
-    def get_traitements(self, obj):
-        """Récupérer tous les traitements avec leurs suivis"""
-        traitements = obj.traitements.all().order_by('delai_realisation')
-        traitements_data = []
+    def get_details(self, obj):
+        """Récupérer tous les détails avec leurs traitements et suivis"""
+        details = obj.details.all()
+        details_data = []
         
-        for traitement in traitements:
-            traitement_data = {
-                'uuid': str(traitement.uuid),
-                'action': traitement.action,
-                'type_action': traitement.type_action.uuid if traitement.type_action else None,
-                'type_action_nom': traitement.type_action.nom if traitement.type_action else None,
-                'responsable_direction': traitement.responsable_direction.uuid if traitement.responsable_direction else None,
-                'responsable_direction_nom': traitement.responsable_direction.nom if traitement.responsable_direction else None,
-                'responsable_sous_direction': traitement.responsable_sous_direction.uuid if traitement.responsable_sous_direction else None,
-                'responsable_sous_direction_nom': traitement.responsable_sous_direction.nom if traitement.responsable_sous_direction else None,
-                'delai_realisation': traitement.delai_realisation,
-                'preuve': traitement.preuve.uuid if traitement.preuve else None,
-                'preuve_description': traitement.preuve.description if traitement.preuve else None,
-                'preuve_media_url': self.get_preuve_media_url(traitement),
-                'suivis': []
+        for detail in details:
+            detail_data = {
+                'uuid': str(detail.uuid),
+                'numero_pac': detail.numero_pac,
+                'libelle': detail.libelle,
+                'dysfonctionnement_recommandation': detail.dysfonctionnement_recommandation.uuid if detail.dysfonctionnement_recommandation else None,
+                'nature': detail.nature.uuid if detail.nature else None,
+                'categorie': detail.categorie.uuid if detail.categorie else None,
+                'source': detail.source.uuid if detail.source else None,
+                'periode_de_realisation': detail.periode_de_realisation,
+                'traitement': None
             }
             
-            # Récupérer tous les suivis pour ce traitement
-            suivis = traitement.suivis.all().order_by('created_at')
-            for suivi in suivis:
-                suivi_data = {
-                    'uuid': str(suivi.uuid),
-                    'etat_mise_en_oeuvre': suivi.etat_mise_en_oeuvre.uuid if suivi.etat_mise_en_oeuvre else None,
-                    'etat_nom': suivi.etat_mise_en_oeuvre.nom if suivi.etat_mise_en_oeuvre else None,
-                    'resultat': suivi.resultat,
-                    'appreciation': suivi.appreciation.uuid if suivi.appreciation else None,
-                    'appreciation_nom': suivi.appreciation.nom if suivi.appreciation else None,
-                    'statut': suivi.statut.uuid if suivi.statut else None,
-                    'statut_nom': suivi.statut.nom if suivi.statut else None,
-                    'date_mise_en_oeuvre_effective': suivi.date_mise_en_oeuvre_effective,
-                    'date_cloture': suivi.date_cloture,
-                    'createur_nom': f"{suivi.cree_par.first_name} {suivi.cree_par.last_name}".strip() or suivi.cree_par.username,
-                    'created_at': suivi.created_at,
-                    'preuve': suivi.preuve.uuid if suivi.preuve else None,
-                    'preuve_description': suivi.preuve.description if suivi.preuve else None,
-                    'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
-                    'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi)
+            # Récupérer le traitement pour ce détail (OneToOne)
+            if hasattr(detail, 'traitement') and detail.traitement:
+                traitement = detail.traitement
+                traitement_data = {
+                    'uuid': str(traitement.uuid),
+                    'action': traitement.action,
+                    'type_action': traitement.type_action.uuid if traitement.type_action else None,
+                    'type_action_nom': traitement.type_action.nom if traitement.type_action else None,
+                    'responsable_direction': traitement.responsable_direction.uuid if traitement.responsable_direction else None,
+                    'responsable_direction_nom': traitement.responsable_direction.nom if traitement.responsable_direction else None,
+                    'responsable_sous_direction': traitement.responsable_sous_direction.uuid if traitement.responsable_sous_direction else None,
+                    'responsable_sous_direction_nom': traitement.responsable_sous_direction.nom if traitement.responsable_sous_direction else None,
+                    'delai_realisation': traitement.delai_realisation,
+                    'preuve': traitement.preuve.uuid if traitement.preuve else None,
+                    'preuve_description': traitement.preuve.description if traitement.preuve else None,
+                    'preuve_media_url': self.get_preuve_media_url(traitement),
+                    'suivi': None
                 }
-                traitement_data['suivis'].append(suivi_data)
+                
+                # Récupérer le suivi pour ce traitement (OneToOne)
+                if hasattr(traitement, 'suivi') and traitement.suivi:
+                    suivi = traitement.suivi
+                    suivi_data = {
+                        'uuid': str(suivi.uuid),
+                        'etat_mise_en_oeuvre': suivi.etat_mise_en_oeuvre.uuid if suivi.etat_mise_en_oeuvre else None,
+                        'etat_nom': suivi.etat_mise_en_oeuvre.nom if suivi.etat_mise_en_oeuvre else None,
+                        'resultat': suivi.resultat,
+                        'appreciation': suivi.appreciation.uuid if suivi.appreciation else None,
+                        'appreciation_nom': suivi.appreciation.nom if suivi.appreciation else None,
+                        'statut': suivi.statut.uuid if suivi.statut else None,
+                        'statut_nom': suivi.statut.nom if suivi.statut else None,
+                        'date_mise_en_oeuvre_effective': suivi.date_mise_en_oeuvre_effective,
+                        'date_cloture': suivi.date_cloture,
+                        'createur_nom': f"{suivi.cree_par.first_name} {suivi.cree_par.last_name}".strip() or suivi.cree_par.username,
+                        'created_at': suivi.created_at,
+                        'preuve': suivi.preuve.uuid if suivi.preuve else None,
+                        'preuve_description': suivi.preuve.description if suivi.preuve else None,
+                        'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
+                        'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi)
+                    }
+                    traitement_data['suivi'] = suivi_data
+                
+                detail_data['traitement'] = traitement_data
             
-            traitements_data.append(traitement_data)
+            details_data.append(detail_data)
         
-        return traitements_data
+        return details_data
     
     def get_preuve_media_url(self, traitement):
         """Retourner l'URL du premier média de la preuve du traitement"""
@@ -653,13 +620,13 @@ class PacCompletSerializer(serializers.ModelSerializer):
         return urls
 
 
-class SuiviUpdateSerializer(serializers.ModelSerializer):
-    """Serializer pour la mise à jour des suivis"""
+class PacSuiviUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour des suivis PAC"""
 
     class Meta:
-        model = Suivi
+        model = PacSuivi
         fields = [
-            'etat_mise_en_oeuvre', 'resultat', 'appreciation',
+            'traitement', 'etat_mise_en_oeuvre', 'resultat', 'appreciation',
             'preuve', 'statut', 'date_mise_en_oeuvre_effective', 'date_cloture'
         ]
     
@@ -685,6 +652,173 @@ class SuiviUpdateSerializer(serializers.ModelSerializer):
             if value < today:
                 raise serializers.ValidationError(
                     "La date de clôture doit être égale ou supérieure à la date d'aujourd'hui."
+                )
+        
+        return value
+
+
+# ==================== SERIALIZERS DETAILS PAC ====================
+
+class DetailsPacSerializer(serializers.ModelSerializer):
+    """Serializer pour les détails de PAC"""
+    pac_uuid = serializers.UUIDField(source='pac.uuid', read_only=True)
+    dysfonctionnement_recommandation_nom = serializers.CharField(
+        source='dysfonctionnement_recommandation.nom', 
+        read_only=True, 
+        allow_null=True
+    )
+    dysfonctionnement_recommandation_uuid = serializers.UUIDField(
+        source='dysfonctionnement_recommandation.uuid', 
+        read_only=True, 
+        allow_null=True
+    )
+    nature_nom = serializers.CharField(
+        source='nature.nom', 
+        read_only=True, 
+        allow_null=True
+    )
+    nature_uuid = serializers.UUIDField(
+        source='nature.uuid', 
+        read_only=True, 
+        allow_null=True
+    )
+    categorie_nom = serializers.CharField(
+        source='categorie.nom', 
+        read_only=True, 
+        allow_null=True
+    )
+    categorie_uuid = serializers.UUIDField(
+        source='categorie.uuid', 
+        read_only=True, 
+        allow_null=True
+    )
+    source_nom = serializers.CharField(
+        source='source.nom', 
+        read_only=True, 
+        allow_null=True
+    )
+    source_uuid = serializers.UUIDField(
+        source='source.uuid', 
+        read_only=True, 
+        allow_null=True
+    )
+    
+    class Meta:
+        model = DetailsPac
+        fields = [
+            'uuid', 'numero_pac', 'pac', 'pac_uuid',
+            'dysfonctionnement_recommandation', 'dysfonctionnement_recommandation_nom', 
+            'dysfonctionnement_recommandation_uuid',
+            'libelle',
+            'nature', 'nature_nom', 'nature_uuid',
+            'categorie', 'categorie_nom', 'categorie_uuid',
+            'source', 'source_nom', 'source_uuid',
+            'periode_de_realisation'
+        ]
+        read_only_fields = ['uuid', 'numero_pac']
+    
+    def validate_periode_de_realisation(self, value):
+        """Valider que la période de réalisation est >= aujourd'hui"""
+        if value:
+            from django.utils import timezone
+            today = timezone.now().date()
+            
+            if value < today:
+                raise serializers.ValidationError(
+                    "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
+                )
+        
+        return value
+
+
+class DetailsPacCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour la création de détails de PAC"""
+    
+    class Meta:
+        model = DetailsPac
+        fields = [
+            'pac', 'dysfonctionnement_recommandation', 'libelle',
+            'nature', 'categorie', 'source', 'periode_de_realisation'
+        ]
+        extra_kwargs = {
+            'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
+            'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'nature': {'required': False, 'allow_null': True},
+            'categorie': {'required': False, 'allow_null': True},
+            'source': {'required': False, 'allow_null': True},
+            'periode_de_realisation': {'required': False, 'allow_null': True},
+        }
+    
+    def validate_pac(self, value):
+        """Vérifier que le PAC appartient à l'utilisateur connecté"""
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            if value.cree_par != request.user:
+                raise serializers.ValidationError(
+                    "Vous n'avez pas les permissions pour ajouter un détail à ce PAC."
+                )
+        return value
+    
+    def validate_periode_de_realisation(self, value):
+        """Valider que la période de réalisation est >= aujourd'hui"""
+        if value:
+            from django.utils import timezone
+            today = timezone.now().date()
+            
+            if value < today:
+                raise serializers.ValidationError(
+                    "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
+                )
+        
+        return value
+    
+    def create(self, validated_data):
+        """Créer un détail PAC avec génération automatique du numéro"""
+        # Générer le numéro PAC automatiquement
+        validated_data['numero_pac'] = self.generate_numero_pac()
+        return super().create(validated_data)
+    
+    def generate_numero_pac(self):
+        """Générer un numéro PAC unique"""
+        from django.db.models import Count
+        count = DetailsPac.objects.count()
+        numero = f"PAC{count + 1:02d}"
+        
+        # Vérifier l'unicité
+        while DetailsPac.objects.filter(numero_pac=numero).exists():
+            count += 1
+            numero = f"PAC{count + 1:02d}"
+        
+        return numero
+
+
+class DetailsPacUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour la mise à jour de détails de PAC"""
+    
+    class Meta:
+        model = DetailsPac
+        fields = [
+            'dysfonctionnement_recommandation', 'libelle',
+            'nature', 'categorie', 'source', 'periode_de_realisation'
+        ]
+        extra_kwargs = {
+            'dysfonctionnement_recommandation': {'required': False, 'allow_null': True},
+            'libelle': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'nature': {'required': False, 'allow_null': True},
+            'categorie': {'required': False, 'allow_null': True},
+            'source': {'required': False, 'allow_null': True},
+            'periode_de_realisation': {'required': False, 'allow_null': True},
+        }
+    
+    def validate_periode_de_realisation(self, value):
+        """Valider que la période de réalisation est >= aujourd'hui"""
+        if value:
+            from django.utils import timezone
+            today = timezone.now().date()
+            
+            if value < today:
+                raise serializers.ValidationError(
+                    "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
                 )
         
         return value
