@@ -74,6 +74,7 @@ class PacSerializer(serializers.ModelSerializer):
     type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
     type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
+    validateur_nom = serializers.SerializerMethodField()
     jours_restants = serializers.SerializerMethodField()
     
     class Meta:
@@ -86,13 +87,20 @@ class PacSerializer(serializers.ModelSerializer):
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'periode_de_realisation', 'jours_restants',
+            'is_validated', 'date_validation', 'validated_by', 'validateur_nom',
             'cree_par', 'createur_nom', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['uuid', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'is_validated', 'date_validation', 'validated_by', 'created_at', 'updated_at']
     
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
         return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+    
+    def get_validateur_nom(self, obj):
+        """Retourner le nom du validateur"""
+        if obj.validated_by:
+            return f"{obj.validated_by.first_name} {obj.validated_by.last_name}".strip() or obj.validated_by.username
+        return None
     
     def get_jours_restants(self, obj):
         """Calculer les jours restants"""

@@ -862,6 +862,99 @@ def pac_delete(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pac_validate(request, uuid):
+    """Valider un PAC (verrouille les champs PAC et Traitement)"""
+    try:
+        pac = Pac.objects.select_related('validated_by', 'cree_par').get(uuid=uuid)
+        
+        # Vérifier que l'utilisateur est le créateur ou un admin
+        if pac.cree_par != request.user and not request.user.is_staff:
+            return Response({
+                'error': 'Vous n\'avez pas les permissions pour valider ce PAC'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Vérifier si le PAC est déjà validé
+        if pac.is_validated:
+            return Response({
+                'error': 'Ce PAC est déjà validé',
+                'date_validation': pac.date_validation,
+                'validated_by': f"{pac.validated_by.first_name} {pac.validated_by.last_name}".strip() or pac.validated_by.username if pac.validated_by else None
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider le PAC
+        from django.utils import timezone
+        pac.is_validated = True
+        pac.date_validation = timezone.now()
+        pac.validated_by = request.user
+        pac.save()
+        
+        logger.info(
+            f"PAC validé par {request.user.username}: "
+            f"PAC N°{pac.numero_pac}, UUID: {uuid}, "
+            f"IP: {get_client_ip(request)}"
+        )
+        
+        return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
+        
+    except Pac.DoesNotExist:
+        return Response({
+            'error': 'PAC non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la validation du PAC: {str(e)}")
+        return Response({
+            'error': 'Impossible de valider le PAC',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pac_unvalidate(request, uuid):
+    """Dévalider un PAC (déverrouille les champs)"""
+    try:
+        pac = Pac.objects.select_related('validated_by', 'cree_par').get(uuid=uuid)
+        
+        # Vérifier que l'utilisateur est le créateur ou un admin
+        if pac.cree_par != request.user and not request.user.is_staff:
+            return Response({
+                'error': 'Vous n\'avez pas les permissions pour dévalider ce PAC'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Vérifier si le PAC n'est pas validé
+        if not pac.is_validated:
+            return Response({
+                'error': 'Ce PAC n\'est pas validé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Dévalider le PAC
+        pac.is_validated = False
+        pac.date_validation = None
+        pac.validated_by = None
+        pac.save()
+        
+        logger.info(
+            f"PAC dévalidé par {request.user.username}: "
+            f"PAC N°{pac.numero_pac}, UUID: {uuid}, "
+            f"IP: {get_client_ip(request)}"
+        )
+        
+        return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
+        
+    except Pac.DoesNotExist:
+        return Response({
+            'error': 'PAC non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la dévalidation du PAC: {str(e)}")
+        return Response({
+            'error': 'Impossible de dévalider le PAC',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # ==================== API TRAITEMENTS ====================
 
 @api_view(['GET'])
