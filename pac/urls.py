@@ -25,6 +25,7 @@ urlpatterns = [
     path('pac/<uuid:uuid>/update/', views.pac_update, name='pac_update'),
     path('pac/<uuid:uuid>/delete/', views.pac_delete, name='pac_delete'),
     path('pac/<uuid:uuid>/validate/', views.pac_validate, name='pac_validate'),
+    path('pac/validate-by-type/', views.pac_validate_by_type, name='pac_validate_by_type'),
     path('pac/<uuid:uuid>/unvalidate/', views.pac_unvalidate, name='pac_unvalidate'),
     
     # ==================== API TRAITEMENTS ====================
