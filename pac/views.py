@@ -36,6 +36,7 @@ def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
     Ordre: INITIAL -> AMENDEMENT_1 -> AMENDEMENT_2. Si tous existent déjà, retourne AMENDEMENT_2.
     """
     try:
+        logger.info(f"[_get_next_type_tableau_for_context] user={user}, annee_uuid={annee_uuid}, processus_uuid={processus_uuid}")
         codes_order = ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
         existing_types = set(
             Pac.objects.filter(
@@ -44,14 +45,27 @@ def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
                 processus_id=processus_uuid
             ).values_list('type_tableau__code', flat=True)
         )
+        logger.info(f"[_get_next_type_tableau_for_context] existing_types={existing_types}")
         for code in codes_order:
             if code not in existing_types:
-                return Versions.objects.get(code=code)
+                version = Versions.objects.get(code=code)
+                logger.info(f"[_get_next_type_tableau_for_context] Retourne version {code}: {version}")
+                return version
         # Tous déjà présents: retourner le dernier
-        return Versions.objects.get(code=codes_order[-1])
-    except Versions.DoesNotExist:
+        version = Versions.objects.get(code=codes_order[-1])
+        logger.info(f"[_get_next_type_tableau_for_context] Tous présents, retourne {version}")
+        return version
+    except Versions.DoesNotExist as e:
+        logger.error(f"[_get_next_type_tableau_for_context] Versions.DoesNotExist: {e}")
         # En cas de configuration incomplète, fallback sur le premier disponible
-        return Versions.objects.order_by('nom').first()
+        fallback = Versions.objects.order_by('nom').first()
+        logger.info(f"[_get_next_type_tableau_for_context] Fallback sur {fallback}")
+        return fallback
+    except Exception as e:
+        logger.error(f"[_get_next_type_tableau_for_context] Erreur: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise
 
 
 
@@ -632,13 +646,37 @@ def processus_detail(request, uuid):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def pac_list(request):
-    """Liste des PACs de l'utilisateur connecté"""
+    """Liste des PACs de l'utilisateur connecté avec leurs détails"""
     try:
+        logger.info(f"[pac_list] Utilisateur connecté: {request.user.username} (ID: {request.user.id})")
+
+        # Compter tous les PACs dans la base
+        total_pacs = Pac.objects.count()
+        logger.info(f"[pac_list] Nombre total de PACs dans la base: {total_pacs}")
+
+        # Compter les PACs de l'utilisateur avec leurs détails
         pacs = Pac.objects.filter(cree_par=request.user).select_related(
-            'processus', 'nature', 'categorie', 'source', 'cree_par',
-            'annee', 'type_tableau'
-        ).order_by('-created_at')
-        serializer = PacSerializer(pacs, many=True)
+            'processus', 'cree_par', 'annee', 'type_tableau', 'validated_by'
+        ).prefetch_related(
+            'details__dysfonctionnement_recommandation',
+            'details__nature',
+            'details__categorie',
+            'details__source'
+        )
+
+        logger.info(f"[pac_list] Nombre de PACs pour l'utilisateur {request.user.username}: {pacs.count()}")
+
+        # Logger les détails des PACs trouvés
+        if pacs.count() == 0 and total_pacs > 0:
+            # Il y a des PACs mais pas pour cet utilisateur
+            all_pacs = Pac.objects.all().select_related('cree_par')
+            logger.warning(f"[pac_list] PACs trouvés dans la base mais pas pour l'utilisateur actuel:")
+            for pac in all_pacs[:5]:  # Limiter à 5 pour ne pas surcharger les logs
+                logger.warning(f"  - PAC {pac.uuid}: créé par {pac.cree_par.username if pac.cree_par else 'NULL'}")
+
+        # Utiliser PacCompletSerializer pour inclure les détails
+        serializer = PacCompletSerializer(pacs, many=True)
+        logger.info(f"[pac_list] Données sérialisées: {len(serializer.data)} PACs")
         return Response(serializer.data)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des PACs: {str(e)}")
@@ -761,41 +799,97 @@ def pac_get_or_create(request):
     Plusieurs lignes peuvent avoir le même (processus, année, type_tableau).
     """
     try:
+        logger.info(f"[pac_get_or_create] Début - données reçues: {request.data}")
         data = request.data
         annee_uuid = data.get('annee')
         processus_uuid = data.get('processus')
         type_tableau_uuid = data.get('type_tableau')
 
+        logger.info(f"[pac_get_or_create] annee_uuid={annee_uuid}, processus_uuid={processus_uuid}, type_tableau_uuid={type_tableau_uuid}")
+
         # Si type_tableau est absent mais annee + processus sont fournis, l'attribuer automatiquement
         if annee_uuid and processus_uuid and not type_tableau_uuid:
-            auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
-            if auto_tt:
-                data = data.copy()
-                data['type_tableau'] = str(auto_tt.uuid)
-                type_tableau_uuid = data['type_tableau']
+            logger.info("[pac_get_or_create] type_tableau absent, appel à _get_next_type_tableau_for_context")
+            try:
+                auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
+                if auto_tt:
+                    data = data.copy()
+                    data['type_tableau'] = str(auto_tt.uuid)
+                    type_tableau_uuid = data['type_tableau']
+                    logger.info(f"[pac_get_or_create] type_tableau automatique défini: {type_tableau_uuid}")
+            except Exception as tt_error:
+                logger.error(f"[pac_get_or_create] Erreur lors de la détermination automatique du type_tableau: {tt_error}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Continue sans type_tableau si erreur
 
         if not (annee_uuid and processus_uuid):
+            logger.warning("[pac_get_or_create] annee ou processus manquant")
             return Response({
                 'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Toujours créer une nouvelle ligne de PAC
+        logger.info(f"[pac_get_or_create] Création du PAC avec data={data}")
         create_serializer = PacCreateSerializer(data=data, context={'request': request})
+
         if create_serializer.is_valid():
-            pac = create_serializer.save()
-            log_pac_creation(
-                user=request.user,
-                pac=pac,
-                ip_address=get_client_ip(request),
-                user_agent=request.META.get('HTTP_USER_AGENT')
-            )
-            return Response(PacSerializer(pac).data, status=status.HTTP_201_CREATED)
+            logger.info("[pac_get_or_create] Serializer valide, sauvegarde...")
+            try:
+                pac = create_serializer.save()
+                logger.info(f"[pac_get_or_create] PAC créé avec succès: {pac.uuid}")
+            except Exception as save_error:
+                logger.error(f"[pac_get_or_create] Erreur lors de la sauvegarde du PAC: {save_error}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return Response({
+                    'error': 'Erreur lors de la sauvegarde du PAC',
+                    'details': str(save_error)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # Log de l'activité
+            try:
+                log_pac_creation(
+                    user=request.user,
+                    pac=pac,
+                    ip_address=get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT')
+                )
+                logger.info(f"[pac_get_or_create] Log d'activité créé avec succès")
+            except Exception as log_error:
+                logger.error(f"[pac_get_or_create] Erreur lors du log d'activité (non bloquant): {log_error}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Continue car le PAC est déjà créé
+
+            # Sérialiser le PAC pour la réponse
+            try:
+                logger.info(f"[pac_get_or_create] Sérialisation du PAC pour la réponse...")
+                serialized_data = PacSerializer(pac).data
+                logger.info(f"[pac_get_or_create] Sérialisation réussie, envoi de la réponse")
+                return Response(serialized_data, status=status.HTTP_201_CREATED)
+            except Exception as serializer_error:
+                logger.error(f"[pac_get_or_create] Erreur lors de la sérialisation du PAC: {serializer_error}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Le PAC est créé mais la sérialisation a échoué - retourner au moins l'UUID
+                return Response({
+                    'uuid': str(pac.uuid),
+                    'message': 'PAC créé avec succès',
+                    'warning': 'Erreur lors de la sérialisation complète',
+                    'error_details': str(serializer_error)
+                }, status=status.HTTP_201_CREATED)
+
+        logger.error(f"[pac_get_or_create] Erreurs de validation: {create_serializer.errors}")
         return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
-        logger.error(f"Erreur pac_get_or_create: {str(e)}")
+        logger.error(f"[pac_get_or_create] Erreur exception non gérée: {str(e)}")
+        import traceback
+        logger.error(f"[pac_get_or_create] Traceback: {traceback.format_exc()}")
         return Response({
-            'error': 'Impossible de traiter la demande'
+            'error': 'Impossible de traiter la demande',
+            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -805,6 +899,19 @@ def pac_update(request, uuid):
     """Mettre à jour un PAC"""
     try:
         pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        
+        # Protection : empêcher la modification du processus après création
+        if 'processus' in request.data:
+            return Response({
+                'error': 'Le processus ne peut pas être modifié après la création du PAC'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Protection : empêcher la modification si le PAC est validé
+        if pac.is_validated:
+            return Response({
+                'error': 'Ce PAC est validé. Les champs ne peuvent plus être modifiés.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = PacUpdateSerializer(pac, data=request.data, partial=True)
         if serializer.is_valid():
             updated_pac = serializer.save()
@@ -936,6 +1043,93 @@ def pac_validate(request, uuid):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def pac_validate_by_type(request):
+    """Valider tous les PACs d'un même type_tableau (processus, année, type_tableau)"""
+    try:
+        processus_uuid = request.data.get('processus')
+        annee_uuid = request.data.get('annee')
+        type_tableau_uuid = request.data.get('type_tableau')
+        
+        if not all([processus_uuid, annee_uuid, type_tableau_uuid]):
+            return Response({
+                'error': 'processus, annee et type_tableau sont requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Récupérer tous les PACs du même contexte (processus, année, type_tableau)
+        pacs_to_validate = Pac.objects.filter(
+            processus__uuid=processus_uuid,
+            annee__uuid=annee_uuid,
+            type_tableau__uuid=type_tableau_uuid,
+            cree_par=request.user
+        ).select_related('processus', 'annee', 'type_tableau')
+        
+        if not pacs_to_validate.exists():
+            return Response({
+                'error': 'Aucun PAC trouvé pour ce contexte'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Vérifier que tous les PACs peuvent être validés
+        errors = []
+        for pac in pacs_to_validate:
+            if pac.is_validated:
+                continue  # Déjà validé, on continue
+            
+            details = pac.details.all()
+            if not details.exists():
+                errors.append(f'Le PAC {pac.numero_pac or pac.uuid} doit avoir au moins un détail')
+                continue
+            
+            for detail in details:
+                if not hasattr(detail, 'traitement') or not detail.traitement:
+                    errors.append(f'Le détail du PAC {pac.numero_pac or pac.uuid} n\'a pas de traitement')
+                    break
+                
+                traitement = detail.traitement
+                if not traitement.action:
+                    errors.append(f'Le traitement du PAC {pac.numero_pac or pac.uuid} n\'a pas d\'action')
+                    break
+        
+        if errors:
+            return Response({
+                'error': 'Certains PACs ne peuvent pas être validés',
+                'details': errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider tous les PACs
+        from django.utils import timezone
+        validated_count = 0
+        for pac in pacs_to_validate:
+            if not pac.is_validated:
+                pac.is_validated = True
+                pac.validated_at = timezone.now()
+                pac.validated_by = request.user
+                pac.save()
+                validated_count += 1
+        
+        logger.info(
+            f"{validated_count} PAC(s) validé(s) par type_tableau par {request.user.username}: "
+            f"processus={processus_uuid}, annee={annee_uuid}, type_tableau={type_tableau_uuid}, "
+            f"IP: {get_client_ip(request)}"
+        )
+        
+        return Response({
+            'message': f'{validated_count} PAC(s) validé(s) avec succès',
+            'validated_count': validated_count,
+            'total_count': pacs_to_validate.count()
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la validation par type_tableau: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de valider les PACs',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def pac_unvalidate(request, uuid):
     """Dévalider un PAC (déverrouille les champs)"""
     try:
@@ -1012,22 +1206,52 @@ def traitement_list(request):
 def traitement_create(request):
     """Créer un nouveau traitement"""
     try:
+        # Vérifier si le PAC est validé avant la création
+        if 'details_pac' in request.data:
+            try:
+                details_pac = DetailsPac.objects.select_related('pac').get(uuid=request.data['details_pac'])
+                if details_pac.pac.is_validated:
+                    return Response({
+                        'error': 'Ce PAC est validé. Impossible de créer un nouveau traitement.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except DetailsPac.DoesNotExist:
+                pass  # La validation du serializer gérera cette erreur
+        
         serializer = TraitementPacCreateSerializer(data=request.data)
         if serializer.is_valid():
             traitement = serializer.save()
-            
+
             # Log de l'activité
-            log_traitement_creation(
-                user=request.user,
-                traitement=traitement,
-                ip_address=get_client_ip(request),
-                user_agent=request.META.get('HTTP_USER_AGENT')
-            )
-            
-            return Response(TraitementPacSerializer(traitement).data, status=status.HTTP_201_CREATED)
+            try:
+                log_traitement_creation(
+                    user=request.user,
+                    traitement=traitement,
+                    ip_address=get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT')
+                )
+            except Exception as log_error:
+                logger.error(f"Erreur lors du log de création du traitement: {str(log_error)}")
+                # Continue même si le log échoue
+
+            # Sérialiser la réponse
+            try:
+                response_data = TraitementPacSerializer(traitement).data
+                return Response(response_data, status=status.HTTP_201_CREATED)
+            except Exception as serializer_error:
+                logger.error(f"Erreur lors de la sérialisation du traitement créé: {str(serializer_error)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Le traitement a été créé, retourner au moins l'UUID
+                return Response({
+                    'uuid': str(traitement.uuid),
+                    'action': traitement.action
+                }, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Erreur lors de la création du traitement: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({
             'error': 'Impossible de créer le traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1094,6 +1318,12 @@ def traitement_update(request, uuid):
             return Response({
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Protection : empêcher la modification si le PAC est validé
+        if traitement.details_pac.pac.is_validated:
+            return Response({
+                'error': 'Ce PAC est validé. Les champs de traitement ne peuvent plus être modifiés.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = TraitementPacUpdateSerializer(traitement, data=request.data, partial=True)
         if serializer.is_valid():
@@ -1167,6 +1397,17 @@ def traitement_suivis(request, uuid):
 def suivi_create(request):
     """Créer un nouveau suivi"""
     try:
+        # Vérifier si le traitement est dans un PAC validé avant la création
+        if 'traitement' in request.data:
+            try:
+                traitement = TraitementPac.objects.select_related('details_pac', 'details_pac__pac').get(uuid=request.data['traitement'])
+                if not traitement.details_pac.pac.is_validated:
+                    return Response({
+                        'error': 'Le PAC doit être validé avant de pouvoir créer un suivi. Veuillez d\'abord valider tous les détails et traitements du PAC.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except TraitementPac.DoesNotExist:
+                pass  # La validation du serializer gérera cette erreur
+        
         serializer = PacSuiviCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             statut = serializer.validated_data.get('statut')
@@ -1177,19 +1418,38 @@ def suivi_create(request):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             suivi = serializer.save()
-            
+
             # Log de l'activité
-            log_suivi_creation(
-                user=request.user,
-                suivi=suivi,
-                ip_address=get_client_ip(request),
-                user_agent=request.META.get('HTTP_USER_AGENT')
-            )
-            
-            return Response(PacSuiviSerializer(suivi).data, status=status.HTTP_201_CREATED)
+            try:
+                log_suivi_creation(
+                    user=request.user,
+                    suivi=suivi,
+                    ip_address=get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT')
+                )
+            except Exception as log_error:
+                logger.error(f"Erreur lors du log de création du suivi: {str(log_error)}")
+                # Continue même si le log échoue
+
+            # Sérialiser la réponse
+            try:
+                response_data = PacSuiviSerializer(suivi).data
+                return Response(response_data, status=status.HTTP_201_CREATED)
+            except Exception as serializer_error:
+                logger.error(f"Erreur lors de la sérialisation du suivi créé: {str(serializer_error)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Le suivi a été créé, retourner au moins l'UUID
+                return Response({
+                    'uuid': str(suivi.uuid),
+                    'resultat': suivi.resultat
+                }, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Erreur lors de la création du suivi: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({
             'error': 'Impossible de créer le suivi'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1218,9 +1478,15 @@ def suivi_detail(request, uuid):
 def suivi_update(request, uuid):
     """Mettre à jour un suivi"""
     try:
-        suivi = PacSuivi.objects.get(uuid=uuid)
+        suivi = PacSuivi.objects.select_related('traitement', 'traitement__details_pac', 'traitement__details_pac__pac').get(uuid=uuid)
         if suivi.cree_par != request.user:
             return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Protection : empêcher la modification si le PAC n'est pas validé
+        if not suivi.traitement.details_pac.pac.is_validated:
+            return Response({
+                'error': 'Le PAC doit être validé avant de pouvoir modifier un suivi.'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = PacSuiviUpdateSerializer(suivi, data=request.data, partial=True)
         if serializer.is_valid():
@@ -1274,6 +1540,17 @@ def details_pac_list(request, uuid):
 def details_pac_create(request):
     """Créer un nouveau détail de PAC"""
     try:
+        # Vérifier si le PAC est validé avant la création
+        if 'pac' in request.data:
+            try:
+                pac = Pac.objects.get(uuid=request.data['pac'])
+                if pac.is_validated:
+                    return Response({
+                        'error': 'Ce PAC est validé. Impossible de créer un nouveau détail.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except Pac.DoesNotExist:
+                pass  # La validation du serializer gérera cette erreur
+        
         serializer = DetailsPacCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             detail = serializer.save()
@@ -1326,6 +1603,12 @@ def details_pac_update(request, uuid):
             return Response({
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Protection : empêcher la modification si le PAC est validé
+        if detail.pac.is_validated:
+            return Response({
+                'error': 'Ce PAC est validé. Les champs de détail ne peuvent plus être modifiés.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = DetailsPacUpdateSerializer(detail, data=request.data, partial=True)
         if serializer.is_valid():
