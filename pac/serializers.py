@@ -38,7 +38,9 @@ class ProcessusSerializer(serializers.ModelSerializer):
     
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
-        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        if obj.cree_par:
+            return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        return "Utilisateur inconnu"
 
 
 class ProcessusCreateSerializer(serializers.ModelSerializer):
@@ -59,14 +61,6 @@ class PacSerializer(serializers.ModelSerializer):
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
     processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
     processus_uuid = serializers.UUIDField(source='processus.uuid', read_only=True)
-    nature_nom = serializers.CharField(source='nature.nom', read_only=True, allow_null=True)
-    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True, allow_null=True)
-    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True, allow_null=True)
-    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True, allow_null=True)
-    source_nom = serializers.CharField(source='source.nom', read_only=True, allow_null=True)
-    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True, allow_null=True)
-    dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
-    dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
     annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
     annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
     annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
@@ -75,23 +69,32 @@ class PacSerializer(serializers.ModelSerializer):
     type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     validateur_nom = serializers.SerializerMethodField()
-    jours_restants = serializers.SerializerMethodField()
-    
+    numero_pac = serializers.SerializerMethodField()
+
     class Meta:
         model = Pac
         fields = [
-            'uuid', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
+            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
             'cree_par', 'createur_nom'
         ]
-        read_only_fields = ['uuid', 'is_validated', 'validated_at', 'validated_by']
-    
+        read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by']
+
+    def get_numero_pac(self, obj):
+        """Retourner le numéro du premier détail PAC associé, ou None"""
+        premier_detail = obj.details.first()
+        if premier_detail and premier_detail.numero_pac:
+            return premier_detail.numero_pac
+        return None
+
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
-        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
-    
+        if obj.cree_par:
+            return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        return "Utilisateur inconnu"
+
     def get_validateur_nom(self, obj):
         """Retourner le nom du validateur"""
         if obj.validated_by:
@@ -137,8 +140,22 @@ class PacUpdateSerializer(serializers.ModelSerializer):
             'type_tableau': {'required': False, 'allow_null': True},
         }
     
+    def validate_processus(self, value):
+        """Empêcher la modification du processus après création"""
+        if self.instance and self.instance.processus != value:
+            raise serializers.ValidationError(
+                "Le processus ne peut pas être modifié après la création du PAC"
+            )
+        return value
+    
     def update(self, instance, validated_data):
         """Mettre à jour un PAC"""
+        # Protection : empêcher la modification si le PAC est validé
+        if instance.is_validated:
+            raise serializers.ValidationError(
+                "Ce PAC est validé. Les champs ne peuvent plus être modifiés."
+            )
+        
         # Le numéro PAC et le créateur ne peuvent pas être modifiés
         return super().update(instance, validated_data)
 
@@ -151,10 +168,10 @@ class TraitementPacSerializer(serializers.ModelSerializer):
     details_pac_uuid = serializers.UUIDField(source='details_pac.uuid', read_only=True, allow_null=True)
     details_pac_libelle = serializers.CharField(source='details_pac.libelle', read_only=True, allow_null=True)
     pac_numero = serializers.CharField(source='details_pac.numero_pac', read_only=True, allow_null=True)
-    pac_uuid = serializers.UUIDField(source='details_pac.pac.uuid', read_only=True, allow_null=True)
+    pac_uuid = serializers.SerializerMethodField()
     responsable_direction_nom = serializers.CharField(source='responsable_direction.nom', read_only=True, allow_null=True)
     responsable_sous_direction_nom = serializers.CharField(source='responsable_sous_direction.nom', read_only=True, allow_null=True)
-    
+
     # Exposer aussi les M2M (lecture seule pour compat)
     responsables_directions = serializers.PrimaryKeyRelatedField(
         many=True, read_only=True
@@ -167,13 +184,22 @@ class TraitementPacSerializer(serializers.ModelSerializer):
         model = TraitementPac
         fields = [
             'uuid', 'details_pac', 'details_pac_uuid', 'details_pac_libelle',
-            'pac_uuid', 'pac_numero', 'action', 'type_action', 
+            'pac_uuid', 'pac_numero', 'action', 'type_action',
             'type_action_nom', 'responsable_direction', 'responsable_direction_nom',
             'responsable_sous_direction', 'responsable_sous_direction_nom',
             'responsables_directions', 'responsables_sous_directions',
             'preuve', 'preuve_description', 'preuve_media_url', 'delai_realisation'
         ]
         read_only_fields = ['uuid']
+
+    def get_pac_uuid(self, obj):
+        """Retourner l'UUID du PAC de manière sécurisée"""
+        try:
+            if obj.details_pac and obj.details_pac.pac:
+                return str(obj.details_pac.pac.uuid)
+        except Exception:
+            pass
+        return None
 
     def get_preuve_media_url(self, obj):
         """Retourner l'URL du premier média de la preuve"""
@@ -219,6 +245,13 @@ class TraitementPacCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Un traitement existe déjà pour ce détail PAC. Un détail ne peut avoir qu'un seul traitement."
             )
+        
+        # Protection : empêcher la création de traitement si le PAC est validé
+        if value and hasattr(value, 'pac') and value.pac.is_validated:
+            raise serializers.ValidationError(
+                "Ce PAC est validé. Impossible de créer un nouveau traitement."
+            )
+        
         return value
     
     def validate_delai_realisation(self, value):
@@ -326,6 +359,12 @@ class TraitementPacUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data):
+        # Protection : empêcher la modification si le PAC est validé
+        if instance.details_pac and instance.details_pac.pac.is_validated:
+            raise serializers.ValidationError(
+                "Ce PAC est validé. Les champs de traitement ne peuvent plus être modifiés."
+            )
+        
         resp_dirs = self.initial_data.get('responsables_directions', None)
         resp_sous = self.initial_data.get('responsables_sous_directions', None)
 
@@ -353,8 +392,8 @@ class PacSuiviSerializer(serializers.ModelSerializer):
     appreciation_nom = serializers.CharField(source='appreciation.nom', read_only=True)
     traitement_action = serializers.CharField(source='traitement.action', read_only=True, allow_null=True)
     traitement_uuid = serializers.UUIDField(source='traitement.uuid', read_only=True, allow_null=True)
-    statut_nom = serializers.CharField(source='statut.nom', read_only=True)
-    preuve_description = serializers.CharField(source='preuve.description', read_only=True)
+    statut_nom = serializers.CharField(source='statut.nom', read_only=True, allow_null=True)
+    preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     preuve_media_urls = serializers.SerializerMethodField()
     createur_nom = serializers.SerializerMethodField()
@@ -372,7 +411,9 @@ class PacSuiviSerializer(serializers.ModelSerializer):
     
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
-        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        if obj.cree_par:
+            return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        return "Utilisateur inconnu"
 
     def get_preuve_media_url(self, obj):
         """Retourner l'URL du premier média de la preuve"""
@@ -476,14 +517,6 @@ class PacCompletSerializer(serializers.ModelSerializer):
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
     processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
     processus_uuid = serializers.UUIDField(source='processus.uuid', read_only=True)
-    nature_nom = serializers.CharField(source='nature.nom', read_only=True, allow_null=True)
-    nature_uuid = serializers.UUIDField(source='nature.uuid', read_only=True, allow_null=True)
-    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True, allow_null=True)
-    categorie_uuid = serializers.UUIDField(source='categorie.uuid', read_only=True, allow_null=True)
-    source_nom = serializers.CharField(source='source.nom', read_only=True, allow_null=True)
-    source_uuid = serializers.UUIDField(source='source.uuid', read_only=True, allow_null=True)
-    dysfonctionnement_recommandation_nom = serializers.CharField(source='dysfonctionnement_recommandation.nom', read_only=True, allow_null=True)
-    dysfonctionnement_recommandation_uuid = serializers.UUIDField(source='dysfonctionnement_recommandation.uuid', read_only=True, allow_null=True)
     annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
     annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
     annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
@@ -491,24 +524,33 @@ class PacCompletSerializer(serializers.ModelSerializer):
     type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
     type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
-    jours_restants = serializers.SerializerMethodField()
-    
+    numero_pac = serializers.SerializerMethodField()
+
     # Inclure tous les détails avec leurs traitements et suivis
     details = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Pac
         fields = [
-            'uuid', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
+            'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
-            'cree_par', 'createur_nom', 'created_at', 'updated_at', 'details'
+            'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by', 'details'
         ]
-        read_only_fields = ['uuid', 'created_at', 'updated_at']
-    
+        read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by']
+
+    def get_numero_pac(self, obj):
+        """Retourner le numéro du premier détail PAC associé, ou None"""
+        premier_detail = obj.details.first()
+        if premier_detail and premier_detail.numero_pac:
+            return premier_detail.numero_pac
+        return None
+
     def get_createur_nom(self, obj):
         """Retourner le nom du créateur"""
-        return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        if obj.cree_par:
+            return f"{obj.cree_par.first_name} {obj.cree_par.last_name}".strip() or obj.cree_par.username
+        return "Utilisateur inconnu"
     
     def get_details(self, obj):
         """Récupérer tous les détails avec leurs traitements et suivis"""
@@ -521,9 +563,13 @@ class PacCompletSerializer(serializers.ModelSerializer):
                 'numero_pac': detail.numero_pac,
                 'libelle': detail.libelle,
                 'dysfonctionnement_recommandation': detail.dysfonctionnement_recommandation.uuid if detail.dysfonctionnement_recommandation else None,
+                'dysfonctionnement_recommandation_nom': detail.dysfonctionnement_recommandation.nom if detail.dysfonctionnement_recommandation else None,
                 'nature': detail.nature.uuid if detail.nature else None,
+                'nature_nom': detail.nature.nom if detail.nature else None,
                 'categorie': detail.categorie.uuid if detail.categorie else None,
+                'categorie_nom': detail.categorie.nom if detail.categorie else None,
                 'source': detail.source.uuid if detail.source else None,
+                'source_nom': detail.source.nom if detail.source else None,
                 'periode_de_realisation': detail.periode_de_realisation,
                 'traitement': None
             }
@@ -531,6 +577,23 @@ class PacCompletSerializer(serializers.ModelSerializer):
             # Récupérer le traitement pour ce détail (OneToOne)
             if hasattr(detail, 'traitement') and detail.traitement:
                 traitement = detail.traitement
+                # Récupérer les responsables M2M
+                responsables_directions = [
+                    {
+                        'uuid': str(dir.uuid),
+                        'nom': dir.nom
+                    }
+                    for dir in traitement.responsables_directions.all()
+                ] if hasattr(traitement, 'responsables_directions') else []
+                
+                responsables_sous_directions = [
+                    {
+                        'uuid': str(sous_dir.uuid),
+                        'nom': sous_dir.nom
+                    }
+                    for sous_dir in traitement.responsables_sous_directions.all()
+                ] if hasattr(traitement, 'responsables_sous_directions') else []
+                
                 traitement_data = {
                     'uuid': str(traitement.uuid),
                     'action': traitement.action,
@@ -540,6 +603,8 @@ class PacCompletSerializer(serializers.ModelSerializer):
                     'responsable_direction_nom': traitement.responsable_direction.nom if traitement.responsable_direction else None,
                     'responsable_sous_direction': traitement.responsable_sous_direction.uuid if traitement.responsable_sous_direction else None,
                     'responsable_sous_direction_nom': traitement.responsable_sous_direction.nom if traitement.responsable_sous_direction else None,
+                    'responsables_directions': responsables_directions,
+                    'responsables_sous_directions': responsables_sous_directions,
                     'delai_realisation': traitement.delai_realisation,
                     'preuve': traitement.preuve.uuid if traitement.preuve else None,
                     'preuve_description': traitement.preuve.description if traitement.preuve else None,
@@ -629,6 +694,16 @@ class PacSuiviUpdateSerializer(serializers.ModelSerializer):
             'traitement', 'etat_mise_en_oeuvre', 'resultat', 'appreciation',
             'preuve', 'statut', 'date_mise_en_oeuvre_effective', 'date_cloture'
         ]
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour un suivi PAC"""
+        # Protection : empêcher la modification si le PAC n'est pas validé
+        if instance.traitement and instance.traitement.details_pac and not instance.traitement.details_pac.pac.is_validated:
+            raise serializers.ValidationError(
+                "Le PAC doit être validé avant de pouvoir modifier un suivi."
+            )
+        
+        return super().update(instance, validated_data)
     
     def validate_date_mise_en_oeuvre_effective(self, value):
         """Valider que la date de mise en œuvre effective est >= aujourd'hui"""
@@ -757,6 +832,13 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Vous n'avez pas les permissions pour ajouter un détail à ce PAC."
                 )
+        
+        # Protection : empêcher la création de détail si le PAC est validé
+        if value.is_validated:
+            raise serializers.ValidationError(
+                "Ce PAC est validé. Impossible de créer un nouveau détail."
+            )
+        
         return value
     
     def validate_periode_de_realisation(self, value):
@@ -822,3 +904,13 @@ class DetailsPacUpdateSerializer(serializers.ModelSerializer):
                 )
         
         return value
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour un détail PAC"""
+        # Protection : empêcher la modification si le PAC est validé
+        if instance.pac.is_validated:
+            raise serializers.ValidationError(
+                "Ce PAC est validé. Les champs de détail ne peuvent plus être modifiés."
+            )
+        
+        return super().update(instance, validated_data)
