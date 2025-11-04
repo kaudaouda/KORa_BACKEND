@@ -279,14 +279,19 @@ def log_pac_creation(user, pac, ip_address=None, user_agent=None):
     """
     Log spécifique pour la création d'un PAC
     """
-    libelle = pac.libelle if pac.libelle else "(sans libellé)"
+    # Le modèle Pac n'a pas de champs numero_pac ni libelle
+    # Ces informations sont dans les relations
+    processus_nom = pac.processus.nom if pac.processus else "Processus inconnu"
+    annee_libelle = f"{pac.annee.annee}" if pac.annee else "Année non définie"
+    type_tableau_nom = pac.type_tableau.nom if pac.type_tableau else "Type non défini"
+
     return log_activity(
         user=user,
         action='create',
         entity_type='pac',
         entity_id=str(pac.uuid),
-        entity_name=f"PAC {pac.numero_pac}",
-        description=f"Création du PAC {pac.numero_pac}: {libelle}",
+        entity_name=f"PAC {pac.uuid}",
+        description=f"Création du PAC pour {processus_nom} - {annee_libelle} ({type_tableau_nom})",
         ip_address=ip_address,
         user_agent=user_agent
     )
@@ -296,13 +301,17 @@ def log_pac_update(user, pac, ip_address=None, user_agent=None):
     """
     Log spécifique pour la modification d'un PAC
     """
+    # Le modèle Pac n'a pas de champ numero_pac
+    processus_nom = pac.processus.nom if pac.processus else "Processus inconnu"
+    annee_libelle = f"{pac.annee.annee}" if pac.annee else "Année non définie"
+
     return log_activity(
         user=user,
         action='update',
         entity_type='pac',
         entity_id=str(pac.uuid),
-        entity_name=f"PAC {pac.numero_pac}",
-        description=f"Modification du PAC {pac.numero_pac}",
+        entity_name=f"PAC {pac.uuid}",
+        description=f"Modification du PAC pour {processus_nom} - {annee_libelle}",
         ip_address=ip_address,
         user_agent=user_agent
     )
@@ -1889,10 +1898,10 @@ def types_tableau_all_list(request):
     try:
         from .models import Versions
         from .serializers import VersionsSerializer
-        
+
         versions = Versions.objects.all().order_by('nom')
         serializer = VersionsSerializer(versions, many=True)
-        
+
         return Response({
             'success': True,
             'data': serializer.data
@@ -1900,4 +1909,61 @@ def types_tableau_all_list(request):
     except Exception as e:
         logger.error(f"Erreur lors de la liste des types de tableau: {str(e)}")
         return Response({'error': 'Impossible de lister les types de tableau'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Types de Tableau (Versions) CRUD
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def type_tableau_create(request):
+    """Créer une nouvelle version de tableau"""
+    try:
+        from .models import Versions
+        from .serializers import VersionsSerializer
+
+        serializer = VersionsSerializer(data=request.data)
+        if serializer.is_valid():
+            version = serializer.save()
+            return Response(VersionsSerializer(version).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la version: {str(e)}")
+        return Response({'error': 'Impossible de créer la version'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def type_tableau_update(request, uuid):
+    """Mettre à jour une version de tableau"""
+    try:
+        from .models import Versions
+        from .serializers import VersionsSerializer
+
+        version = Versions.objects.get(uuid=uuid)
+        serializer = VersionsSerializer(version, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Versions.DoesNotExist:
+        return Response({'error': 'Version non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la version: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour la version'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def type_tableau_delete(request, uuid):
+    """Supprimer une version de tableau"""
+    try:
+        from .models import Versions
+
+        version = Versions.objects.get(uuid=uuid)
+        version.delete()
+        return Response({'message': 'Version supprimée avec succès'}, status=status.HTTP_200_OK)
+    except Versions.DoesNotExist:
+        return Response({'error': 'Version non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la version: {str(e)}")
+        return Response({'error': 'Impossible de supprimer la version'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
