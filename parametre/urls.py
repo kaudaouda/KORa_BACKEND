@@ -99,4 +99,7 @@ urlpatterns = [
     # ==================== TYPES DE TABLEAU ====================
     path('types-tableau/', views.types_tableau_list, name='types_tableau_list'),
     path('types-tableau/all/', views.types_tableau_all_list, name='types_tableau_all_list'),
+    path('types-tableau/create/', views.type_tableau_create, name='type_tableau_create'),
+    path('types-tableau/<uuid:uuid>/update/', views.type_tableau_update, name='type_tableau_update'),
+    path('types-tableau/<uuid:uuid>/delete/', views.type_tableau_delete, name='type_tableau_delete'),
 ]
