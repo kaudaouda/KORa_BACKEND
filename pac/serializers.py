@@ -5,6 +5,9 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Preuve, Media
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -554,7 +557,19 @@ class PacCompletSerializer(serializers.ModelSerializer):
     
     def get_details(self, obj):
         """Récupérer tous les détails avec leurs traitements et suivis"""
-        details = obj.details.all()
+        # Forcer le rafraîchissement depuis la base de données (éviter le cache)
+        details = DetailsPac.objects.filter(pac=obj).select_related(
+            'dysfonctionnement_recommandation',
+            'nature',
+            'categorie',
+            'source'
+        )
+        
+        # Log pour diagnostiquer
+        details_count = details.count()
+        logger.info(f"[PacCompletSerializer] PAC {obj.uuid} - Nombre de détails trouvés dans la DB: {details_count}")
+        if details_count > 0:
+            logger.info(f"[PacCompletSerializer] UUIDs des détails: {[str(d.uuid) for d in details]}")
         details_data = []
         
         for detail in details:
