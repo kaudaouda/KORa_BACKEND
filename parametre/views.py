@@ -1744,6 +1744,38 @@ def preuve_create_with_medias(request):
         return Response({'error': 'Impossible de créer la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def preuve_add_medias(request, uuid):
+    """Ajouter des médias à une preuve existante"""
+    try:
+        try:
+            preuve = Preuve.objects.get(uuid=uuid)
+        except Preuve.DoesNotExist:
+            return Response({'error': 'Preuve non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+        
+        media_uuids = request.data.get('medias', [])
+        if not isinstance(media_uuids, list) or len(media_uuids) == 0:
+            return Response({'error': 'medias (liste d\'UUIDs) est requis'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        medias = list(Media.objects.filter(uuid__in=media_uuids))
+        if len(medias) != len(media_uuids):
+            return Response({'error': 'Certains médias n\'ont pas été trouvés'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Ajouter les médias à la preuve (ManyToMany.add ignore les doublons)
+        preuve.medias.add(*medias)
+        
+        return Response({
+            'uuid': str(preuve.uuid),
+            'description': preuve.description,
+            'medias': [str(m.uuid) for m in preuve.medias.all()],
+            'created_at': preuve.created_at.isoformat()
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de l'ajout de médias à la preuve: {str(e)}")
+        return Response({'error': 'Impossible d\'ajouter les médias à la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def preuves_list(request):
