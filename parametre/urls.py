@@ -84,6 +84,7 @@ urlpatterns = [
 
     # ==================== PREUVES ====================
     path('preuves/create-with-medias/', views.preuve_create_with_medias, name='preuve_create_with_medias'),
+    path('preuves/<uuid:uuid>/add-medias/', views.preuve_add_medias, name='preuve_add_medias'),
     path('preuves/', views.preuves_list, name='preuves_list'),
     
     # ==================== FRÉQUENCES ====================

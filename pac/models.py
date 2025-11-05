@@ -52,11 +52,25 @@ class Pac(models.Model):
         blank=True,
         help_text='Version associée au PAC (Initial, Amendement, etc.)'
     )
+    initial_ref = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        related_name='amendements',
+        null=True,
+        blank=True,
+        help_text='Référence au PAC initial (pour les amendements)'
+    )
 
     class Meta:
         db_table = 'pac'
         verbose_name = 'PAC'
         verbose_name_plural = 'PACs'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['processus', 'annee', 'type_tableau'],
+                name='unique_pac_per_processus_annee_type_tableau'
+            )
+        ]
 
     def __str__(self):
         return f"PAC {self.uuid}"
@@ -67,7 +81,7 @@ class DetailsPac(models.Model):
     Modèle pour les détails d'un PAC
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    numero_pac = models.CharField(max_length=50, unique=True, null=True, blank=True, help_text='Numéro unique du détail PAC')
+    numero_pac = models.CharField(max_length=50, null=True, blank=True, help_text='Numéro du détail PAC (peut être dupliqué pour les amendements)')
     pac = models.ForeignKey(
         Pac,
         on_delete=models.CASCADE,
