@@ -70,6 +70,7 @@ class PacSerializer(serializers.ModelSerializer):
     type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
     type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
     type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
+    initial_ref_uuid = serializers.UUIDField(source='initial_ref.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     validateur_nom = serializers.SerializerMethodField()
     numero_pac = serializers.SerializerMethodField()
@@ -80,6 +81,7 @@ class PacSerializer(serializers.ModelSerializer):
             'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
+            'initial_ref', 'initial_ref_uuid',
             'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
             'cree_par', 'createur_nom'
         ]
@@ -112,12 +114,36 @@ class PacCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pac
         fields = [
-            'processus', 'annee', 'type_tableau'
+            'processus', 'annee', 'type_tableau', 'initial_ref'
         ]
         extra_kwargs = {
             'annee': {'required': False, 'allow_null': True},
             'type_tableau': {'required': False, 'allow_null': True},
+            'initial_ref': {'required': False, 'allow_null': True},
         }
+    
+    def validate(self, data):
+        """Valider la cohérence entre type_tableau et initial_ref"""
+        type_tableau = data.get('type_tableau')
+        initial_ref = data.get('initial_ref')
+        
+        if type_tableau:
+            # Vérifier si c'est un amendement
+            if type_tableau.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
+                # Les amendements doivent avoir un initial_ref
+                if not initial_ref:
+                    raise serializers.ValidationError(
+                        f"Un amendement ({type_tableau.code}) doit être lié à un PAC initial. "
+                        "Le champ 'initial_ref' est requis."
+                    )
+            elif type_tableau.code == 'INITIAL':
+                # Les PACs INITIAL ne doivent pas avoir d'initial_ref
+                if initial_ref:
+                    raise serializers.ValidationError(
+                        "Un PAC INITIAL ne peut pas avoir de référence initiale (initial_ref)."
+                    )
+        
+        return data
     
     def create(self, validated_data):
         """Créer un PAC avec l'utilisateur connecté"""
@@ -222,6 +248,11 @@ class TraitementPacSerializer(serializers.ModelSerializer):
 
 class TraitementPacCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de traitements PAC"""
+    # Définir explicitement details_pac comme PrimaryKeyRelatedField pour accepter l'UUID
+    details_pac = serializers.PrimaryKeyRelatedField(
+        queryset=DetailsPac.objects.all(),
+        required=True
+    )
     # Nouveau: accepter des listes d'UUID en entrée pour M2M
     responsables_directions = serializers.ListField(
         child=serializers.UUIDField(), required=False, allow_empty=True
@@ -470,8 +501,11 @@ class PacSuiviCreateSerializer(serializers.ModelSerializer):
     def validate_traitement(self, value):
         """Valider que le traitement est dans un PAC validé et qu'il n'y a pas déjà un suivi (OneToOne)"""
         if value:
-            # Vérifier que le PAC parent est validé
-            if not value.details_pac.pac.is_validated:
+            # Permettre la création lors de la copie d'amendement
+            from_amendment_copy = self.context.get('request') and self.context['request'].data.get('from_amendment_copy', False)
+            
+            # Vérifier que le PAC parent est validé (sauf lors de la copie d'amendement)
+            if not value.details_pac.pac.is_validated and not from_amendment_copy:
                 raise serializers.ValidationError(
                     "Le PAC doit être validé avant de pouvoir créer un suivi. "
                     "Veuillez d'abord valider tous les détails et traitements du PAC."
@@ -526,6 +560,7 @@ class PacCompletSerializer(serializers.ModelSerializer):
     type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
     type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
     type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
+    initial_ref_uuid = serializers.UUIDField(source='initial_ref.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     numero_pac = serializers.SerializerMethodField()
 
@@ -538,6 +573,7 @@ class PacCompletSerializer(serializers.ModelSerializer):
             'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
+            'initial_ref', 'initial_ref_uuid',
             'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by', 'details'
         ]
         read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by']
@@ -558,12 +594,19 @@ class PacCompletSerializer(serializers.ModelSerializer):
     def get_details(self, obj):
         """Récupérer tous les détails avec leurs traitements et suivis"""
         # Forcer le rafraîchissement depuis la base de données (éviter le cache)
+        # Trier par numero_pac pour préserver l'ordre (si les numéros sont séquentiels)
+        # Sinon, utiliser created_at comme fallback pour préserver l'ordre de création
         details = DetailsPac.objects.filter(pac=obj).select_related(
             'dysfonctionnement_recommandation',
             'nature',
             'categorie',
-            'source'
-        )
+            'source',
+            'traitement__suivi__etat_mise_en_oeuvre',
+            'traitement__suivi__appreciation',
+            'traitement__suivi__statut',
+            'traitement__suivi__cree_par',
+            'traitement__suivi__preuve'
+        ).order_by('numero_pac')
         
         # Log pour diagnostiquer
         details_count = details.count()
@@ -627,28 +670,33 @@ class PacCompletSerializer(serializers.ModelSerializer):
                     'suivi': None
                 }
                 
-                # Récupérer le suivi pour ce traitement (OneToOne)
-                if hasattr(traitement, 'suivi') and traitement.suivi:
+                # Récupérer le suivi pour ce traitement (OneToOne - relation inverse)
+                # Vérifier si le suivi existe en utilisant la relation inverse
+                try:
                     suivi = traitement.suivi
-                    suivi_data = {
-                        'uuid': str(suivi.uuid),
-                        'etat_mise_en_oeuvre': suivi.etat_mise_en_oeuvre.uuid if suivi.etat_mise_en_oeuvre else None,
-                        'etat_nom': suivi.etat_mise_en_oeuvre.nom if suivi.etat_mise_en_oeuvre else None,
-                        'resultat': suivi.resultat,
-                        'appreciation': suivi.appreciation.uuid if suivi.appreciation else None,
-                        'appreciation_nom': suivi.appreciation.nom if suivi.appreciation else None,
-                        'statut': suivi.statut.uuid if suivi.statut else None,
-                        'statut_nom': suivi.statut.nom if suivi.statut else None,
-                        'date_mise_en_oeuvre_effective': suivi.date_mise_en_oeuvre_effective,
-                        'date_cloture': suivi.date_cloture,
-                        'createur_nom': f"{suivi.cree_par.first_name} {suivi.cree_par.last_name}".strip() or suivi.cree_par.username,
-                        'created_at': suivi.created_at,
-                        'preuve': suivi.preuve.uuid if suivi.preuve else None,
-                        'preuve_description': suivi.preuve.description if suivi.preuve else None,
-                        'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
-                        'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi)
-                    }
-                    traitement_data['suivi'] = suivi_data
+                    if suivi:
+                        suivi_data = {
+                            'uuid': str(suivi.uuid),
+                            'etat_mise_en_oeuvre': suivi.etat_mise_en_oeuvre.uuid if suivi.etat_mise_en_oeuvre else None,
+                            'etat_nom': suivi.etat_mise_en_oeuvre.nom if suivi.etat_mise_en_oeuvre else None,
+                            'resultat': suivi.resultat,
+                            'appreciation': suivi.appreciation.uuid if suivi.appreciation else None,
+                            'appreciation_nom': suivi.appreciation.nom if suivi.appreciation else None,
+                            'statut': suivi.statut.uuid if suivi.statut else None,
+                            'statut_nom': suivi.statut.nom if suivi.statut else None,
+                            'date_mise_en_oeuvre_effective': suivi.date_mise_en_oeuvre_effective,
+                            'date_cloture': suivi.date_cloture,
+                            'createur_nom': f"{suivi.cree_par.first_name} {suivi.cree_par.last_name}".strip() or suivi.cree_par.username,
+                            'created_at': suivi.created_at,
+                            'preuve': suivi.preuve.uuid if suivi.preuve else None,
+                            'preuve_description': suivi.preuve.description if suivi.preuve else None,
+                            'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
+                            'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi)
+                        }
+                        traitement_data['suivi'] = suivi_data
+                except (AttributeError, PacSuivi.DoesNotExist):
+                    # Pas de suivi pour ce traitement
+                    pass
                 
                 detail_data['traitement'] = traitement_data
             
@@ -823,11 +871,13 @@ class DetailsPacSerializer(serializers.ModelSerializer):
 
 class DetailsPacCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de détails de PAC"""
+    # Permettre de spécifier le numero_pac lors de la copie d'amendement
+    numero_pac = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     
     class Meta:
         model = DetailsPac
         fields = [
-            'pac', 'dysfonctionnement_recommandation', 'libelle',
+            'pac', 'numero_pac', 'dysfonctionnement_recommandation', 'libelle',
             'nature', 'categorie', 'source', 'periode_de_realisation'
         ]
         extra_kwargs = {
@@ -871,21 +921,123 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """Créer un détail PAC avec génération automatique du numéro"""
-        # Générer le numéro PAC automatiquement
-        validated_data['numero_pac'] = self.generate_numero_pac()
+        # Vérifier si c'est une copie d'amendement (flag from_amendment_copy)
+        request = self.context.get('request')
+        from_amendment_copy = request and (
+            request.data.get('from_amendment_copy', False) or 
+            request.data.get('from_amendment_copy') == 'true' or
+            request.data.get('from_amendment_copy') == True
+        )
+        numero_pac_provided = validated_data.get('numero_pac')
+        pac = validated_data.get('pac')
+        
+        # Vérifier si le PAC est un amendement
+        is_amendment = False
+        if pac and pac.type_tableau:
+            type_code = pac.type_tableau.code
+            is_amendment = type_code in ['AMENDEMENT_1', 'AMENDEMENT_2']
+        
+        logger.info(f"[DetailsPacCreateSerializer] Création détail - from_amendment_copy: {from_amendment_copy}, is_amendment: {is_amendment}, numero_pac_provided: {numero_pac_provided}, pac_type: {pac.type_tableau.code if pac and pac.type_tableau else None}")
+        
+        # CAS 1: Copie d'amendement avec numéro fourni - TOUJOURS utiliser le numéro fourni
+        # Pour les amendements, on peut toujours réutiliser le même numéro que l'initial
+        if is_amendment and numero_pac_provided and str(numero_pac_provided).strip():
+            original_numero = str(numero_pac_provided).strip()
+            logger.info(f"[DetailsPacCreateSerializer] Amendement - Conservation du numéro depuis l'initial: {original_numero}")
+            validated_data['numero_pac'] = original_numero
+            detail = super().create(validated_data)
+            logger.info(f"[DetailsPacCreateSerializer] ✅ Détail créé avec UUID: {detail.uuid}, Numéro: {detail.numero_pac}")
+            return detail
+        
+        # CAS 1b: Copie d'amendement (flag explicite) avec numéro fourni
+        if from_amendment_copy and numero_pac_provided and str(numero_pac_provided).strip():
+            original_numero = str(numero_pac_provided).strip()
+            logger.info(f"[DetailsPacCreateSerializer] Copie d'amendement (flag) - Conservation du numéro: {original_numero}")
+            validated_data['numero_pac'] = original_numero
+            detail = super().create(validated_data)
+            logger.info(f"[DetailsPacCreateSerializer] ✅ Détail créé avec UUID: {detail.uuid}, Numéro: {detail.numero_pac}")
+            return detail
+        
+        # CAS 2: Amendement sans numéro fourni - Trouver le numéro correspondant depuis l'initial
+        if is_amendment and not numero_pac_provided:
+            # Si c'est un amendement sans numéro, on doit trouver le numéro depuis le PAC initial
+            if pac and pac.initial_ref:
+                initial_pac = pac.initial_ref
+                # Compter combien de détails existent déjà dans cet amendement
+                existing_details_count = DetailsPac.objects.filter(pac=pac).count()
+                # Récupérer les détails de l'initial triés par numero_pac
+                initial_details = DetailsPac.objects.filter(pac=initial_pac).exclude(
+                    numero_pac__isnull=True
+                ).exclude(
+                    numero_pac__exact=''
+                ).order_by('numero_pac')
+                
+                if initial_details.exists():
+                    # Utiliser le numéro correspondant au nombre de détails existants
+                    if existing_details_count < initial_details.count():
+                        corresponding_detail = initial_details[existing_details_count]
+                        numero_pac_provided = corresponding_detail.numero_pac
+                        logger.info(f"[DetailsPacCreateSerializer] Amendement - Utilisation du numéro correspondant depuis l'initial: {numero_pac_provided}")
+                    else:
+                        # Si on a plus de détails que l'initial, générer un nouveau numéro
+                        validated_data['numero_pac'] = self.generate_numero_pac()
+                        logger.info(f"[DetailsPacCreateSerializer] Amendement - Plus de détails que l'initial, génération nouveau numéro")
+                        return super().create(validated_data)
+                else:
+                    # Pas de détails dans l'initial, générer un nouveau numéro
+                    validated_data['numero_pac'] = self.generate_numero_pac()
+                    logger.info(f"[DetailsPacCreateSerializer] Amendement - Aucun détail dans l'initial, génération nouveau numéro")
+                    return super().create(validated_data)
+            else:
+                # Pas d'initial_ref, générer un nouveau numéro
+                validated_data['numero_pac'] = self.generate_numero_pac()
+                logger.info(f"[DetailsPacCreateSerializer] Amendement sans initial_ref, génération nouveau numéro")
+                return super().create(validated_data)
+        
+        # CAS 3: PAC initial ou cas normal - Générer le numéro si non fourni
+        if not numero_pac_provided:
+            validated_data['numero_pac'] = self.generate_numero_pac()
+        elif not is_amendment:
+            # Si un numéro est fourni mais ce n'est pas un amendement, vérifier l'unicité
+            if DetailsPac.objects.filter(numero_pac=numero_pac_provided).exists():
+                # Générer un nouveau numéro si le numéro existe déjà
+                validated_data['numero_pac'] = self.generate_numero_pac()
+        
         return super().create(validated_data)
     
     def generate_numero_pac(self):
-        """Générer un numéro PAC unique"""
-        from django.db.models import Count
-        count = DetailsPac.objects.count()
-        numero = f"PAC{count + 1:02d}"
+        """Générer un numéro PAC unique en trouvant le maximum existant"""
+        import re
         
-        # Vérifier l'unicité
+        # Récupérer tous les numéros de PAC existants
+        existing_numbers = DetailsPac.objects.exclude(
+            numero_pac__isnull=True
+        ).exclude(
+            numero_pac__exact=''
+        ).values_list('numero_pac', flat=True)
+        
+        max_num = 0
+        for num_str in existing_numbers:
+            if num_str:
+                # Extraire le numéro (ex: "PAC01" -> 1, "PAC5" -> 5, "PAC02" -> 2)
+                match = re.search(r'(\d+)', str(num_str))
+                if match:
+                    try:
+                        num = int(match.group(1))
+                        max_num = max(max_num, num)
+                    except ValueError:
+                        continue
+        
+        # Générer le prochain numéro (max_num + 1)
+        next_num = max_num + 1
+        numero = f"PAC{next_num:02d}"
+        
+        # Vérifier l'unicité (au cas où il y aurait un conflit)
         while DetailsPac.objects.filter(numero_pac=numero).exists():
-            count += 1
-            numero = f"PAC{count + 1:02d}"
+            next_num += 1
+            numero = f"PAC{next_num:02d}"
         
+        logger.info(f"[DetailsPacCreateSerializer] Génération nouveau numéro: {numero} (max trouvé: {max_num})")
         return numero
 
 
