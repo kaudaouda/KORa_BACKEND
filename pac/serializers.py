@@ -958,40 +958,48 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
             logger.info(f"[DetailsPacCreateSerializer] ✅ Détail créé avec UUID: {detail.uuid}, Numéro: {detail.numero_pac}")
             return detail
         
-        # CAS 2: Amendement sans numéro fourni - Trouver le numéro correspondant depuis l'initial
+        # CAS 2: Amendement sans numéro fourni
+        # Si c'est une copie d'amendement (flag explicite), chercher le numéro depuis l'initial
+        # Sinon (amendement vide avec ajout manuel), générer un nouveau numéro qui s'incrémente
         if is_amendment and not numero_pac_provided:
-            # Si c'est un amendement sans numéro, on doit trouver le numéro depuis le PAC initial
-            if pac and pac.initial_ref:
-                initial_pac = pac.initial_ref
-                # Compter combien de détails existent déjà dans cet amendement
-                existing_details_count = DetailsPac.objects.filter(pac=pac).count()
-                # Récupérer les détails de l'initial triés par numero_pac
-                initial_details = DetailsPac.objects.filter(pac=initial_pac).exclude(
-                    numero_pac__isnull=True
-                ).exclude(
-                    numero_pac__exact=''
-                ).order_by('numero_pac')
-                
-                if initial_details.exists():
-                    # Utiliser le numéro correspondant au nombre de détails existants
-                    if existing_details_count < initial_details.count():
-                        corresponding_detail = initial_details[existing_details_count]
-                        numero_pac_provided = corresponding_detail.numero_pac
-                        logger.info(f"[DetailsPacCreateSerializer] Amendement - Utilisation du numéro correspondant depuis l'initial: {numero_pac_provided}")
+            if from_amendment_copy:
+                # CAS 2a: Copie d'amendement - Trouver le numéro correspondant depuis l'initial
+                if pac and pac.initial_ref:
+                    initial_pac = pac.initial_ref
+                    # Compter combien de détails existent déjà dans cet amendement
+                    existing_details_count = DetailsPac.objects.filter(pac=pac).count()
+                    # Récupérer les détails de l'initial triés par numero_pac
+                    initial_details = DetailsPac.objects.filter(pac=initial_pac).exclude(
+                        numero_pac__isnull=True
+                    ).exclude(
+                        numero_pac__exact=''
+                    ).order_by('numero_pac')
+                    
+                    if initial_details.exists():
+                        # Utiliser le numéro correspondant au nombre de détails existants
+                        if existing_details_count < initial_details.count():
+                            corresponding_detail = initial_details[existing_details_count]
+                            numero_pac_provided = corresponding_detail.numero_pac
+                            logger.info(f"[DetailsPacCreateSerializer] Amendement (copie) - Utilisation du numéro correspondant depuis l'initial: {numero_pac_provided}")
+                        else:
+                            # Si on a plus de détails que l'initial, générer un nouveau numéro
+                            validated_data['numero_pac'] = self.generate_numero_pac()
+                            logger.info(f"[DetailsPacCreateSerializer] Amendement (copie) - Plus de détails que l'initial, génération nouveau numéro")
+                            return super().create(validated_data)
                     else:
-                        # Si on a plus de détails que l'initial, générer un nouveau numéro
+                        # Pas de détails dans l'initial, générer un nouveau numéro
                         validated_data['numero_pac'] = self.generate_numero_pac()
-                        logger.info(f"[DetailsPacCreateSerializer] Amendement - Plus de détails que l'initial, génération nouveau numéro")
+                        logger.info(f"[DetailsPacCreateSerializer] Amendement (copie) - Aucun détail dans l'initial, génération nouveau numéro")
                         return super().create(validated_data)
                 else:
-                    # Pas de détails dans l'initial, générer un nouveau numéro
+                    # Pas d'initial_ref, générer un nouveau numéro
                     validated_data['numero_pac'] = self.generate_numero_pac()
-                    logger.info(f"[DetailsPacCreateSerializer] Amendement - Aucun détail dans l'initial, génération nouveau numéro")
+                    logger.info(f"[DetailsPacCreateSerializer] Amendement (copie) sans initial_ref, génération nouveau numéro")
                     return super().create(validated_data)
             else:
-                # Pas d'initial_ref, générer un nouveau numéro
+                # CAS 2b: Amendement vide avec ajout manuel - Générer un nouveau numéro qui s'incrémente
                 validated_data['numero_pac'] = self.generate_numero_pac()
-                logger.info(f"[DetailsPacCreateSerializer] Amendement sans initial_ref, génération nouveau numéro")
+                logger.info(f"[DetailsPacCreateSerializer] Amendement (vide) - Génération nouveau numéro qui s'incrémente")
                 return super().create(validated_data)
         
         # CAS 3: PAC initial ou cas normal - Générer le numéro si non fourni
