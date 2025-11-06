@@ -48,4 +48,10 @@ urlpatterns = [
     path('pac/details/<uuid:uuid>/', views.details_pac_detail, name='details_pac_detail'),
     path('pac/details/<uuid:uuid>/update/', views.details_pac_update, name='details_pac_update'),
     path('pac/details/<uuid:uuid>/delete/', views.details_pac_delete, name='details_pac_delete'),
+    
+    # ==================== STATISTIQUES PAC ====================
+    path('pac/stats/', views.pac_stats, name='pac_stats'),
+    
+    # ==================== NOTIFICATIONS ====================
+    path('pac/upcoming-notifications/', views.pac_upcoming_notifications, name='pac_upcoming_notifications'),
 ]
