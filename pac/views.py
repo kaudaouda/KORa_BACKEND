@@ -833,11 +833,22 @@ def pac_get_or_create(request):
                                 ).first()
                                 
                                 if pac_initial:
+                                    # Vérifier que le PAC initial est validé
+                                    if not pac_initial.is_validated:
+                                        logger.warning(f"[pac_get_or_create] ⚠️ Le PAC initial {pac_initial.uuid} n'est pas validé. Impossible de créer un amendement.")
+                                        return Response({
+                                            'error': 'Le PAC initial doit être validé avant de pouvoir créer un amendement. Veuillez d\'abord valider tous les détails et traitements du PAC initial.',
+                                            'initial_pac_uuid': str(pac_initial.uuid)
+                                        }, status=status.HTTP_400_BAD_REQUEST)
+                                    
                                     initial_ref_uuid = str(pac_initial.uuid)
                                     data['initial_ref'] = initial_ref_uuid
                                     logger.info(f"[pac_get_or_create] PAC initial trouvé automatiquement: {initial_ref_uuid} pour l'amendement {auto_tt.code}")
                                 else:
                                     logger.warning(f"[pac_get_or_create] ⚠️ Aucun PAC initial trouvé pour processus={processus_uuid}, annee={annee_uuid}. L'amendement sera créé sans initial_ref.")
+                                    return Response({
+                                        'error': 'Aucun PAC initial trouvé pour créer cet amendement. Veuillez d\'abord créer et valider un PAC initial.'
+                                    }, status=status.HTTP_400_BAD_REQUEST)
                             except Exception as init_error:
                                 logger.error(f"[pac_get_or_create] Erreur lors de la recherche du PAC initial: {init_error}")
                                 import traceback
@@ -898,10 +909,21 @@ def pac_get_or_create(request):
                             ).first()
                             
                             if pac_initial:
+                                # Vérifier que le PAC initial est validé
+                                if not pac_initial.is_validated:
+                                    logger.warning(f"[pac_get_or_create] ⚠️ Le PAC initial {pac_initial.uuid} n'est pas validé. Impossible de créer un amendement.")
+                                    return Response({
+                                        'error': 'Le PAC initial doit être validé avant de pouvoir créer un amendement. Veuillez d\'abord valider tous les détails et traitements du PAC initial.',
+                                        'initial_pac_uuid': str(pac_initial.uuid)
+                                    }, status=status.HTTP_400_BAD_REQUEST)
+                                
                                 data['initial_ref'] = str(pac_initial.uuid)
                                 logger.info(f"[pac_get_or_create] PAC initial ajouté automatiquement: {pac_initial.uuid}")
                             else:
                                 logger.warning(f"[pac_get_or_create] ⚠️ Aucun PAC initial trouvé pour créer l'amendement {type_tableau_obj.code}")
+                                return Response({
+                                    'error': 'Aucun PAC initial trouvé pour créer cet amendement. Veuillez d\'abord créer et valider un PAC initial.'
+                                }, status=status.HTTP_400_BAD_REQUEST)
                     except Versions.DoesNotExist:
                         logger.warning(f"[pac_get_or_create] Type tableau {type_tableau_uuid} non trouvé")
                     except Exception as e:
@@ -910,6 +932,36 @@ def pac_get_or_create(request):
                         logger.error(traceback.format_exc())
             else:
                 logger.info(f"[pac_get_or_create] initial_ref fourni: {data.get('initial_ref')}")
+                # Vérifier que le PAC initial fourni est validé
+                initial_ref_uuid = data.get('initial_ref')
+                if initial_ref_uuid:
+                    try:
+                        pac_initial = Pac.objects.get(uuid=initial_ref_uuid, cree_par=request.user)
+                        if not pac_initial.is_validated:
+                            logger.warning(f"[pac_get_or_create] ⚠️ Le PAC initial {initial_ref_uuid} n'est pas validé. Impossible de créer un amendement.")
+                            return Response({
+                                'error': 'Le PAC initial doit être validé avant de pouvoir créer un amendement. Veuillez d\'abord valider tous les détails et traitements du PAC initial.',
+                                'initial_pac_uuid': str(initial_ref_uuid)
+                            }, status=status.HTTP_400_BAD_REQUEST)
+                    except Pac.DoesNotExist:
+                        logger.warning(f"[pac_get_or_create] ⚠️ Le PAC initial {initial_ref_uuid} n'existe pas ou n'appartient pas à l'utilisateur.")
+                        return Response({
+                            'error': 'Le PAC initial spécifié n\'existe pas ou n\'appartient pas à votre compte.'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier aussi si le type_tableau est un amendement avant de créer
+            if type_tableau_uuid:
+                try:
+                    type_tableau_obj = Versions.objects.get(uuid=type_tableau_uuid)
+                    if type_tableau_obj.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
+                        # S'assurer qu'on a un initial_ref et qu'il est validé
+                        initial_ref_uuid = data.get('initial_ref')
+                        if not initial_ref_uuid:
+                            return Response({
+                                'error': 'Un amendement doit être lié à un PAC initial validé. Aucun PAC initial trouvé.'
+                            }, status=status.HTTP_400_BAD_REQUEST)
+                except Versions.DoesNotExist:
+                    pass  # Type tableau non trouvé, laisser le serializer gérer l'erreur
             
             # Créer un nouveau PAC
             create_serializer = PacCreateSerializer(data=data, context={'request': request})
@@ -924,7 +976,7 @@ def pac_get_or_create(request):
                     import traceback
                     logger.error(traceback.format_exc())
                     # Si c'est une erreur de contrainte unique, c'est qu'un autre utilisateur a créé le PAC entre temps
-                    if 'unique_pac_per_processus_annee_type_tableau' in str(save_error) or 'UNIQUE constraint' in str(save_error):
+                    if 'unique_pac_per_processus_annee_type_tableau' in str(save_error) or 'unique_pac_per_processus_annee_type_tableau_user' in str(save_error) or 'UNIQUE constraint' in str(save_error):
                         try:
                             # Essayer de récupérer le PAC existant
                             pac = Pac.objects.get(
@@ -1167,7 +1219,7 @@ def pac_validate_by_type(request):
             annee__uuid=annee_uuid,
             type_tableau__uuid=type_tableau_uuid,
             cree_par=request.user
-        ).select_related('processus', 'annee', 'type_tableau')
+        ).select_related('processus', 'annee', 'type_tableau').prefetch_related('details__traitement')
         
         if not pacs_to_validate.exists():
             return Response({
@@ -1180,19 +1232,24 @@ def pac_validate_by_type(request):
             if pac.is_validated:
                 continue  # Déjà validé, on continue
             
+            # Récupérer le numero_pac depuis le premier détail (comme dans le serializer)
+            # Le modèle Pac n'a pas d'attribut numero_pac, il faut le récupérer depuis DetailsPac
+            first_detail = pac.details.first()
+            numero_pac_display = first_detail.numero_pac if first_detail and first_detail.numero_pac else str(pac.uuid)
+            
             details = pac.details.all()
             if not details.exists():
-                errors.append(f'Le PAC {pac.numero_pac or pac.uuid} doit avoir au moins un détail')
+                errors.append(f'Le PAC {numero_pac_display} doit avoir au moins un détail')
                 continue
             
             for detail in details:
                 if not hasattr(detail, 'traitement') or not detail.traitement:
-                    errors.append(f'Le détail du PAC {pac.numero_pac or pac.uuid} n\'a pas de traitement')
+                    errors.append(f'Le détail du PAC {numero_pac_display} n\'a pas de traitement')
                     break
                 
                 traitement = detail.traitement
                 if not traitement.action:
-                    errors.append(f'Le traitement du PAC {pac.numero_pac or pac.uuid} n\'a pas d\'action')
+                    errors.append(f'Le traitement du PAC {numero_pac_display} n\'a pas d\'action')
                     break
         
         if errors:
@@ -1798,4 +1855,297 @@ def details_pac_delete(request, uuid):
         logger.error(f"Erreur lors de la suppression du détail: {str(e)}")
         return Response({
             'error': 'Impossible de supprimer le détail'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== NOTIFICATIONS ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pac_upcoming_notifications(request):
+    """Récupérer les traitements bientôt à terme pour les notifications"""
+    try:
+        from datetime import datetime as dt_class
+        
+        today = timezone.now().date()
+        
+        # Récupérer tous les traitements de l'utilisateur avec leurs délais de réalisation
+        traitements = TraitementPac.objects.filter(
+            details_pac__isnull=False,
+            details_pac__pac__cree_par=request.user,
+            delai_realisation__isnull=False
+        ).select_related(
+            'details_pac', 
+            'details_pac__pac',
+            'details_pac__pac__processus',
+            'details_pac__nature',
+            'type_action'
+        ).prefetch_related(
+            'responsables_directions',
+            'responsables_sous_directions'
+        )
+        
+        notifications = []
+        
+        for traitement in traitements:
+            try:
+                # Vérifier que le traitement a bien un details_pac et un pac
+                if not traitement.details_pac or not traitement.details_pac.pac:
+                    continue
+                    
+                delai_date = traitement.delai_realisation
+                if not delai_date:
+                    continue
+                
+                # Convertir en date si nécessaire
+                if isinstance(delai_date, dt_class):
+                    delai_date = delai_date.date()
+                
+                # Calculer la différence en jours
+                try:
+                    diff_days = (delai_date - today).days
+                except (TypeError, AttributeError) as e:
+                    logger.warning(f"[pac_upcoming_notifications] Erreur lors du calcul de la différence de jours: {e}")
+                    continue
+                
+                # Inclure les traitements arrivés à terme (en retard) et bientôt à terme (dans les 7 prochains jours)
+                if diff_days <= 7:
+                    # Déterminer la priorité
+                    if diff_days < 0:
+                        priority = 'high'  # En retard
+                        delai_label = f'En retard de {abs(diff_days)} jour{"s" if abs(diff_days) > 1 else ""}'
+                    elif diff_days == 0:
+                        priority = 'high'  # Échéance aujourd'hui
+                        delai_label = 'Échéance aujourd\'hui'
+                    elif diff_days <= 3:
+                        priority = 'high'  # Dans les 3 prochains jours
+                        delai_label = f'Échéance dans {diff_days} jour{"s" if diff_days > 1 else ""}'
+                    else:
+                        priority = 'medium'  # Dans 4-7 jours
+                        delai_label = f'Échéance dans {diff_days} jours'
+                    
+                    # Construire le titre
+                    pac = traitement.details_pac.pac
+                    numero_pac = traitement.details_pac.numero_pac or f'PAC-{pac.uuid}'
+                    action_title = traitement.action[:50] if traitement.action else 'Action non spécifiée'
+                    if len(traitement.action or '') > 50:
+                        action_title += '...'
+                    
+                    title = f'{numero_pac} - Action : {action_title}'
+                    
+                    # Construire l'URL d'action
+                    action_url = f'/pac/{pac.uuid}'
+                    
+                    # Récupérer les informations supplémentaires
+                    nature_label = traitement.details_pac.nature.nom if traitement.details_pac.nature else None
+                    type_action = traitement.type_action.nom if traitement.type_action else None
+                    
+                    notifications.append({
+                        'id': str(traitement.uuid),
+                        'type': 'traitement',
+                        'title': title,
+                        'message': f'Délai de réalisation {delai_label}',
+                        'due_date': delai_date.isoformat() if hasattr(delai_date, 'isoformat') else str(delai_date),
+                        'priority': priority,
+                        'action_url': action_url,
+                        'nature_label': nature_label,
+                        'type_action': type_action,
+                        'delai_label': delai_label,
+                        'pac_uuid': str(pac.uuid),
+                        'traitement_uuid': str(traitement.uuid)
+                    })
+            except Exception as e:
+                logger.error(f"[pac_upcoming_notifications] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                continue
+        
+        # Trier par priorité (high en premier) puis par date
+        notifications.sort(key=lambda x: (
+            0 if x['priority'] == 'high' else 1 if x['priority'] == 'medium' else 2,
+            x['due_date']
+        ))
+        
+        logger.info(f"[pac_upcoming_notifications] {len(notifications)} notifications trouvées pour l'utilisateur {request.user.username}")
+        
+        return Response({
+            'success': True,
+            'notifications': notifications
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des notifications: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'notifications': [],
+            'error': 'Erreur lors de la récupération des notifications'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== STATISTIQUES PAC ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pac_stats(request):
+    """Statistiques des PACs de l'utilisateur connecté"""
+    try:
+        logger.info(f"[pac_stats] Début de la fonction pour l'utilisateur: {request.user.username}")
+        
+        # Récupérer tous les PACs de l'utilisateur
+        pacs_base = Pac.objects.filter(cree_par=request.user)
+        logger.info(f"[pac_stats] Queryset créé")
+        
+        total_pacs = pacs_base.count()
+        
+        # Compter les PACs validés
+        pacs_valides = pacs_base.filter(is_validated=True).count()
+        
+        # Récupérer les PACs avec leurs relations pour les boucles
+        pacs = pacs_base.select_related(
+            'processus', 'cree_par', 'annee', 'type_tableau'
+        ).prefetch_related('details__traitement', 'details__traitement__suivi')
+        
+        # Compter les PACs avec traitement et suivi
+        pacs_avec_traitement = 0
+        pacs_avec_suivi = 0
+        
+        # Analyser TOUS les traitements (pas seulement un par PAC)
+        today = timezone.now().date()
+        traitements_arrives_termes = 0
+        traitements_bientot_termes = 0
+        
+        # Récupérer tous les traitements de l'utilisateur avec leurs délais de réalisation
+        # Filtrer uniquement les traitements qui ont un details_pac et un pac associé
+        traitements = TraitementPac.objects.filter(
+            details_pac__isnull=False,
+            details_pac__pac__cree_par=request.user,
+            delai_realisation__isnull=False
+        ).select_related('details_pac', 'details_pac__pac')
+        
+        logger.info(f"[pac_stats] Nombre de traitements avec délai trouvés: {traitements.count()}")
+        
+        for traitement in traitements:
+            try:
+                # Vérifier que le traitement a bien un details_pac et un pac
+                if not traitement.details_pac or not traitement.details_pac.pac:
+                    continue
+                    
+                delai_date = traitement.delai_realisation
+                if not delai_date:
+                    continue
+                
+                # DateField retourne un objet date de Python, on peut l'utiliser directement
+                # Si par erreur c'est un datetime, convertir en date
+                try:
+                    from datetime import datetime as dt_class
+                    if isinstance(delai_date, dt_class):
+                        delai_date = delai_date.date()
+                except Exception:
+                    # Si la conversion échoue, on continue avec la date telle quelle
+                    pass
+                
+                # Traitement arrivé à terme (la date est passée)
+                try:
+                    if delai_date < today:
+                        traitements_arrives_termes += 1
+                        logger.debug(f"[pac_stats] Traitement arrivé à terme: {traitement.uuid}, délai: {delai_date}")
+                    # Traitement bientôt à terme (dans les 7 prochains jours)
+                    else:
+                        diff_days = (delai_date - today).days
+                        if 0 <= diff_days <= 7:
+                            traitements_bientot_termes += 1
+                            logger.debug(f"[pac_stats] Traitement bientôt à terme: {traitement.uuid}, délai: {delai_date}, jours restants: {diff_days}")
+                except (TypeError, AttributeError) as e:
+                    logger.warning(f"[pac_stats] Erreur lors de la comparaison de dates: {e}, type: {type(delai_date)}")
+                    continue
+            except Exception as e:
+                logger.error(f"[pac_stats] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                continue
+        
+        # Compter les PACs avec traitement et suivi
+        # Convertir en liste pour éviter les problèmes de queryset épuisé
+        pacs_list = list(pacs)
+        for pac in pacs_list:
+            try:
+                has_traitement = False
+                has_suivi = False
+                
+                # Accéder aux détails avec gestion d'erreur
+                try:
+                    details = pac.details.all()
+                    for detail in details:
+                        try:
+                            if detail.traitement:
+                                has_traitement = True
+                                
+                                # Vérifier si le traitement a un suivi
+                                if hasattr(detail.traitement, 'suivi') and detail.traitement.suivi:
+                                    has_suivi = True
+                                    break
+                        except Exception as e:
+                            logger.warning(f"[pac_stats] Erreur lors de l'accès au traitement du détail {detail.uuid}: {e}")
+                            continue
+                except Exception as e:
+                    logger.warning(f"[pac_stats] Erreur lors de l'accès aux détails du PAC {pac.uuid}: {e}")
+                    continue
+                
+                # Compter une seule fois par PAC
+                if has_traitement:
+                    pacs_avec_traitement += 1
+                if has_suivi:
+                    pacs_avec_suivi += 1
+            except Exception as e:
+                logger.error(f"[pac_stats] Erreur lors du traitement du PAC {pac.uuid}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                continue
+        
+        # Compter le total des traitements de l'utilisateur
+        # Filtrer uniquement les traitements qui ont un details_pac et un pac associé
+        total_traitements = TraitementPac.objects.filter(
+            details_pac__isnull=False,
+            details_pac__pac__cree_par=request.user
+        ).count()
+        
+        # Compter le total des suivis de l'utilisateur
+        # Filtrer uniquement les suivis qui ont un traitement avec details_pac et pac associé
+        total_suivis = PacSuivi.objects.filter(
+            traitement__isnull=False,
+            traitement__details_pac__isnull=False,
+            traitement__details_pac__pac__cree_par=request.user
+        ).count()
+        
+        logger.info(f"[pac_stats] Statistiques calculées: total_pacs={total_pacs}, pacs_valides={pacs_valides}, "
+                   f"pacs_avec_traitement={pacs_avec_traitement}, pacs_avec_suivi={pacs_avec_suivi}, "
+                   f"total_traitements={total_traitements}, total_suivis={total_suivis}, "
+                   f"traitements_arrives_termes={traitements_arrives_termes}, traitements_bientot_termes={traitements_bientot_termes}")
+        
+        # Statistiques pour les graphiques
+        stats = {
+            'total_pacs': total_pacs,
+            'pacs_valides': pacs_valides,
+            'pacs_avec_traitement': pacs_avec_traitement,
+            'pacs_avec_suivi': pacs_avec_suivi,
+            'total_traitements': total_traitements,
+            'total_suivis': total_suivis,
+            'traitements_arrives_termes': traitements_arrives_termes,
+            'traitements_bientot_termes': traitements_bientot_termes
+        }
+        
+        return Response({
+            'success': True,
+            'data': stats
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des statistiques PAC: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des statistiques PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
