@@ -136,6 +136,13 @@ class PacCreateSerializer(serializers.ModelSerializer):
                         f"Un amendement ({type_tableau.code}) doit être lié à un PAC initial. "
                         "Le champ 'initial_ref' est requis."
                     )
+                
+                # Vérifier que le PAC initial est validé
+                if initial_ref and not initial_ref.is_validated:
+                    raise serializers.ValidationError(
+                        "Le PAC initial doit être validé avant de pouvoir créer un amendement. "
+                        "Veuillez d'abord valider tous les détails et traitements du PAC initial."
+                    )
             elif type_tableau.code == 'INITIAL':
                 # Les PACs INITIAL ne doivent pas avoir d'initial_ref
                 if initial_ref:
