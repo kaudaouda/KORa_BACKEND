@@ -67,8 +67,8 @@ class Pac(models.Model):
         verbose_name_plural = 'PACs'
         constraints = [
             models.UniqueConstraint(
-                fields=['processus', 'annee', 'type_tableau'],
-                name='unique_pac_per_processus_annee_type_tableau'
+                fields=['processus', 'annee', 'type_tableau', 'cree_par'],
+                name='unique_pac_per_processus_annee_type_tableau_user'
             )
         ]
 
