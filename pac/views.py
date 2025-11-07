@@ -1997,34 +1997,151 @@ def pac_stats(request):
         pacs_base = Pac.objects.filter(cree_par=request.user)
         logger.info(f"[pac_stats] Queryset créé")
         
-        total_pacs = pacs_base.count()
+        # Filtrer uniquement les PACs initiaux (exclure les amendements)
+        # Vérifier tous les codes de type_tableau pour debug
+        all_pac_types = pacs_base.values_list('type_tableau__code', flat=True).distinct()
+        logger.info(f"[pac_stats] Types de PACs trouvés: {list(all_pac_types)}")
+        logger.info(f"[pac_stats] Nombre total de PACs de l'utilisateur: {pacs_base.count()}")
         
-        # Compter les PACs validés
-        pacs_valides = pacs_base.filter(is_validated=True).count()
+        # Filtrer les PACs initiaux (code peut être 'INITIAL' ou 'INITIALE')
+        # Exclure les PACs avec type_tableau null
+        pacs_initiaux_base = pacs_base.filter(
+            type_tableau__isnull=False,
+            type_tableau__code__in=['INITIAL', 'INITIALE']
+        )
+        logger.info(f"[pac_stats] Nombre de PACs initiaux: {pacs_initiaux_base.count()}")
         
-        # Récupérer les PACs avec leurs relations pour les boucles
-        pacs = pacs_base.select_related(
+        total_pacs = pacs_initiaux_base.count()
+        
+        # Compter les PACs initiaux validés
+        # Debug: Vérifier tous les PACs initiaux et leur statut de validation
+        logger.info(f"[pac_stats] Vérification des PACs initiaux et leur statut de validation:")
+        for pac in pacs_initiaux_base:
+            # Recharger depuis la DB pour être sûr d'avoir la valeur à jour
+            pac.refresh_from_db()
+            logger.info(f"[pac_stats] PAC {pac.uuid}: is_validated={pac.is_validated} (type: {type(pac.is_validated).__name__}), validated_at={pac.validated_at}, validated_by={pac.validated_by}")
+            
+            # Vérifier aussi avec une requête directe
+            pac_direct = Pac.objects.get(uuid=pac.uuid)
+            logger.info(f"[pac_stats] PAC {pac.uuid} (requête directe): is_validated={pac_direct.is_validated} (type: {type(pac_direct.is_validated).__name__})")
+        
+        # Utiliser une requête directe sur la base filtrée
+        # Un PAC est considéré comme validé si is_validated=True OU si validated_at/validated_by sont remplis
+        from django.db.models import Q
+        pacs_valides_filter1 = Pac.objects.filter(
+            cree_par=request.user,
+            type_tableau__isnull=False,
+            type_tableau__code__in=['INITIAL', 'INITIALE']
+        ).filter(
+            Q(is_validated=True) | Q(validated_at__isnull=False) | Q(validated_by__isnull=False)
+        ).count()
+        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (via filter avec Q): {pacs_valides_filter1}")
+        
+        # Essayer avec une requête qui vérifie explicitement que ce n'est pas False
+        pacs_valides_filter2 = Pac.objects.filter(
+            cree_par=request.user,
+            type_tableau__isnull=False,
+            type_tableau__code__in=['INITIAL', 'INITIALE']
+        ).exclude(is_validated=False).count()
+        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (via exclude is_validated=False): {pacs_valides_filter2}")
+        
+        # Compter aussi manuellement pour vérifier (plus fiable)
+        # Un PAC est considéré comme validé si is_validated=True OU si validated_at/validated_by sont remplis
+        pacs_valides_manual = 0
+        for pac in pacs_initiaux_base:
+            pac.refresh_from_db()
+            # Vérifier explicitement que is_validated est True (booléen Python)
+            # OU que validated_at/validated_by sont remplis (cas où is_validated n'a pas été mis à jour)
+            is_validated = (
+                pac.is_validated is True or 
+                pac.is_validated == 1 or 
+                (isinstance(pac.is_validated, bool) and pac.is_validated) or
+                pac.validated_at is not None or
+                pac.validated_by is not None
+            )
+            if is_validated:
+                pacs_valides_manual += 1
+                logger.info(f"[pac_stats] PAC {pac.uuid} considéré comme validé: is_validated={pac.is_validated}, validated_at={pac.validated_at}, validated_by={pac.validated_by}")
+        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (manuel): {pacs_valides_manual}")
+        
+        # Utiliser le comptage manuel (plus fiable que la requête filter)
+        # Si les deux méthodes donnent des résultats différents, utiliser le manuel
+        if pacs_valides_filter1 != pacs_valides_manual or pacs_valides_filter2 != pacs_valides_manual:
+            logger.warning(f"[pac_stats] Incohérence détectée! filter1()={pacs_valides_filter1}, filter2()={pacs_valides_filter2}, manuel={pacs_valides_manual}. Utilisation du comptage manuel.")
+            pacs_valides = pacs_valides_manual
+        else:
+            pacs_valides = pacs_valides_filter1
+        
+        # Récupérer les PACs initiaux avec leurs relations pour les boucles (pour les autres stats)
+        pacs = pacs_initiaux_base.select_related(
             'processus', 'cree_par', 'annee', 'type_tableau'
         ).prefetch_related('details__traitement', 'details__traitement__suivi')
         
         # Compter les PACs avec traitement et suivi
+        # Pour "Avec Traitement", compter TOUS les PACs (initiaux ET amendements) qui ont des traitements
         pacs_avec_traitement = 0
         pacs_avec_suivi = 0
         
+        # Récupérer TOUS les PACs de l'utilisateur (initiaux ET amendements) pour compter ceux avec traitement
+        all_pacs = Pac.objects.filter(cree_par=request.user).select_related(
+            'processus', 'cree_par', 'annee', 'type_tableau'
+        ).prefetch_related('details__traitement', 'details__traitement__suivi')
+        
+        logger.info(f"[pac_stats] Nombre total de PACs (initiaux + amendements): {all_pacs.count()}")
+        
+        # Compter les PACs avec traitement (tous types confondus)
+        for pac in all_pacs:
+            try:
+                has_traitement = False
+                has_suivi = False
+                
+                # Vérifier si le PAC a au moins un détail avec un traitement
+                details = pac.details.all()
+                for detail in details:
+                    try:
+                        if hasattr(detail, 'traitement') and detail.traitement:
+                            has_traitement = True
+                            # Vérifier si le traitement a un suivi
+                            if hasattr(detail.traitement, 'suivi') and detail.traitement.suivi:
+                                has_suivi = True
+                                break
+                    except Exception as e:
+                        logger.warning(f"[pac_stats] Erreur lors de l'accès au traitement du détail {detail.uuid}: {e}")
+                        continue
+                
+                # Compter une seule fois par PAC
+                if has_traitement:
+                    pacs_avec_traitement += 1
+                    logger.info(f"[pac_stats] PAC {pac.uuid} (type: {pac.type_tableau.code if pac.type_tableau else 'None'}) a un traitement")
+                if has_suivi:
+                    pacs_avec_suivi += 1
+            except Exception as e:
+                logger.error(f"[pac_stats] Erreur lors du traitement du PAC {pac.uuid}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                continue
+        
+        logger.info(f"[pac_stats] Nombre de PACs avec traitement (tous types): {pacs_avec_traitement}")
+        logger.info(f"[pac_stats] Nombre de PACs avec suivi (tous types): {pacs_avec_suivi}")
+        
+        # Pour les autres stats, continuer avec les PACs initiaux uniquement
+        
         # Analyser TOUS les traitements (pas seulement un par PAC)
+        # Pour les traitements bientôt à terme, on continue à filtrer sur les PACs initiaux uniquement
         today = timezone.now().date()
         traitements_arrives_termes = 0
         traitements_bientot_termes = 0
         
         # Récupérer tous les traitements de l'utilisateur avec leurs délais de réalisation
-        # Filtrer uniquement les traitements qui ont un details_pac et un pac associé
+        # Filtrer uniquement les traitements qui ont un details_pac et un pac initial associé
         traitements = TraitementPac.objects.filter(
             details_pac__isnull=False,
             details_pac__pac__cree_par=request.user,
+            details_pac__pac__type_tableau__code__in=['INITIAL', 'INITIALE'],
             delai_realisation__isnull=False
         ).select_related('details_pac', 'details_pac__pac')
         
-        logger.info(f"[pac_stats] Nombre de traitements avec délai trouvés: {traitements.count()}")
+        logger.info(f"[pac_stats] Nombre de traitements avec délai trouvés (PACs initiaux uniquement): {traitements.count()}")
         
         for traitement in traitements:
             try:
@@ -2066,57 +2183,21 @@ def pac_stats(request):
                 logger.error(traceback.format_exc())
                 continue
         
-        # Compter les PACs avec traitement et suivi
-        # Convertir en liste pour éviter les problèmes de queryset épuisé
-        pacs_list = list(pacs)
-        for pac in pacs_list:
-            try:
-                has_traitement = False
-                has_suivi = False
-                
-                # Accéder aux détails avec gestion d'erreur
-                try:
-                    details = pac.details.all()
-                    for detail in details:
-                        try:
-                            if detail.traitement:
-                                has_traitement = True
-                                
-                                # Vérifier si le traitement a un suivi
-                                if hasattr(detail.traitement, 'suivi') and detail.traitement.suivi:
-                                    has_suivi = True
-                                    break
-                        except Exception as e:
-                            logger.warning(f"[pac_stats] Erreur lors de l'accès au traitement du détail {detail.uuid}: {e}")
-                            continue
-                except Exception as e:
-                    logger.warning(f"[pac_stats] Erreur lors de l'accès aux détails du PAC {pac.uuid}: {e}")
-                    continue
-                
-                # Compter une seule fois par PAC
-                if has_traitement:
-                    pacs_avec_traitement += 1
-                if has_suivi:
-                    pacs_avec_suivi += 1
-            except Exception as e:
-                logger.error(f"[pac_stats] Erreur lors du traitement du PAC {pac.uuid}: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                continue
-        
-        # Compter le total des traitements de l'utilisateur
-        # Filtrer uniquement les traitements qui ont un details_pac et un pac associé
+        # Compter le total des traitements de l'utilisateur pour les PACs initiaux uniquement
+        # Filtrer uniquement les traitements qui ont un details_pac et un pac initial associé
         total_traitements = TraitementPac.objects.filter(
             details_pac__isnull=False,
-            details_pac__pac__cree_par=request.user
+            details_pac__pac__cree_par=request.user,
+            details_pac__pac__type_tableau__code__in=['INITIAL', 'INITIALE']
         ).count()
         
-        # Compter le total des suivis de l'utilisateur
-        # Filtrer uniquement les suivis qui ont un traitement avec details_pac et pac associé
+        # Compter le total des suivis de l'utilisateur pour les PACs initiaux uniquement
+        # Filtrer uniquement les suivis qui ont un traitement avec details_pac et pac initial associé
         total_suivis = PacSuivi.objects.filter(
             traitement__isnull=False,
             traitement__details_pac__isnull=False,
-            traitement__details_pac__pac__cree_par=request.user
+            traitement__details_pac__pac__cree_par=request.user,
+            traitement__details_pac__pac__type_tableau__code__in=['INITIAL', 'INITIALE']
         ).count()
         
         logger.info(f"[pac_stats] Statistiques calculées: total_pacs={total_pacs}, pacs_valides={pacs_valides}, "
@@ -2135,6 +2216,8 @@ def pac_stats(request):
             'traitements_arrives_termes': traitements_arrives_termes,
             'traitements_bientot_termes': traitements_bientot_termes
         }
+        
+        logger.info(f"[pac_stats] Stats à retourner: {stats}")
         
         return Response({
             'success': True,
