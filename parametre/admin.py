@@ -1,10 +1,12 @@
 from django.contrib import admin
+from django import forms
 from .models import (
     Nature, Categorie, Source, ActionType, Statut, 
     EtatMiseEnOeuvre, Appreciation, Media, Preuve,
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
-    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, Versions, Annee
+    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, Versions, Annee,
+    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque
 )
 
 
@@ -417,3 +419,203 @@ class AnneeAdmin(admin.ModelAdmin):
         """Afficher le nombre de PACs associés à cette année"""
         return obj.pacs.count()
     pacs_count.short_description = 'Nb PACs'
+
+
+# ==================== ADMIN POUR LA CARTOGRAPHIE DES RISQUES ====================
+
+@admin.register(FrequenceRisque)
+class FrequenceRisqueAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les fréquences de risque"""
+    
+    list_display = [
+        'libelle', 'evaluations_count', 'is_active', 'created_at', 'updated_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'libelle'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['libelle']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'libelle')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def evaluations_count(self, obj):
+        """Afficher le nombre d'évaluations utilisant cette fréquence"""
+        return obj.evaluations.count()
+    evaluations_count.short_description = 'Nb Évaluations'
+
+
+@admin.register(GraviteRisque)
+class GraviteRisqueAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les gravités de risque"""
+    
+    list_display = [
+        'libelle', 'evaluations_count', 'is_active', 'created_at', 'updated_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'libelle'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['libelle']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'libelle')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def evaluations_count(self, obj):
+        """Afficher le nombre d'évaluations utilisant cette gravité"""
+        return obj.evaluations.count()
+    evaluations_count.short_description = 'Nb Évaluations'
+
+
+@admin.register(CriticiteRisque)
+class CriticiteRisqueAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les criticités de risque"""
+    
+    list_display = [
+        'libelle', 'evaluations_count', 'is_active', 'created_at', 'updated_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'libelle'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['libelle']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'libelle')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def evaluations_count(self, obj):
+        """Afficher le nombre d'évaluations utilisant cette criticité"""
+        return obj.evaluations.count()
+    evaluations_count.short_description = 'Nb Évaluations'
+
+
+class RisqueAdminForm(forms.ModelForm):
+    """Formulaire personnalisé pour gérer les niveaux de risque comme une chaîne"""
+    niveaux_risque_text = forms.CharField(
+        required=False,
+        label='Niveaux de risque',
+        help_text='Entrez les niveaux séparés par des virgules (ex: 5D, 5E, 4C, 4D, 4E, 3B, 3C, 3D, 2A, 2B, 1A)',
+        widget=forms.TextInput(attrs={'size': 100})
+    )
+    
+    class Meta:
+        model = Risque
+        fields = '__all__'
+        exclude = ['niveaux_risque']  # Exclure le champ JSON original
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Initialiser le champ texte avec les valeurs existantes
+        if self.instance and self.instance.pk and self.instance.niveaux_risque:
+            if isinstance(self.instance.niveaux_risque, list):
+                self.fields['niveaux_risque_text'].initial = ', '.join(self.instance.niveaux_risque)
+            else:
+                self.fields['niveaux_risque_text'].initial = str(self.instance.niveaux_risque)
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        # Convertir la chaîne en liste
+        niveaux_text = self.cleaned_data.get('niveaux_risque_text', '')
+        if niveaux_text:
+            niveaux = [n.strip().upper() for n in niveaux_text.split(',') if n.strip()]
+            instance.niveaux_risque = niveaux
+        else:
+            instance.niveaux_risque = []
+        
+        if commit:
+            instance.save()
+        return instance
+
+
+@admin.register(Risque)
+class RisqueAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les types de risques"""
+    form = RisqueAdminForm
+    
+    list_display = [
+        'libelle', 'niveaux_risque_display', 'evaluations_count', 'is_active', 'created_at', 'updated_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'libelle', 'description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['libelle']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'libelle', 'description')
+        }),
+        ('Niveaux de risque', {
+            'fields': ('niveaux_risque_text',),
+            'description': 'Entrez les niveaux séparés par des virgules (ex: 5D, 5E, 4C, 4D, 4E, 3B, 3C, 3D, 2A, 2B, 1A)'
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def evaluations_count(self, obj):
+        """Afficher le nombre d'évaluations utilisant ce type de risque"""
+        return obj.evaluations.count()
+    evaluations_count.short_description = 'Nb Évaluations'
+    
+    def niveaux_risque_display(self, obj):
+        """Afficher les niveaux de risque dans la liste"""
+        if obj.niveaux_risque and isinstance(obj.niveaux_risque, list) and len(obj.niveaux_risque) > 0:
+            return ', '.join(obj.niveaux_risque)
+        return '-'
+    niveaux_risque_display.short_description = 'Niveaux de risque'

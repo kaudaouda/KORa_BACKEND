@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType, 
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus, 
-    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee
+    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee, Risque
 )
 
 
@@ -149,11 +149,73 @@ class AnneeSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Annee
-        fields = ['uuid', 'annee', 'libelle', 'description', 'is_active', 'pacs_count', 'created_at', 'updated_at']
+        fields = ['uuid', 'annee', 'libelle', 'description', 'is_active', 'pacs_count', 'created_at', 'updated_at']                                             
         read_only_fields = ['uuid', 'created_at', 'updated_at']
     
     def get_pacs_count(self, obj):
         """Retourner le nombre de PACs associés à cette année"""
         return obj.pacs.count()
+
+
+class RisqueSerializer(serializers.ModelSerializer):
+    niveaux_risque = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    class Meta:
+        model = Risque
+        fields = ['uuid', 'libelle', 'description', 'niveaux_risque', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def validate_niveaux_risque(self, value):
+        """Convertir une chaîne séparée par des virgules en liste, ou accepter une liste JSON"""
+        if not value:
+            return []
+        
+        # Si c'est déjà une liste (depuis JSON), la retourner telle quelle
+        if isinstance(value, list):
+            # Nettoyer et valider chaque élément
+            return [str(item).strip().upper() for item in value if str(item).strip()]
+        
+        # Si c'est une chaîne, la convertir en liste
+        if isinstance(value, str):
+            # Essayer d'abord de parser comme JSON
+            try:
+                import json
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return [str(item).strip().upper() for item in parsed if str(item).strip()]
+            except (json.JSONDecodeError, ValueError):
+                pass
+            
+            # Sinon, traiter comme une chaîne séparée par des virgules
+            niveaux = [n.strip().upper() for n in value.split(',') if n.strip()]
+            return niveaux
+        
+        return []
+    
+    def to_representation(self, instance):
+        """Convertir la liste en chaîne pour l'affichage dans l'admin si nécessaire"""
+        representation = super().to_representation(instance)
+        # Garder la liste pour l'API, mais on peut aussi la convertir en chaîne si besoin
+        return representation
+    
+    def create(self, validated_data):
+        """Créer un risque avec les niveaux de risque convertis"""
+        niveaux_risque = validated_data.pop('niveaux_risque', [])
+        risque = Risque.objects.create(**validated_data)
+        risque.niveaux_risque = niveaux_risque
+        risque.save()
+        return risque
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour un risque avec les niveaux de risque convertis"""
+        niveaux_risque = validated_data.pop('niveaux_risque', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        if niveaux_risque is not None:
+            instance.niveaux_risque = niveaux_risque
+        
+        instance.save()
+        return instance
 
 
