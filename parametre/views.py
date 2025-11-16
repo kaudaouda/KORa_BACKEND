@@ -16,12 +16,14 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction, 
     SousDirection, Service, Processus, Preuve, ActivityLog,
-    NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence
+    NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
+    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
-    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
-    DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer
+    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,                                                                              
+    DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
+    RisqueSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -1998,4 +2000,133 @@ def type_tableau_delete(request, uuid):
     except Exception as e:
         logger.error(f"Erreur lors de la suppression de la version: {str(e)}")
         return Response({'error': 'Impossible de supprimer la version'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== CARTOGRAPHIE DES RISQUES ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def frequences_risque_list(request):
+    """Liste toutes les fréquences de risque (actives uniquement)"""
+    try:
+        frequences = FrequenceRisque.objects.filter(is_active=True).order_by('libelle')
+        data = [{
+            'uuid': str(f.uuid),
+            'libelle': f.libelle,
+            'valeur': f.valeur,
+            'is_active': f.is_active
+        } for f in frequences]
+        return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des fréquences de risque: {str(e)}")
+        return Response({'error': 'Impossible de lister les fréquences de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gravites_risque_list(request):
+    """Liste toutes les gravités de risque (actives uniquement)"""
+    try:
+        gravites = GraviteRisque.objects.filter(is_active=True).order_by('libelle')
+        data = [{
+            'uuid': str(g.uuid),
+            'libelle': g.libelle,
+            'code': g.code,
+            'is_active': g.is_active
+        } for g in gravites]
+        return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des gravités de risque: {str(e)}")
+        return Response({'error': 'Impossible de lister les gravités de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def criticités_risque_list(request):
+    """Liste toutes les criticités de risque (actives uniquement)"""
+    try:
+        criticités = CriticiteRisque.objects.filter(is_active=True).order_by('libelle')
+        data = [{
+            'uuid': str(c.uuid),
+            'libelle': c.libelle,
+            'is_active': c.is_active
+        } for c in criticités]
+        return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des criticités de risque: {str(e)}")
+        return Response({'error': 'Impossible de lister les criticités de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def risques_list(request):
+    """Liste tous les types de risques (actifs uniquement)"""
+    try:
+        risques = Risque.objects.filter(is_active=True).order_by('libelle')
+        serializer = RisqueSerializer(risques, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des risques: {str(e)}")
+        return Response({'error': 'Impossible de lister les risques'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def risques_all_list(request):
+    """Liste tous les types de risques (actifs et inactifs)"""
+    try:
+        risques = Risque.objects.all().order_by('libelle')
+        serializer = RisqueSerializer(risques, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des risques: {str(e)}")
+        return Response({'error': 'Impossible de lister les risques'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def risque_create(request):
+    """Créer un nouveau risque"""
+    try:
+        serializer = RisqueSerializer(data=request.data)
+        if serializer.is_valid():
+            risque = serializer.save()
+            return Response(RisqueSerializer(risque).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du risque: {str(e)}")
+        return Response({'error': 'Impossible de créer le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def risque_update(request, uuid):
+    """Mettre à jour un risque"""
+    try:
+        risque = Risque.objects.get(uuid=uuid)
+        serializer = RisqueSerializer(risque, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Risque.DoesNotExist:
+        return Response({'error': 'Risque non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du risque: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def risque_delete(request, uuid):
+    """Supprimer un risque"""
+    try:
+        risque = Risque.objects.get(uuid=uuid)
+        risque.delete()
+        return Response({'message': 'Risque supprimé avec succès'}, status=status.HTTP_200_OK)
+    except Risque.DoesNotExist:
+        return Response({'error': 'Risque non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du risque: {str(e)}")
+        return Response({'error': 'Impossible de supprimer le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
