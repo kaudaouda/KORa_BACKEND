@@ -1,0 +1,794 @@
+"""
+Vues API pour l'application Cartographie de Risque
+"""
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .models import CDR, DetailsCDR, EvaluationRisque, PlanAction, SuiviAction
+from .serializers import (
+    CDRSerializer, CDRCreateSerializer,
+    DetailsCDRSerializer, DetailsCDRCreateSerializer, DetailsCDRUpdateSerializer,
+    EvaluationRisqueSerializer, EvaluationRisqueCreateSerializer, EvaluationRisqueUpdateSerializer,
+    PlanActionSerializer, PlanActionCreateSerializer, PlanActionUpdateSerializer,
+    SuiviActionSerializer, SuiviActionCreateSerializer, SuiviActionUpdateSerializer
+)
+from parametre.models import Versions
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# ==================== UTILITAIRES TYPE TABLEAU ====================
+
+def _get_next_type_tableau_for_cdr(user, annee, processus_uuid):
+    """
+    Retourne l'instance Versions à utiliser automatiquement pour (annee, processus) d'un user.
+    Ordre: INITIAL -> AMENDEMENT_1 -> AMENDEMENT_2. Si tous existent déjà, retourne AMENDEMENT_2.
+    """
+    try:
+        logger.info(f"[_get_next_type_tableau_for_cdr] user={user}, annee={annee}, processus_uuid={processus_uuid}")
+        codes_order = ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
+        existing_types = set(
+            CDR.objects.filter(
+                cree_par=user,
+                annee=annee,
+                processus_id=processus_uuid
+            ).values_list('type_tableau__code', flat=True)
+        )
+        logger.info(f"[_get_next_type_tableau_for_cdr] existing_types={existing_types}")
+        for code in codes_order:
+            if code not in existing_types:
+                version = Versions.objects.get(code=code)
+                logger.info(f"[_get_next_type_tableau_for_cdr] Retourne version {code}: {version}")
+                return version
+        # Tous déjà présents: retourner le dernier
+        version = Versions.objects.get(code=codes_order[-1])
+        logger.info(f"[_get_next_type_tableau_for_cdr] Tous présents, retourne {version}")
+        return version
+    except Versions.DoesNotExist as e:
+        logger.error(f"[_get_next_type_tableau_for_cdr] Versions.DoesNotExist: {e}")
+        # En cas de configuration incomplète, fallback sur le premier disponible
+        fallback = Versions.objects.order_by('nom').first()
+        logger.info(f"[_get_next_type_tableau_for_cdr] Fallback sur {fallback}")
+        return fallback
+    except Exception as e:
+        logger.error(f"[_get_next_type_tableau_for_cdr] Erreur: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise
+
+
+# ==================== ENDPOINTS API ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cartographie_risque_home(request):
+    """Endpoint de base pour la cartographie de risque"""
+    try:
+        return Response({
+            'success': True,
+            'message': 'API Cartographie de Risque',
+            'data': {
+                'version': '1.0.0',
+                'description': 'Application de cartographie de risque'
+            }
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f'Erreur dans cartographie_risque_home: {str(e)}')
+        return Response({
+            'success': False,
+            'message': 'Erreur serveur',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cdr_list(request):
+    """Liste toutes les CDR de l'utilisateur connecté"""
+    try:
+        cdrs = CDR.objects.filter(cree_par=request.user).select_related(
+            'processus', 'type_tableau', 'cree_par', 'valide_par'
+        ).order_by('-annee', 'processus__numero_processus')
+        
+        serializer = CDRSerializer(cdrs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f'Erreur dans cdr_list: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération des CDR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cdr_detail(request, uuid):
+    """Détails d'une CDR spécifique"""
+    try:
+        cdr = CDR.objects.select_related(
+            'processus', 'type_tableau', 'cree_par', 'valide_par'
+        ).get(uuid=uuid, cree_par=request.user)
+        
+        serializer = CDRSerializer(cdr)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except CDR.DoesNotExist:
+        return Response({
+            'error': 'CDR non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans cdr_detail: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération de la CDR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cdr_get_or_create(request):
+    """
+    Récupérer ou créer une CDR unique pour (processus, annee, type_tableau).
+    Un seul CDR peut exister pour une combinaison (processus, annee, type_tableau).
+    """
+    try:
+        logger.info(f"[cdr_get_or_create] Début - données reçues: {request.data}")
+        data = request.data.copy()
+        annee = data.get('annee')
+        processus_uuid = data.get('processus')
+        type_tableau_uuid = data.get('type_tableau')
+
+        # Convertir annee en entier si c'est une chaîne
+        if annee:
+            try:
+                annee = int(annee)
+            except (ValueError, TypeError):
+                return Response({
+                    'error': "Le champ 'annee' doit être un nombre entier"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        logger.info(f"[cdr_get_or_create] annee={annee}, processus_uuid={processus_uuid}, type_tableau_uuid={type_tableau_uuid}")
+
+        # Si type_tableau est absent mais annee + processus sont fournis, l'attribuer automatiquement
+        if annee and processus_uuid and not type_tableau_uuid:
+            logger.info("[cdr_get_or_create] type_tableau absent, appel à _get_next_type_tableau_for_cdr")
+            try:
+                auto_tt = _get_next_type_tableau_for_cdr(request.user, annee, processus_uuid)
+                if auto_tt:
+                    data['type_tableau'] = str(auto_tt.uuid)
+                    type_tableau_uuid = data['type_tableau']
+                    logger.info(f"[cdr_get_or_create] type_tableau automatique défini: {type_tableau_uuid} (code: {auto_tt.code})")
+            except Exception as tt_error:
+                logger.error(f"[cdr_get_or_create] Erreur lors de la détermination automatique du type_tableau: {tt_error}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Continue sans type_tableau si erreur
+
+        if not (annee and processus_uuid):
+            logger.warning("[cdr_get_or_create] annee ou processus manquant")
+            return Response({
+                'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Vérifier si une CDR existe déjà avec ce (processus, annee, type_tableau)
+        try:
+            cdr = CDR.objects.get(
+                processus__uuid=processus_uuid,
+                annee=annee,
+                type_tableau__uuid=type_tableau_uuid,
+                cree_par=request.user
+            )
+            logger.info(f"[cdr_get_or_create] CDR existante trouvée: {cdr.uuid}")
+            
+            # Sérialiser la CDR existante pour la réponse
+            serializer = CDRSerializer(cdr)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except CDR.DoesNotExist:
+            logger.info(f"[cdr_get_or_create] Aucune CDR existante, création d'une nouvelle CDR")
+            
+            # Créer une nouvelle CDR
+            serializer = CDRCreateSerializer(data=data, context={'request': request})
+            
+            if serializer.is_valid():
+                logger.info(f"[cdr_get_or_create] Serializer valide, données validées: {serializer.validated_data}")
+                cdr = serializer.save()
+                logger.info(f"[cdr_get_or_create] CDR créée avec succès: {cdr.uuid}")
+                
+                # Sérialiser la CDR créée pour la réponse
+                response_serializer = CDRSerializer(cdr)
+                return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            
+            logger.error(f"[cdr_get_or_create] Erreurs de validation: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        except CDR.MultipleObjectsReturned:
+            logger.warning("[cdr_get_or_create] Plusieurs CDR trouvées, utilisation de la première")
+            cdr = CDR.objects.filter(
+                processus__uuid=processus_uuid,
+                annee=annee,
+                type_tableau__uuid=type_tableau_uuid,
+                cree_par=request.user
+            ).first()
+            serializer = CDRSerializer(cdr)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+    except Exception as e:
+        logger.error(f"[cdr_get_or_create] Erreur exception non gérée: {str(e)}")
+        import traceback
+        logger.error(f"[cdr_get_or_create] Traceback: {traceback.format_exc()}")
+        return Response({
+            'error': 'Erreur lors de la création/récupération de la CDR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def details_cdr_by_cdr(request, cdr_uuid):
+    """Récupérer tous les détails CDR pour une CDR spécifique"""
+    try:
+        # Vérifier que la CDR existe et appartient à l'utilisateur
+        cdr = CDR.objects.get(uuid=cdr_uuid, cree_par=request.user)
+        
+        # Récupérer les détails CDR
+        details = DetailsCDR.objects.filter(cdr=cdr).order_by('numero_cdr', 'created_at')
+        
+        serializer = DetailsCDRSerializer(details, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except CDR.DoesNotExist:
+        return Response({
+            'error': 'CDR non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans details_cdr_by_cdr: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération des détails CDR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def details_cdr_create(request):
+    """Créer un nouveau détail CDR"""
+    try:
+        logger.info(f"[details_cdr_create] Données reçues: {request.data}")
+        
+        # Vérifier si la CDR est validée avant la création
+        if 'cdr' in request.data:
+            try:
+                cdr = CDR.objects.get(uuid=request.data['cdr'])
+                logger.info(f"[details_cdr_create] CDR trouvée: {cdr.uuid}, validée: {cdr.is_validated}")
+                if cdr.is_validated:
+                    return Response({
+                        'error': 'Cette CDR est validée. Impossible de créer un nouveau détail.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except CDR.DoesNotExist:
+                logger.error(f"[details_cdr_create] CDR non trouvée avec UUID: {request.data['cdr']}")
+                pass  # La validation du serializer gérera cette erreur
+        
+        serializer = DetailsCDRCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            detail = serializer.save()
+            logger.info(f"[details_cdr_create] ✅ Détail créé avec succès: {detail.uuid}")
+            return Response(DetailsCDRSerializer(detail).data, status=status.HTTP_201_CREATED)
+        
+        logger.error(f"[details_cdr_create] Erreurs de validation: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du détail CDR: {str(e)}")
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(error_traceback)
+        
+        # En mode développement, renvoyer plus de détails
+        from django.conf import settings
+        error_response = {
+            'error': 'Impossible de créer le détail CDR',
+            'details': str(e)
+        }
+        if settings.DEBUG:
+            error_response['traceback'] = error_traceback
+        
+        return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def evaluations_by_detail_cdr(request, detail_cdr_uuid):
+    """Récupérer toutes les évaluations pour un détail CDR spécifique"""
+    try:
+        # Vérifier que le détail CDR existe et appartient à l'utilisateur
+        detail = DetailsCDR.objects.select_related('cdr').get(uuid=detail_cdr_uuid)
+        if detail.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Récupérer les évaluations
+        evaluations = EvaluationRisque.objects.filter(
+            details_cdr=detail
+        ).select_related('frequence', 'gravite', 'criticite', 'risque').order_by('created_at')
+        
+        serializer = EvaluationRisqueSerializer(evaluations, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except DetailsCDR.DoesNotExist:
+        return Response({
+            'error': 'Détail CDR non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans evaluations_by_detail_cdr: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération des évaluations',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def plans_action_by_detail_cdr(request, detail_cdr_uuid):
+    """Récupérer tous les plans d'action pour un détail CDR spécifique"""
+    try:
+        # Vérifier que le détail CDR existe et appartient à l'utilisateur
+        detail = DetailsCDR.objects.select_related('cdr').get(uuid=detail_cdr_uuid)
+        if detail.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Récupérer les plans d'action
+        plans = PlanAction.objects.filter(
+            details_cdr=detail
+        ).select_related('responsable', 'details_cdr').order_by('delai_realisation', 'created_at')
+        
+        serializer = PlanActionSerializer(plans, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except DetailsCDR.DoesNotExist:
+        return Response({
+            'error': 'Détail CDR non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans plans_action_by_detail_cdr: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération des plans d\'action',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def suivi_action_detail(request, uuid):
+    """Récupérer un suivi d'action par son UUID"""
+    try:
+        suivi = SuiviAction.objects.select_related(
+            'plan_action__details_cdr__cdr', 
+            'element_preuve'
+        ).prefetch_related('element_preuve__medias').get(uuid=uuid)
+        
+        # Vérifier que le suivi appartient à l'utilisateur connecté
+        if suivi.plan_action.details_cdr.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = SuiviActionSerializer(suivi)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except SuiviAction.DoesNotExist:
+        return Response({
+            'error': 'Suivi d\'action non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans suivi_action_detail: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération du suivi',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def suivis_by_plan_action(request, plan_action_uuid):
+    """Récupérer tous les suivis pour un plan d'action spécifique"""
+    try:
+        # Vérifier que le plan d'action existe et appartient à l'utilisateur
+        plan = PlanAction.objects.select_related('details_cdr__cdr').get(uuid=plan_action_uuid)
+        if plan.details_cdr.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Récupérer les suivis
+        suivis = SuiviAction.objects.filter(
+            plan_action=plan
+        ).select_related('plan_action', 'element_preuve').order_by('-date_realisation', 'created_at')
+        
+        serializer = SuiviActionSerializer(suivis, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except PlanAction.DoesNotExist:
+        return Response({
+            'error': 'Plan d\'action non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans suivis_by_plan_action: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération des suivis',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== ENDPOINTS DE MISE À JOUR ====================
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def details_cdr_update(request, uuid):
+    """Mettre à jour un détail CDR"""
+    try:
+        detail = DetailsCDR.objects.select_related('cdr').get(uuid=uuid)
+        
+        # Vérifier que la CDR du détail appartient à l'utilisateur connecté
+        if detail.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Protection : empêcher la modification si la CDR est validée
+        if detail.cdr.is_validated:
+            return Response({
+                'error': 'Cette CDR est validée. Les champs de détail ne peuvent plus être modifiés.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = DetailsCDRUpdateSerializer(detail, data=request.data, partial=True)
+        if serializer.is_valid():
+            detail = serializer.save()
+            return Response(DetailsCDRSerializer(detail).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except DetailsCDR.DoesNotExist:
+        return Response({
+            'error': 'Détail CDR non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du détail CDR: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de mettre à jour le détail CDR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def evaluation_risque_create(request):
+    """Créer une nouvelle évaluation de risque"""
+    try:
+        logger.info(f"[evaluation_risque_create] Données reçues: {request.data}")
+        
+        serializer = EvaluationRisqueCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            evaluation = serializer.save()
+            logger.info(f"[evaluation_risque_create] ✅ Évaluation créée avec succès: {evaluation.uuid}")
+            return Response(EvaluationRisqueSerializer(evaluation).data, status=status.HTTP_201_CREATED)
+        
+        logger.error(f"[evaluation_risque_create] Erreurs de validation: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'évaluation: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de créer l\'évaluation de risque'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def evaluation_risque_update(request, uuid):
+    """Mettre à jour une évaluation de risque"""
+    try:
+        evaluation = EvaluationRisque.objects.select_related('details_cdr__cdr').get(uuid=uuid)
+        
+        # Vérifier que la CDR appartient à l'utilisateur connecté
+        if evaluation.details_cdr.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Protection : empêcher la modification si la CDR est validée
+        if evaluation.details_cdr.cdr.is_validated:
+            return Response({
+                'error': 'Cette CDR est validée. Les champs d\'évaluation ne peuvent plus être modifiés.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = EvaluationRisqueUpdateSerializer(evaluation, data=request.data, partial=True)
+        if serializer.is_valid():
+            evaluation = serializer.save()
+            return Response(EvaluationRisqueSerializer(evaluation).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except EvaluationRisque.DoesNotExist:
+        return Response({
+            'error': 'Évaluation de risque non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de l'évaluation: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de mettre à jour l\'évaluation de risque'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def plan_action_create(request):
+    """Créer un nouveau plan d'action"""
+    try:
+        logger.info(f"[plan_action_create] Données reçues: {request.data}")
+        
+        serializer = PlanActionCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            plan = serializer.save()
+            logger.info(f"[plan_action_create] ✅ Plan d'action créé avec succès: {plan.uuid}")
+            return Response(PlanActionSerializer(plan).data, status=status.HTTP_201_CREATED)
+        
+        logger.error(f"[plan_action_create] Erreurs de validation: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du plan d'action: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de créer le plan d\'action'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def plan_action_update(request, uuid):
+    """Mettre à jour un plan d'action"""
+    try:
+        plan = PlanAction.objects.select_related('details_cdr__cdr').get(uuid=uuid)
+        
+        # Vérifier que la CDR appartient à l'utilisateur connecté
+        if plan.details_cdr.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Protection : empêcher la modification si la CDR est validée
+        if plan.details_cdr.cdr.is_validated:
+            return Response({
+                'error': 'Cette CDR est validée. Les champs du plan d\'action ne peuvent plus être modifiés.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = PlanActionUpdateSerializer(plan, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            plan = serializer.save()
+            return Response(PlanActionSerializer(plan).data)
+        logger.error(f"Erreurs de validation du serializer: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except PlanAction.DoesNotExist:
+        return Response({
+            'error': 'Plan d\'action non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du plan d'action: {str(e)}")
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(error_traceback)
+        from django.conf import settings
+        return Response({
+            'error': f'Impossible de mettre à jour le plan d\'action: {str(e)}',
+            'details': error_traceback if settings.DEBUG else None
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def suivi_action_create(request):
+    """Créer un nouveau suivi d'action"""
+    try:
+        logger.info(f"[suivi_action_create] Données reçues: {request.data}")
+        
+        serializer = SuiviActionCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            suivi = serializer.save()
+            logger.info(f"[suivi_action_create] ✅ Suivi créé avec succès: {suivi.uuid}")
+            return Response(SuiviActionSerializer(suivi).data, status=status.HTTP_201_CREATED)
+        
+        logger.error(f"[suivi_action_create] Erreurs de validation: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du suivi: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de créer le suivi d\'action'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def suivi_action_update(request, uuid):
+    """Mettre à jour un suivi d'action"""
+    try:
+        suivi = SuiviAction.objects.select_related('plan_action__details_cdr__cdr').get(uuid=uuid)
+        
+        # Vérifier que la CDR appartient à l'utilisateur connecté
+        if suivi.plan_action.details_cdr.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Les suivis d'actions ne peuvent être modifiés que si la CDR est validée
+        if not suivi.plan_action.details_cdr.cdr.is_validated:
+            return Response({
+                'error': 'Les suivis d\'actions ne peuvent être modifiés qu\'après validation de la CDR.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = SuiviActionUpdateSerializer(suivi, data=request.data, partial=True)
+        if serializer.is_valid():
+            suivi = serializer.save()
+            return Response(SuiviActionSerializer(suivi).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except SuiviAction.DoesNotExist:
+        return Response({
+            'error': 'Suivi d\'action non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du suivi: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de mettre à jour le suivi d\'action'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def validate_cdr(request, uuid):
+    """Valider une CDR pour permettre la saisie des suivis d'action"""
+    try:
+        from django.utils import timezone
+        from django.conf import settings
+        
+        cdr = CDR.objects.get(uuid=uuid)
+        
+        # Vérifier que la CDR appartient à l'utilisateur connecté
+        if cdr.cree_par != request.user:
+            return Response({
+                'success': False,
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Vérifier que la CDR n'est pas déjà validée
+        if cdr.is_validated:
+            return Response({
+                'success': False,
+                'error': 'Cette CDR est déjà validée'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier qu'il y a au moins un détail CDR
+        details = DetailsCDR.objects.filter(cdr=cdr)
+        if details.count() == 0:
+            return Response({
+                'success': False,
+                'error': 'La CDR doit contenir au moins un détail pour être validée'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        errors = []
+        
+        # Vérifier chaque détail CDR
+        for detail in details:
+            detail_errors = []
+            
+            # Vérifier les champs requis du détail CDR
+            if not detail.numero_cdr or detail.numero_cdr.strip() == '':
+                detail_errors.append('Le numéro CDR est requis')
+            if not detail.activites or detail.activites.strip() == '':
+                detail_errors.append('Les activités sont requises')
+            if not detail.objectifs or detail.objectifs.strip() == '':
+                detail_errors.append('Les objectifs sont requis')
+            if not detail.evenements_indesirables_risques or detail.evenements_indesirables_risques.strip() == '':
+                detail_errors.append('Les événements indésirables et risques sont requis')
+            if not detail.causes or detail.causes.strip() == '':
+                detail_errors.append('Les causes sont requises')
+            if not detail.consequences or detail.consequences.strip() == '':
+                detail_errors.append('Les conséquences sont requises')
+            
+            # Vérifier qu'il y a une évaluation de risque
+            evaluations = EvaluationRisque.objects.filter(details_cdr=detail)
+            if evaluations.count() == 0:
+                detail_errors.append('Une évaluation de risque est requise')
+            else:
+                # Vérifier que l'évaluation a tous les champs requis
+                evaluation = evaluations.first()
+                if not evaluation.frequence:
+                    detail_errors.append('La fréquence du risque est requise dans l\'évaluation')
+                if not evaluation.gravite:
+                    detail_errors.append('La gravité du risque est requise dans l\'évaluation')
+                if not evaluation.criticite:
+                    detail_errors.append('La criticité du risque est requise dans l\'évaluation')
+                if not evaluation.risque:
+                    detail_errors.append('Le type de risque est requis dans l\'évaluation')
+            
+            # Vérifier qu'il y a au moins un plan d'action
+            plans = PlanAction.objects.filter(details_cdr=detail)
+            if plans.count() == 0:
+                detail_errors.append('Au moins un plan d\'action est requis')
+            else:
+                # Vérifier que chaque plan d'action a tous les champs requis
+                for plan in plans:
+                    plan_errors = []
+                    if not plan.actions_mesures or plan.actions_mesures.strip() == '':
+                        plan_errors.append('Les actions/mesures sont requises')
+                    if not plan.responsable:
+                        plan_errors.append('Le responsable est requis')
+                    if not plan.delai_realisation:
+                        plan_errors.append('Le délai de réalisation est requis')
+                    
+                    if plan_errors:
+                        detail_errors.append(f'Plan d\'action: {", ".join(plan_errors)}')
+            
+            if detail_errors:
+                errors.append({
+                    'detail': detail.numero_cdr or f'Détail sans numéro (UUID: {detail.uuid})',
+                    'errors': detail_errors
+                })
+        
+        # Si des erreurs sont trouvées, les retourner
+        if errors:
+            return Response({
+                'success': False,
+                'error': 'Des champs obligatoires sont manquants',
+                'details': errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider la CDR
+        cdr.is_validated = True
+        cdr.date_validation = timezone.now()
+        cdr.valide_par = request.user
+        cdr.save()
+        
+        logger.info(f"CDR {cdr.uuid} validée par {request.user.username}")
+        
+        return Response({
+            'success': True,
+            'message': 'CDR validée avec succès',
+            'data': {
+                'uuid': str(cdr.uuid),
+                'is_validated': cdr.is_validated,
+                'date_validation': cdr.date_validation.isoformat() if cdr.date_validation else None,
+                'valide_par': request.user.username
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except CDR.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'CDR non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur validation CDR: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la validation',
+            'details': str(e) if settings.DEBUG else None
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

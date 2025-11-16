@@ -103,4 +103,14 @@ urlpatterns = [
     path('types-tableau/create/', views.type_tableau_create, name='type_tableau_create'),
     path('types-tableau/<uuid:uuid>/update/', views.type_tableau_update, name='type_tableau_update'),
     path('types-tableau/<uuid:uuid>/delete/', views.type_tableau_delete, name='type_tableau_delete'),
+    
+    # ==================== CARTOGRAPHIE DES RISQUES ====================
+    path('frequences-risque/', views.frequences_risque_list, name='frequences_risque_list'),
+    path('gravites-risque/', views.gravites_risque_list, name='gravites_risque_list'),
+    path('criticites-risque/', views.criticités_risque_list, name='criticites_risque_list'),
+    path('risques/', views.risques_list, name='risques_list'),
+    path('risques/all/', views.risques_all_list, name='risques_all_list'),
+    path('risques/create/', views.risque_create, name='risque_create'),
+    path('risques/<uuid:uuid>/update/', views.risque_update, name='risque_update'),
+    path('risques/<uuid:uuid>/delete/', views.risque_delete, name='risque_delete'),
 ]
