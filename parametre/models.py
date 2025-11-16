@@ -891,3 +891,119 @@ class Cible(models.Model):
             return valeur_reelle != self.valeur
         else:
             return False
+
+
+# ==================== MODÈLES POUR LA CARTOGRAPHIE DES RISQUES ====================
+
+class FrequenceRisque(HasActiveStatus):
+    """
+    Modèle pour les fréquences d'évaluation des risques
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    libelle = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Libellé de la fréquence (ex: Rare, Occasionnel, Fréquent, Très fréquent)"
+    )
+    valeur = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        help_text="Valeur numérique de la fréquence pour le calcul de la criticité (ex: 1, 2, 3, 4, 5)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'frequence_risque'
+        verbose_name = 'Fréquence Risque'
+        verbose_name_plural = 'Fréquences Risque'
+        ordering = ['libelle']
+
+    def __str__(self):
+        return self.libelle
+
+
+class GraviteRisque(HasActiveStatus):
+    """
+    Modèle pour les niveaux de gravité des risques
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    libelle = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Libellé de la gravité (ex: Négligeable, Mineur, Modéré, Majeur, Critique)"
+    )
+    code = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        help_text="Code lettre de la gravité pour le calcul de la criticité (ex: A, B, C, D, E)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'gravite_risque'
+        verbose_name = 'Gravité Risque'
+        verbose_name_plural = 'Gravités Risque'
+        ordering = ['libelle']
+
+    def __str__(self):
+        return self.libelle
+
+
+class CriticiteRisque(HasActiveStatus):
+    """
+    Modèle pour les niveaux de criticité des risques
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    libelle = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Libellé de la criticité (ex: Faible, Moyenne, Élevée, Très élevée)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'criticite_risque'
+        verbose_name = 'Criticité Risque'
+        verbose_name_plural = 'Criticités Risque'
+        ordering = ['libelle']
+
+    def __str__(self):
+        return self.libelle
+
+
+class Risque(HasActiveStatus):
+    """
+    Modèle pour les types de risques
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    libelle = models.CharField(
+        max_length=200,
+        unique=True,
+        help_text="Libellé du type de risque"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description du type de risque"
+    )
+    niveaux_risque = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Liste des niveaux de risque associés (ex: ['5A', '5B', '5C', '4A', '4B', '3A'])"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'risque'
+        verbose_name = 'Risque'
+        verbose_name_plural = 'Risques'
+        ordering = ['libelle']
+
+    def __str__(self):
+        return self.libelle

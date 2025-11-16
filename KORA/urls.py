@@ -31,6 +31,7 @@ urlpatterns = [
     path('api/', include('pac.urls')),  # API intégrée dans pac
     path('api/parametre/', include('parametre.urls')),  # API des paramètres
     path('api/dashboard/', include('dashboard.urls')),  # API du tableau de bord
+    path('api/cartographie-risque/', include('cartographie_risque.urls')),  # API cartographie de risque
 ]
 
 # Servir les fichiers média en développement
