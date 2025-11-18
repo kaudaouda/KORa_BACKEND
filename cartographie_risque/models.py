@@ -40,6 +40,14 @@ class CDR(BaseModel):
         default=False,
         help_text="Indique si la cartographie est validée"
     )
+    initial_ref = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        related_name='amendements',
+        null=True,
+        blank=True,
+        help_text='Référence au CDR initial (pour les amendements)'
+    )
     cree_par = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
