@@ -149,7 +149,7 @@ class AnneeSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Annee
-        fields = ['uuid', 'annee', 'libelle', 'description', 'is_active', 'pacs_count', 'created_at', 'updated_at']                                             
+        fields = ['uuid', 'annee', 'libelle', 'description', 'is_active', 'pacs_count', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
     
     def get_pacs_count(self, obj):

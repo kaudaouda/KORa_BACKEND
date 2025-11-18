@@ -70,13 +70,52 @@ class CDRCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de CDR"""
     class Meta:
         model = CDR
-        fields = ['annee', 'processus', 'type_tableau']
+        fields = ['annee', 'processus', 'type_tableau', 'initial_ref']
+        extra_kwargs = {
+            'type_tableau': {'required': False, 'allow_null': True},
+            'initial_ref': {'required': False, 'allow_null': True},
+        }
+
+    def validate(self, data):
+        """Valider la cohérence entre type_tableau et initial_ref"""
+        type_tableau = data.get('type_tableau')
+        initial_ref = data.get('initial_ref')
+
+        if type_tableau:
+            # Vérifier si c'est un amendement
+            if type_tableau.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
+                # Les amendements doivent avoir un initial_ref
+                if not initial_ref:
+                    raise serializers.ValidationError(
+                        f"Un amendement ({type_tableau.code}) doit être lié à un CDR initial. "
+                        "Le champ 'initial_ref' est requis."
+                    )
+
+                # Vérifier que le CDR initial est validé
+                if initial_ref and not initial_ref.is_validated:
+                    raise serializers.ValidationError(
+                        "Le CDR initial doit être validé avant de pouvoir créer un amendement. "
+                        "Veuillez d'abord valider tous les détails du CDR initial."
+                    )
+            elif type_tableau.code == 'INITIAL':
+                # Les CDR INITIAL ne doivent pas avoir d'initial_ref
+                if initial_ref:
+                    raise serializers.ValidationError(
+                        "Un CDR INITIAL ne peut pas avoir de référence initiale (initial_ref)."
+                    )
+
+        return data
 
     def create(self, validated_data):
         """Créer une CDR avec l'utilisateur connecté"""
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             validated_data['cree_par'] = request.user
+
+        # S'assurer que processus est toujours fourni
+        if 'processus' not in validated_data or validated_data['processus'] is None:
+            raise serializers.ValidationError("Le champ 'processus' est requis")
+
         return super().create(validated_data)
 
 
@@ -97,7 +136,7 @@ class DetailsCDRSerializer(serializers.ModelSerializer):
 class DetailsCDRCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de détails CDR"""
     numero_cdr = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    
+
     class Meta:
         model = DetailsCDR
         fields = [
@@ -111,7 +150,7 @@ class DetailsCDRCreateSerializer(serializers.ModelSerializer):
             'causes': {'required': False, 'allow_null': True, 'allow_blank': True},
             'consequences': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
-    
+
     def validate_cdr(self, value):
         """Vérifier que la CDR appartient à l'utilisateur connecté"""
         request = self.context.get('request')
@@ -120,27 +159,54 @@ class DetailsCDRCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Vous n'avez pas les permissions pour ajouter un détail à cette CDR."
                 )
-        
+
         # Protection : empêcher la création de détail si la CDR est validée
         if value.is_validated:
             raise serializers.ValidationError(
                 "Cette CDR est validée. Impossible de créer un nouveau détail."
             )
-        
+
         return value
-    
+
     def create(self, validated_data):
         """Créer un détail CDR avec génération automatique du numéro si nécessaire"""
+        # Vérifier si c'est une copie d'amendement (flag from_amendment_copy)
+        request = self.context.get('request')
+        from_amendment_copy = request and (
+            request.data.get('from_amendment_copy', False) or
+            request.data.get('from_amendment_copy') == 'true' or
+            request.data.get('from_amendment_copy') == True
+        )
+        numero_cdr_provided = validated_data.get('numero_cdr')
         cdr = validated_data.get('cdr')
-        numero_cdr = validated_data.get('numero_cdr')
-        
+
+        # Vérifier si le CDR est un amendement
+        is_amendment = False
+        if cdr and cdr.type_tableau:
+            type_code = cdr.type_tableau.code
+            is_amendment = type_code in ['AMENDEMENT_1', 'AMENDEMENT_2']
+
+        # CAS 1: Copie d'amendement avec numéro fourni - TOUJOURS utiliser le numéro fourni
+        # Pour les amendements, on peut toujours réutiliser le même numéro que l'initial
+        if is_amendment and numero_cdr_provided and str(numero_cdr_provided).strip():
+            original_numero = str(numero_cdr_provided).strip()
+            validated_data['numero_cdr'] = original_numero
+            return super().create(validated_data)
+
+        # CAS 2: Copie d'amendement (flag explicite) avec numéro fourni
+        if from_amendment_copy and numero_cdr_provided and str(numero_cdr_provided).strip():
+            original_numero = str(numero_cdr_provided).strip()
+            validated_data['numero_cdr'] = original_numero
+            return super().create(validated_data)
+
+        # CAS 3: Génération automatique du numéro
         # Si aucun numéro n'est fourni ou si c'est une chaîne vide, générer automatiquement
-        if not numero_cdr or (isinstance(numero_cdr, str) and numero_cdr.strip() == ''):
+        if not numero_cdr_provided or (isinstance(numero_cdr_provided, str) and numero_cdr_provided.strip() == ''):
             # Compter les détails existants pour cette CDR
             existing_count = DetailsCDR.objects.filter(cdr=cdr).count()
             numero_cdr = f"CDR-{existing_count + 1}"
-        
-        validated_data['numero_cdr'] = numero_cdr
+            validated_data['numero_cdr'] = numero_cdr
+
         return super().create(validated_data)
 
 
@@ -568,7 +634,7 @@ class SuiviActionSerializer(serializers.ModelSerializer):
         if obj.element_preuve:
             return obj.element_preuve.description
         return None
-
+    
     def get_element_preuve_url(self, obj):
         """Retourner l'URL du premier média de la preuve"""
         try:
@@ -627,8 +693,13 @@ class SuiviActionCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Vous n'avez pas les permissions pour ajouter un suivi à ce plan d'action."
                 )
+            # Vérifier si c'est une copie d'amendement (flag from_amendment_copy)
+            from_amendment_copy = request.data.get('from_amendment_copy', False) or \
+                                 request.data.get('from_amendment_copy') == 'true' or \
+                                 request.data.get('from_amendment_copy') == True
             # Les suivis d'actions ne peuvent être créés que si la CDR est validée
-            if not value.details_cdr.cdr.is_validated:
+            # SAUF lors d'une copie d'amendement (où on copie les suivis existants)
+            if not value.details_cdr.cdr.is_validated and not from_amendment_copy:
                 raise serializers.ValidationError(
                     "Les suivis d'actions ne peuvent être créés qu'après validation de la CDR."
                 )
@@ -660,7 +731,7 @@ class SuiviActionCreateSerializer(serializers.ModelSerializer):
                 if delai_realisation and value < delai_realisation:
                     raise serializers.ValidationError(
                         f"La date de réalisation ({value}) ne peut pas être antérieure au délai de réalisation du plan d'action ({delai_realisation})."
-                    )
+                )
         return value
 
 
