@@ -21,7 +21,7 @@ from .models import (
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
-    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,                                                                              
+    SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
     DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
     RisqueSerializer
 )

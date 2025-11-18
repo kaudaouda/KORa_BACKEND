@@ -155,6 +155,7 @@ def cdr_get_or_create(request):
         logger.info(f"[cdr_get_or_create] annee={annee}, processus_uuid={processus_uuid}, type_tableau_uuid={type_tableau_uuid}")
 
         # Si type_tableau est absent mais annee + processus sont fournis, l'attribuer automatiquement
+        initial_ref_uuid = data.get('initial_ref')  # Utiliser celui fourni si présent
         if annee and processus_uuid and not type_tableau_uuid:
             logger.info("[cdr_get_or_create] type_tableau absent, appel à _get_next_type_tableau_for_cdr")
             try:
@@ -163,6 +164,48 @@ def cdr_get_or_create(request):
                     data['type_tableau'] = str(auto_tt.uuid)
                     type_tableau_uuid = data['type_tableau']
                     logger.info(f"[cdr_get_or_create] type_tableau automatique défini: {type_tableau_uuid} (code: {auto_tt.code})")
+
+                    # Si c'est un amendement (AMENDEMENT_1 ou AMENDEMENT_2), trouver le CDR initial
+                    # Sauf si initial_ref a déjà été fourni dans la requête
+                    if auto_tt.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
+                        if not initial_ref_uuid:
+                            try:
+                                # Trouver le CDR initial pour ce processus/année
+                                cdr_initial = CDR.objects.filter(
+                                    cree_par=request.user,
+                                    annee=annee,
+                                    processus_id=processus_uuid,
+                                    type_tableau__code='INITIAL'
+                                ).first()
+
+                                if cdr_initial:
+                                    # Vérifier que le CDR initial est validé
+                                    if not cdr_initial.is_validated:
+                                        logger.warning(f"[cdr_get_or_create] ⚠️ Le CDR initial {cdr_initial.uuid} n'est pas validé. Impossible de créer un amendement.")
+                                        return Response({
+                                            'error': 'Le CDR initial doit être validé avant de pouvoir créer un amendement. Veuillez d\'abord valider tous les détails du CDR initial.',
+                                            'initial_cdr_uuid': str(cdr_initial.uuid)
+                                        }, status=status.HTTP_400_BAD_REQUEST)
+
+                                    initial_ref_uuid = str(cdr_initial.uuid)
+                                    data['initial_ref'] = initial_ref_uuid
+                                    logger.info(f"[cdr_get_or_create] CDR initial trouvé automatiquement: {initial_ref_uuid} pour l'amendement {auto_tt.code}")
+                                else:
+                                    logger.warning(f"[cdr_get_or_create] ⚠️ Aucun CDR initial trouvé pour processus={processus_uuid}, annee={annee}. L'amendement sera créé sans initial_ref.")
+                                    return Response({
+                                        'error': 'Aucun CDR initial trouvé pour créer cet amendement. Veuillez d\'abord créer et valider un CDR initial.'
+                                    }, status=status.HTTP_400_BAD_REQUEST)
+                            except Exception as init_error:
+                                logger.error(f"[cdr_get_or_create] Erreur lors de la recherche du CDR initial: {init_error}")
+                                import traceback
+                                logger.error(traceback.format_exc())
+                        else:
+                            logger.info(f"[cdr_get_or_create] initial_ref déjà fourni: {initial_ref_uuid}")
+                    elif auto_tt.code == 'INITIAL':
+                        # Pour un CDR INITIAL, initial_ref doit être null
+                        if 'initial_ref' in data:
+                            data.pop('initial_ref')
+                            logger.info(f"[cdr_get_or_create] initial_ref retiré car c'est un CDR INITIAL")
             except Exception as tt_error:
                 logger.error(f"[cdr_get_or_create] Erreur lors de la détermination automatique du type_tableau: {tt_error}")
                 import traceback
@@ -191,19 +234,75 @@ def cdr_get_or_create(request):
             
         except CDR.DoesNotExist:
             logger.info(f"[cdr_get_or_create] Aucune CDR existante, création d'une nouvelle CDR")
-            
+
+            # Si initial_ref n'est pas dans data mais qu'on doit créer un amendement, le trouver
+            if 'initial_ref' not in data or not data.get('initial_ref'):
+                # Vérifier si le type_tableau est un amendement
+                if type_tableau_uuid:
+                    try:
+                        type_tableau_obj = Versions.objects.get(uuid=type_tableau_uuid)
+                        if type_tableau_obj.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
+                            # Trouver le CDR initial
+                            cdr_initial = CDR.objects.filter(
+                                cree_par=request.user,
+                                annee=annee,
+                                processus_id=processus_uuid,
+                                type_tableau__code='INITIAL'
+                            ).first()
+
+                            if cdr_initial:
+                                # Vérifier que le CDR initial est validé
+                                if not cdr_initial.is_validated:
+                                    logger.warning(f"[cdr_get_or_create] ⚠️ Le CDR initial {cdr_initial.uuid} n'est pas validé. Impossible de créer un amendement.")
+                                    return Response({
+                                        'error': 'Le CDR initial doit être validé avant de pouvoir créer un amendement. Veuillez d\'abord valider tous les détails du CDR initial.',
+                                        'initial_cdr_uuid': str(cdr_initial.uuid)
+                                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                                data['initial_ref'] = str(cdr_initial.uuid)
+                                logger.info(f"[cdr_get_or_create] CDR initial ajouté automatiquement: {cdr_initial.uuid}")
+                            else:
+                                logger.warning(f"[cdr_get_or_create] ⚠️ Aucun CDR initial trouvé pour créer l'amendement {type_tableau_obj.code}")
+                                return Response({
+                                    'error': 'Aucun CDR initial trouvé pour créer cet amendement. Veuillez d\'abord créer et valider un CDR initial.'
+                                }, status=status.HTTP_400_BAD_REQUEST)
+                    except Versions.DoesNotExist:
+                        logger.warning(f"[cdr_get_or_create] Type tableau {type_tableau_uuid} non trouvé")
+                    except Exception as e:
+                        logger.error(f"[cdr_get_or_create] Erreur lors de la recherche du CDR initial: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+            else:
+                logger.info(f"[cdr_get_or_create] initial_ref fourni: {data.get('initial_ref')}")
+                # Vérifier que le CDR initial fourni est validé
+                initial_ref_uuid = data.get('initial_ref')
+                if initial_ref_uuid:
+                    try:
+                        cdr_initial = CDR.objects.get(uuid=initial_ref_uuid, cree_par=request.user)
+                        if not cdr_initial.is_validated:
+                            logger.warning(f"[cdr_get_or_create] ⚠️ Le CDR initial {initial_ref_uuid} n'est pas validé. Impossible de créer un amendement.")
+                            return Response({
+                                'error': 'Le CDR initial doit être validé avant de pouvoir créer un amendement. Veuillez d\'abord valider tous les détails du CDR initial.',
+                                'initial_cdr_uuid': str(initial_ref_uuid)
+                            }, status=status.HTTP_400_BAD_REQUEST)
+                    except CDR.DoesNotExist:
+                        logger.error(f"[cdr_get_or_create] CDR initial {initial_ref_uuid} non trouvé")
+                        return Response({
+                            'error': 'CDR initial non trouvé.'
+                        }, status=status.HTTP_404_NOT_FOUND)
+
             # Créer une nouvelle CDR
             serializer = CDRCreateSerializer(data=data, context={'request': request})
-            
+
             if serializer.is_valid():
                 logger.info(f"[cdr_get_or_create] Serializer valide, données validées: {serializer.validated_data}")
                 cdr = serializer.save()
                 logger.info(f"[cdr_get_or_create] CDR créée avec succès: {cdr.uuid}")
-                
+
                 # Sérialiser la CDR créée pour la réponse
                 response_serializer = CDRSerializer(cdr)
                 return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-            
+
             logger.error(f"[cdr_get_or_create] Erreurs de validation: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
@@ -604,6 +703,50 @@ def suivi_action_create(request):
     try:
         logger.info(f"[suivi_action_create] Données reçues: {request.data}")
         
+        # Vérifier si un amendement existe avant de créer un suivi (bloquer la création de suivis dans le tableau précédent)
+        # SAUF lors d'une copie d'amendement (from_amendment_copy=True)
+        from_amendment_copy = request.data.get('from_amendment_copy', False) or \
+                             request.data.get('from_amendment_copy') == 'true' or \
+                             request.data.get('from_amendment_copy') == True
+        
+        plan_action_uuid = request.data.get('plan_action')
+        if plan_action_uuid and not from_amendment_copy:
+            try:
+                plan_action = PlanAction.objects.select_related(
+                    'details_cdr__cdr__type_tableau',
+                    'details_cdr__cdr__processus'
+                ).get(uuid=plan_action_uuid)
+                cdr = plan_action.details_cdr.cdr
+                cdr_type_code = cdr.type_tableau.code if cdr.type_tableau else None
+                
+                # Si c'est un CDR INITIAL, vérifier si un AMENDEMENT_1 existe
+                if cdr_type_code == 'INITIAL':
+                    has_amendment = CDR.objects.filter(
+                        initial_ref=cdr,
+                        type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2'],
+                        cree_par=request.user
+                    ).exists()
+                    if has_amendment:
+                        return Response({
+                            'error': 'Les suivis d\'actions ne peuvent plus être créés car un amendement a été créé pour cette CDR.'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Si c'est un AMENDEMENT_1, vérifier si un AMENDEMENT_2 existe
+                elif cdr_type_code == 'AMENDEMENT_1':
+                    initial_cdr = cdr.initial_ref
+                    if initial_cdr:
+                        has_amendment2 = CDR.objects.filter(
+                            initial_ref=initial_cdr,
+                            type_tableau__code='AMENDEMENT_2',
+                            cree_par=request.user
+                        ).exists()
+                        if has_amendment2:
+                            return Response({
+                                'error': 'Les suivis d\'actions ne peuvent plus être créés car un amendement 2 a été créé pour cette CDR.'
+                            }, status=status.HTTP_400_BAD_REQUEST)
+            except PlanAction.DoesNotExist:
+                pass  # La validation du serializer gérera cette erreur
+        
         serializer = SuiviActionCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             suivi = serializer.save()
@@ -626,19 +769,54 @@ def suivi_action_create(request):
 def suivi_action_update(request, uuid):
     """Mettre à jour un suivi d'action"""
     try:
-        suivi = SuiviAction.objects.select_related('plan_action__details_cdr__cdr').get(uuid=uuid)
+        suivi = SuiviAction.objects.select_related(
+            'plan_action__details_cdr__cdr__type_tableau',
+            'plan_action__details_cdr__cdr__processus'
+        ).get(uuid=uuid)
+        
+        cdr = suivi.plan_action.details_cdr.cdr
         
         # Vérifier que la CDR appartient à l'utilisateur connecté
-        if suivi.plan_action.details_cdr.cdr.cree_par != request.user:
+        if cdr.cree_par != request.user:
             return Response({
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
         
         # Les suivis d'actions ne peuvent être modifiés que si la CDR est validée
-        if not suivi.plan_action.details_cdr.cdr.is_validated:
+        if not cdr.is_validated:
             return Response({
                 'error': 'Les suivis d\'actions ne peuvent être modifiés qu\'après validation de la CDR.'
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier si un amendement existe pour ce CDR (bloquer l'édition des suivis du tableau précédent)
+        cdr_type_code = cdr.type_tableau.code if cdr.type_tableau else None
+        
+        # Si c'est un CDR INITIAL, vérifier si un AMENDEMENT_1 existe
+        if cdr_type_code == 'INITIAL':
+            has_amendment = CDR.objects.filter(
+                initial_ref=cdr,
+                type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2'],
+                cree_par=request.user
+            ).exists()
+            if has_amendment:
+                return Response({
+                    'error': 'Les suivis d\'actions ne peuvent plus être modifiés car un amendement a été créé pour cette CDR.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Si c'est un AMENDEMENT_1, vérifier si un AMENDEMENT_2 existe
+        elif cdr_type_code == 'AMENDEMENT_1':
+            # Trouver le CDR initial
+            initial_cdr = cdr.initial_ref
+            if initial_cdr:
+                has_amendment2 = CDR.objects.filter(
+                    initial_ref=initial_cdr,
+                    type_tableau__code='AMENDEMENT_2',
+                    cree_par=request.user
+                ).exists()
+                if has_amendment2:
+                    return Response({
+                        'error': 'Les suivis d\'actions ne peuvent plus être modifiés car un amendement 2 a été créé pour cette CDR.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = SuiviActionUpdateSerializer(suivi, data=request.data, partial=True)
         if serializer.is_valid():
