@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from .models import (
-    Appreciation, Categorie, Direction, SousDirection, ActionType, 
-    NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus, 
-    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee, Risque
+    Appreciation, Categorie, Direction, SousDirection, ActionType,
+    NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus,
+    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee, Risque, StatutActionCDR
 )
 
 
@@ -77,6 +77,13 @@ class ServiceSerializer(serializers.ModelSerializer):
 class EtatMiseEnOeuvreSerializer(serializers.ModelSerializer):
     class Meta:
         model = EtatMiseEnOeuvre
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class StatutActionCDRSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StatutActionCDR
         fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 

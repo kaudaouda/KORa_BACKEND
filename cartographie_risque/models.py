@@ -3,6 +3,8 @@ Modèles pour l'application Cartographie de Risque
 """
 from django.db import models
 from django.contrib.auth.models import User
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from parametre.models import Processus, Versions, Media, FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Direction
 import uuid
 
@@ -203,7 +205,7 @@ class PlanAction(BaseModel):
         null=True,
         blank=True,
         related_name='plans_action_responsable',
-        help_text="Responsable de la mise en œuvre (Direction)"
+        help_text="Responsable principal (Direction) - DEPRECATED: Utiliser PlanActionResponsable"
     )
     delai_realisation = models.DateField(
         null=True,
@@ -221,17 +223,43 @@ class PlanAction(BaseModel):
         return f"Plan d'action - {self.details_cdr.numero_cdr}"
 
 
+class PlanActionResponsable(BaseModel):
+    """
+    Modèle pour gérer plusieurs responsables pour un plan d'action.
+    Les responsables peuvent être des Directions, SousDirections ou Services.
+    """
+    plan_action = models.ForeignKey(
+        PlanAction,
+        on_delete=models.CASCADE,
+        related_name='responsables',
+        help_text="Plan d'action associé"
+    )
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        limit_choices_to={'model__in': ('direction', 'sousdirection', 'service')},
+        help_text="Type de responsable (Direction, SousDirection ou Service)"
+    )
+    object_id = models.UUIDField(
+        help_text="UUID du responsable"
+    )
+    responsable = GenericForeignKey('content_type', 'object_id')
+
+    class Meta:
+        db_table = 'plan_action_responsable'
+        verbose_name = 'Responsable Plan d\'Action'
+        verbose_name_plural = 'Responsables Plans d\'Action'
+        ordering = ['plan_action', 'created_at']
+        unique_together = ['plan_action', 'content_type', 'object_id']
+
+    def __str__(self):
+        return f"Responsable - {self.plan_action}"
+
+
 class SuiviAction(BaseModel):
     """
     Modèle pour le suivi des actions
     """
-    STATUT_CHOICES = [
-        ('en_cours', 'En cours'),
-        ('termine', 'Terminé'),
-        ('suspendu', 'Suspendu'),
-        ('annule', 'Annulé'),
-    ]
-    
     plan_action = models.ForeignKey(
         PlanAction,
         on_delete=models.CASCADE,
@@ -243,10 +271,12 @@ class SuiviAction(BaseModel):
         blank=True,
         help_text="Date de réalisation effective"
     )
-    statut_action = models.CharField(
-        max_length=20,
-        choices=STATUT_CHOICES,
-        default='en_cours',
+    statut_action = models.ForeignKey(
+        'parametre.StatutActionCDR',
+        on_delete=models.PROTECT,
+        related_name='suivis_actions',
+        null=True,
+        blank=True,
         help_text="Statut de l'action"
     )
     date_cloture = models.DateField(
@@ -280,5 +310,6 @@ class SuiviAction(BaseModel):
         ordering = ['plan_action', '-date_realisation', 'created_at']
 
     def __str__(self):
-        return f"Suivi - {self.plan_action} - {self.get_statut_action_display()}"
+        statut_display = self.statut_action.nom if self.statut_action else 'Sans statut'
+        return f"Suivi - {self.plan_action} - {statut_display}"
 

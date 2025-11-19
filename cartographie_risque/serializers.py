@@ -3,8 +3,9 @@ Serializers pour l'application Cartographie de Risque
 """
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import CDR, DetailsCDR, EvaluationRisque, PlanAction, SuiviAction
-from parametre.models import Processus, Versions, Media
+from django.contrib.contenttypes.models import ContentType
+from .models import CDR, DetailsCDR, EvaluationRisque, PlanAction, SuiviAction, PlanActionResponsable
+from parametre.models import Processus, Versions, Media, Direction, SousDirection, Service
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -493,44 +494,93 @@ class EvaluationRisqueUpdateSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
+class PlanActionResponsableSerializer(serializers.ModelSerializer):
+    """Serializer pour les responsables d'un plan d'action"""
+    responsable_type = serializers.SerializerMethodField()
+    responsable_nom = serializers.SerializerMethodField()
+    responsable_nom_complet = serializers.SerializerMethodField()
+    responsable_uuid = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlanActionResponsable
+        fields = ['uuid', 'responsable_type', 'responsable_nom', 'responsable_nom_complet', 'responsable_uuid']
+        read_only_fields = ['uuid']
+
+    def get_responsable_type(self, obj):
+        """Retourner le type de responsable (direction, sousdirection, service)"""
+        return obj.content_type.model
+
+    def get_responsable_nom(self, obj):
+        """Retourner le nom du responsable"""
+        if obj.responsable:
+            return obj.responsable.nom
+        return None
+
+    def get_responsable_nom_complet(self, obj):
+        """Retourner le nom complet du responsable avec hiérarchie"""
+        if obj.responsable:
+            if isinstance(obj.responsable, Service):
+                return f"{obj.responsable.sous_direction.direction.nom}/{obj.responsable.sous_direction.nom}/{obj.responsable.nom}"
+            elif isinstance(obj.responsable, SousDirection):
+                return f"{obj.responsable.direction.nom}/{obj.responsable.nom}"
+            elif isinstance(obj.responsable, Direction):
+                return obj.responsable.nom
+        return None
+
+    def get_responsable_uuid(self, obj):
+        """Retourner l'UUID du responsable"""
+        return str(obj.object_id)
+
+
 class PlanActionSerializer(serializers.ModelSerializer):
     """Serializer pour les plans d'action"""
     responsable_nom = serializers.SerializerMethodField()
+    responsables_list = PlanActionResponsableSerializer(source='responsables', many=True, read_only=True)
     details_cdr_uuid = serializers.UUIDField(source='details_cdr.uuid', read_only=True)
-    
+
     class Meta:
         model = PlanAction
         fields = [
             'uuid', 'details_cdr', 'details_cdr_uuid',
-            'actions_mesures', 'responsable', 'responsable_nom',
+            'actions_mesures', 'responsable', 'responsable_nom', 'responsables_list',
             'delai_realisation', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
         depth = 1  # Inclure les objets ForeignKey jusqu'à 1 niveau de profondeur
-    
+
     def get_responsable_nom(self, obj):
-        """Retourner le nom du responsable (Direction)"""
+        """Retourner le nom du responsable principal (Direction) - DEPRECATED"""
         if obj.responsable:
             return obj.responsable.nom
+        # Si pas de responsable principal, retourner le premier responsable multiple
+        if obj.responsables.exists():
+            first_resp = obj.responsables.first()
+            if first_resp.responsable:
+                return first_resp.responsable.nom
         return None
 
 
 class PlanActionCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de plans d'action"""
-    
+    responsables_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="Liste des responsables [{type: 'direction'|'sousdirection'|'service', uuid: '...'}]"
+    )
+
     class Meta:
         model = PlanAction
-        fields = ['details_cdr', 'actions_mesures', 'responsable', 'delai_realisation']
+        fields = ['details_cdr', 'actions_mesures', 'responsable', 'delai_realisation', 'responsables_data']
         extra_kwargs = {
             'actions_mesures': {'required': False, 'allow_null': True, 'allow_blank': True},
             'responsable': {'required': False, 'allow_null': True},
             'delai_realisation': {'required': False, 'allow_null': True},
         }
-    
+
     def validate_responsable(self, value):
         """Valider que le responsable est une Direction valide"""
         if value is not None and value != '':
-            from parametre.models import Direction
             import uuid as uuid_lib
             try:
                 # Si value est déjà un objet Direction, c'est bon
@@ -546,7 +596,7 @@ class PlanActionCreateSerializer(serializers.ModelSerializer):
             except (Direction.DoesNotExist, ValueError, TypeError) as e:
                 raise serializers.ValidationError(f"La direction sélectionnée n'existe pas: {str(e)}")
         return None
-    
+
     def validate_details_cdr(self, value):
         """Vérifier que le détail CDR appartient à l'utilisateur connecté"""
         request = self.context.get('request')
@@ -560,29 +610,59 @@ class PlanActionCreateSerializer(serializers.ModelSerializer):
                     "Cette CDR est validée. Impossible de créer un nouveau plan d'action."
                 )
         return value
-    
+
     def create(self, validated_data):
-        """Créer un plan d'action sans créer automatiquement de suivis"""
-        # Créer uniquement le plan d'action, sans créer de suivis automatiquement
-        return super().create(validated_data)
+        """Créer un plan d'action et ses responsables"""
+        responsables_data = validated_data.pop('responsables_data', [])
+
+        # Créer le plan d'action
+        plan_action = super().create(validated_data)
+
+        # Créer les responsables multiples
+        for resp_data in responsables_data:
+            resp_type = resp_data.get('type')
+            resp_uuid = resp_data.get('uuid')
+
+            if resp_type and resp_uuid:
+                content_type = None
+                if resp_type == 'direction':
+                    content_type = ContentType.objects.get_for_model(Direction)
+                elif resp_type == 'sousdirection':
+                    content_type = ContentType.objects.get_for_model(SousDirection)
+                elif resp_type == 'service':
+                    content_type = ContentType.objects.get_for_model(Service)
+
+                if content_type:
+                    PlanActionResponsable.objects.create(
+                        plan_action=plan_action,
+                        content_type=content_type,
+                        object_id=resp_uuid
+                    )
+
+        return plan_action
 
 
 class PlanActionUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour la mise à jour de plans d'action"""
-    
+    responsables_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="Liste des responsables [{type: 'direction'|'sousdirection'|'service', uuid: '...'}]"
+    )
+
     class Meta:
         model = PlanAction
-        fields = ['actions_mesures', 'responsable', 'delai_realisation']
+        fields = ['actions_mesures', 'responsable', 'delai_realisation', 'responsables_data']
         extra_kwargs = {
             'actions_mesures': {'required': False, 'allow_null': True, 'allow_blank': True},
             'responsable': {'required': False, 'allow_null': True},
             'delai_realisation': {'required': False, 'allow_null': True},
         }
-    
+
     def validate_responsable(self, value):
         """Valider que le responsable est une Direction valide"""
         if value is not None and value != '':
-            from parametre.models import Direction
             import uuid as uuid_lib
             try:
                 # Si value est déjà un objet Direction, c'est bon
@@ -598,16 +678,47 @@ class PlanActionUpdateSerializer(serializers.ModelSerializer):
             except (Direction.DoesNotExist, ValueError, TypeError) as e:
                 raise serializers.ValidationError(f"La direction sélectionnée n'existe pas: {str(e)}")
         return None
-    
+
     def update(self, instance, validated_data):
-        """Mettre à jour un plan d'action"""
+        """Mettre à jour un plan d'action et ses responsables"""
         # Protection : empêcher la modification si la CDR est validée
         if instance.details_cdr.cdr.is_validated:
             raise serializers.ValidationError(
                 "Cette CDR est validée. Les champs du plan d'action ne peuvent plus être modifiés."
             )
-        
-        return super().update(instance, validated_data)
+
+        responsables_data = validated_data.pop('responsables_data', None)
+
+        # Mettre à jour les champs du plan d'action
+        plan_action = super().update(instance, validated_data)
+
+        # Si responsables_data est fourni, mettre à jour les responsables
+        if responsables_data is not None:
+            # Supprimer tous les responsables existants
+            plan_action.responsables.all().delete()
+
+            # Créer les nouveaux responsables
+            for resp_data in responsables_data:
+                resp_type = resp_data.get('type')
+                resp_uuid = resp_data.get('uuid')
+
+                if resp_type and resp_uuid:
+                    content_type = None
+                    if resp_type == 'direction':
+                        content_type = ContentType.objects.get_for_model(Direction)
+                    elif resp_type == 'sousdirection':
+                        content_type = ContentType.objects.get_for_model(SousDirection)
+                    elif resp_type == 'service':
+                        content_type = ContentType.objects.get_for_model(Service)
+
+                    if content_type:
+                        PlanActionResponsable.objects.create(
+                            plan_action=plan_action,
+                            content_type=content_type,
+                            object_id=resp_uuid
+                        )
+
+        return plan_action
 
 
 class SuiviActionSerializer(serializers.ModelSerializer):
@@ -616,8 +727,9 @@ class SuiviActionSerializer(serializers.ModelSerializer):
     element_preuve_nom = serializers.SerializerMethodField()
     element_preuve_url = serializers.SerializerMethodField()
     element_preuve_urls = serializers.SerializerMethodField()
-    statut_action_display = serializers.CharField(source='get_statut_action_display', read_only=True)
-    
+    statut_action_display = serializers.SerializerMethodField()
+    editable_fields = serializers.SerializerMethodField()
+
     class Meta:
         model = SuiviAction
         fields = [
@@ -625,10 +737,38 @@ class SuiviActionSerializer(serializers.ModelSerializer):
             'date_realisation', 'statut_action', 'statut_action_display',
             'date_cloture', 'element_preuve', 'element_preuve_nom', 'element_preuve_url', 'element_preuve_urls',
             'critere_efficacite_objectif_vise', 'resultats_mise_en_oeuvre',
-            'created_at', 'updated_at'
+            'editable_fields', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
-    
+
+    def get_statut_action_display(self, obj):
+        """Retourner le nom du statut"""
+        if obj.statut_action:
+            return obj.statut_action.nom
+        return None
+
+    def get_editable_fields(self, obj):
+        """Retourner la liste des champs modifiables selon le statut"""
+        if not obj.statut_action:
+            # Pas de statut : tous les champs sont modifiables
+            return ['date_realisation', 'statut_action', 'date_cloture', 'element_preuve',
+                    'critere_efficacite_objectif_vise', 'resultats_mise_en_oeuvre']
+
+        statut_nom = obj.statut_action.nom.lower()
+
+        # Statut "Non débutée" : aucun champ modifiable sauf statut_action
+        if 'non' in statut_nom and 'début' in statut_nom:
+            return ['statut_action']
+
+        # Statut "En cours" : seuls statut_action et element_preuve sont modifiables
+        elif 'cours' in statut_nom:
+            return ['statut_action', 'element_preuve']
+
+        # Autres statuts : tous les champs modifiables
+        else:
+            return ['date_realisation', 'statut_action', 'date_cloture', 'element_preuve',
+                    'critere_efficacite_objectif_vise', 'resultats_mise_en_oeuvre']
+
     def get_element_preuve_nom(self, obj):
         """Retourner le nom/description de la preuve"""
         if obj.element_preuve:
@@ -664,6 +804,37 @@ class SuiviActionSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return urls
+
+    def validate(self, attrs):
+        """Validation selon le statut de l'action"""
+        statut_action = attrs.get('statut_action') or (self.instance.statut_action if self.instance else None)
+
+        if statut_action:
+            statut_nom = statut_action.nom if hasattr(statut_action, 'nom') else str(statut_action)
+
+            # Si le statut est "Non débutée", aucun champ ne peut être modifié (sauf statut_action et element_preuve)
+            if 'non' in statut_nom.lower() and 'début' in statut_nom.lower():
+                # Champs interdits pour "Non débutée"
+                forbidden_fields = ['date_realisation', 'date_cloture', 'critere_efficacite_objectif_vise', 'resultats_mise_en_oeuvre']
+                for field in forbidden_fields:
+                    if field in attrs and attrs[field]:
+                        raise serializers.ValidationError({
+                            field: f"Ce champ ne peut pas être renseigné quand le statut est '{statut_nom}'."
+                        })
+
+            # Si le statut est "En cours", tous les champs sont en lecture seule sauf element_preuve
+            elif 'cours' in statut_nom.lower():
+                # Si c'est une mise à jour et que l'instance existe
+                if self.instance:
+                    # Champs en lecture seule pour "En cours" (sauf element_preuve)
+                    readonly_fields = ['date_realisation', 'date_cloture', 'critere_efficacite_objectif_vise', 'resultats_mise_en_oeuvre']
+                    for field in readonly_fields:
+                        if field in attrs and attrs[field] != getattr(self.instance, field):
+                            raise serializers.ValidationError({
+                                field: f"Ce champ ne peut pas être modifié quand le statut est '{statut_nom}'. Seul le champ 'Éléments de preuve' est modifiable."
+                            })
+
+        return attrs
 
 
 class SuiviActionCreateSerializer(serializers.ModelSerializer):

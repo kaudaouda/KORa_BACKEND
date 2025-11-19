@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django import forms
 from .models import (
-    Nature, Categorie, Source, ActionType, Statut, 
-    EtatMiseEnOeuvre, Appreciation, Media, Preuve,
+    Nature, Categorie, Source, ActionType, Statut,
+    EtatMiseEnOeuvre, Appreciation, Media, Preuve, StatutActionCDR,
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
     DysfonctionnementRecommandation, Frequence, Periodicite, Cible, Versions, Annee,
@@ -64,6 +64,15 @@ class AppreciationAdmin(admin.ModelAdmin):
     list_filter = ('is_active', 'created_at')
     search_fields = ('nom', 'description')
     readonly_fields = ('uuid', 'created_at', 'updated_at')
+
+
+@admin.register(StatutActionCDR)
+class StatutActionCDRAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'description', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+    ordering = ('nom',)
 
 
 @admin.register(Media)
