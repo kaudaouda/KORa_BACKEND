@@ -151,6 +151,26 @@ class Appreciation(HasActiveStatus):
         return self.nom
 
 
+class StatutActionCDR(HasActiveStatus):
+    """
+    Modèle pour les statuts d'action CDR (En cours, Terminé, Suspendu, Annulé)
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nom = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'statut_action_cdr'
+        verbose_name = "Statut d'action CDR"
+        verbose_name_plural = "Statuts d'actions CDR"
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
 class Media(models.Model):
     """
     Modèle pour les médias (fichiers)

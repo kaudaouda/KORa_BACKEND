@@ -14,8 +14,8 @@ import logging
 
 from .models import (
     Nature, Categorie, Source, ActionType, Statut,
-    EtatMiseEnOeuvre, Appreciation, Media, Direction, 
-    SousDirection, Service, Processus, Preuve, ActivityLog,
+    EtatMiseEnOeuvre, Appreciation, Media, Direction,
+    SousDirection, Service, Processus, Preuve, ActivityLog, StatutActionCDR,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque
 )
@@ -23,7 +23,7 @@ from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
     SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
     DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
-    RisqueSerializer
+    RisqueSerializer, StatutActionCDRSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -702,12 +702,44 @@ def appreciations_list(request):
             'success': True,
             'data': data
         }, status=status.HTTP_200_OK)
-            
+
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des appréciations: {e}")
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des appréciations',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def statuts_action_cdr_list(request):
+    """
+    Liste des statuts d'action CDR
+    """
+    try:
+        statuts = StatutActionCDR.objects.filter(is_active=True).order_by('nom')
+        data = []
+        for statut in statuts:
+            data.append({
+                'uuid': str(statut.uuid),
+                'nom': statut.nom,
+                'description': statut.description,
+                'created_at': statut.created_at.isoformat(),
+                'is_active': statut.is_active,
+            })
+
+        return Response({
+            'success': True,
+            'data': data
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des statuts d'action: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des statuts d\'action',
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
