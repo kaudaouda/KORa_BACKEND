@@ -18,6 +18,7 @@ urlpatterns = [
     path('statuts/', views.statuts_list, name='statuts_list'),
     path('etats-mise-en-oeuvre/', views.etats_mise_en_oeuvre_list, name='etats_mise_en_oeuvre_list'),
     path('appreciations/', views.appreciations_list, name='appreciations_list'),
+    path('statuts-action-cdr/', views.statuts_action_cdr_list, name='statuts_action_cdr_list'),
     
     # Endpoints pour l'affichage des données existantes (tous les éléments)
     path('natures/all/', views.natures_all_list, name='natures_all_list'),
