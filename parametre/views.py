@@ -1707,31 +1707,64 @@ def media_create(request):
     try:
         fichier = request.FILES.get('fichier')
         url_fichier = request.data.get('url_fichier')
-        
+        description = request.data.get('description', '')
+
         if not fichier and not url_fichier:
             return Response({
                 'error': 'Fichier ou URL fichier requis'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Créer le média
         media = Media.objects.create(
             fichier=fichier if fichier else None,
-            url_fichier=url_fichier if url_fichier else None
+            url_fichier=url_fichier if url_fichier else None,
+            description=description if description else None
         )
-        
+
         # Retourner les données du média créé
         return Response({
             'uuid': str(media.uuid),
             'fichier_url': media.get_url(),
             'url_fichier': media.url_fichier,
+            'description': media.description,
             'created_at': media.created_at.isoformat()
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
         logger.error(f"Erreur lors de la création du média: {str(e)}")
         return Response({
             'error': f'Impossible de créer le média: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def media_update_description(request, uuid):
+    """Mettre à jour la description d'un média"""
+    try:
+        try:
+            media = Media.objects.get(uuid=uuid)
+        except Media.DoesNotExist:
+            return Response({'error': 'Média non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+
+        description = request.data.get('description', '')
+        media.description = description
+        media.save()
+
+        return Response({
+            'success': True,
+            'message': 'Description mise à jour avec succès',
+            'media': {
+                'uuid': str(media.uuid),
+                'fichier_url': media.get_url(),
+                'url_fichier': media.url_fichier,
+                'description': media.description,
+                'created_at': media.created_at.isoformat()
+            }
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la description: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour la description'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -1746,6 +1779,7 @@ def media_list(request):
                 'uuid': str(m.uuid),
                 'fichier_url': m.get_url(),
                 'url_fichier': m.url_fichier,
+                'description': m.description,
                 'created_at': m.created_at.isoformat()
             })
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
@@ -1808,6 +1842,46 @@ def preuve_add_medias(request, uuid):
     except Exception as e:
         logger.error(f"Erreur lors de l'ajout de médias à la preuve: {str(e)}")
         return Response({'error': 'Impossible d\'ajouter les médias à la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def preuve_remove_media(request, uuid, media_uuid):
+    """Supprimer un média d'une preuve"""
+    try:
+        try:
+            preuve = Preuve.objects.get(uuid=uuid)
+        except Preuve.DoesNotExist:
+            return Response({'error': 'Preuve non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            media = Media.objects.get(uuid=media_uuid)
+        except Media.DoesNotExist:
+            return Response({'error': 'Média non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Vérifier que le média appartient bien à cette preuve
+        if media not in preuve.medias.all():
+            return Response({'error': 'Ce média n\'appartient pas à cette preuve'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Retirer le média de la preuve
+        preuve.medias.remove(media)
+
+        # Supprimer le média de la base de données (si souhaité)
+        # Attention : cela supprimera aussi le fichier physique
+        media.delete()
+
+        return Response({
+            'success': True,
+            'message': 'Média supprimé avec succès',
+            'preuve': {
+                'uuid': str(preuve.uuid),
+                'description': preuve.description,
+                'medias': [str(m.uuid) for m in preuve.medias.all()]
+            }
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du média: {str(e)}")
+        return Response({'error': 'Impossible de supprimer le média'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])

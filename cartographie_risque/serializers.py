@@ -789,8 +789,8 @@ class SuiviActionSerializer(serializers.ModelSerializer):
         return None
 
     def get_element_preuve_urls(self, obj):
-        """Retourner la liste de toutes les URLs des médias de la preuve"""
-        urls = []
+        """Retourner la liste de toutes les URLs des médias de la preuve avec leurs descriptions"""
+        medias_data = []
         try:
             if obj.element_preuve:
                 for media in obj.element_preuve.medias.all():
@@ -800,10 +800,14 @@ class SuiviActionSerializer(serializers.ModelSerializer):
                     else:
                         url = getattr(media, 'url_fichier', None)
                     if url:
-                        urls.append(url)
+                        medias_data.append({
+                            'uuid': str(media.uuid),
+                            'url': url,
+                            'description': media.description if media.description else None
+                        })
         except Exception:
             pass
-        return urls
+        return medias_data
 
     def validate(self, attrs):
         """Validation selon le statut de l'action"""
