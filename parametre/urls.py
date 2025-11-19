@@ -81,11 +81,13 @@ urlpatterns = [
     
     # ==================== MEDIAS ====================
     path('medias/create/', views.media_create, name='media_create'),
+    path('medias/<uuid:uuid>/update-description/', views.media_update_description, name='media_update_description'),
     path('medias/', views.media_list, name='media_list'),
 
     # ==================== PREUVES ====================
     path('preuves/create-with-medias/', views.preuve_create_with_medias, name='preuve_create_with_medias'),
     path('preuves/<uuid:uuid>/add-medias/', views.preuve_add_medias, name='preuve_add_medias'),
+    path('preuves/<uuid:uuid>/remove-media/<uuid:media_uuid>/', views.preuve_remove_media, name='preuve_remove_media'),
     path('preuves/', views.preuves_list, name='preuves_list'),
     
     # ==================== FRÉQUENCES ====================
