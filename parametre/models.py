@@ -178,6 +178,7 @@ class Media(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     fichier = models.FileField(upload_to='', blank=True, null=True)
     url_fichier = models.URLField(max_length=500, blank=True, null=True)
+    description = models.TextField(blank=True, null=True, help_text="Description du média/fichier")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
