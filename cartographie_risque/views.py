@@ -570,19 +570,52 @@ def details_cdr_update(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def details_cdr_delete(request, uuid):
+    """Supprimer un détail CDR avec toutes ses données associées (cascade)"""
+    try:
+        detail = DetailsCDR.objects.select_related('cdr').get(uuid=uuid)
+
+        # Vérifier que la CDR du détail appartient à l'utilisateur connecté
+        if detail.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Supprimer le détail (cascade automatique vers évaluations, plans, suivis)
+        detail.delete()
+
+        return Response({
+            'success': True,
+            'message': 'Ligne supprimée avec succès'
+        }, status=status.HTTP_200_OK)
+    except DetailsCDR.DoesNotExist:
+        return Response({
+            'error': 'Détail CDR non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du détail CDR: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de supprimer le détail CDR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def evaluation_risque_create(request):
     """Créer une nouvelle évaluation de risque"""
     try:
         logger.info(f"[evaluation_risque_create] Données reçues: {request.data}")
-        
+
         serializer = EvaluationRisqueCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             evaluation = serializer.save()
             logger.info(f"[evaluation_risque_create] ✅ Évaluation créée avec succès: {evaluation.uuid}")
             return Response(EvaluationRisqueSerializer(evaluation).data, status=status.HTTP_201_CREATED)
-        
+
         logger.error(f"[evaluation_risque_create] Erreurs de validation: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
