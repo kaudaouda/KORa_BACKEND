@@ -275,7 +275,7 @@ class Versions(HasActiveStatus):
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(
-        max_length=20, 
+        max_length=20,
         unique=True,
         help_text="Code de la version (ex: INITIAL, AMENDEMENT_1, AMENDEMENT_2)"
     )
@@ -284,7 +284,7 @@ class Versions(HasActiveStatus):
         help_text="Nom affiché de la version (ex: Tableau Initial, Amendement 1)"
     )
     description = models.TextField(
-        blank=True, 
+        blank=True,
         null=True,
         help_text="Description de la version"
     )

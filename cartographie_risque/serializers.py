@@ -50,7 +50,7 @@ class CDRSerializer(serializers.ModelSerializer):
             'uuid', 'annee', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'is_validated', 'date_validation', 'valide_par', 'valide_par_nom',
-            'cree_par', 'cree_par_nom', 'created_at', 'updated_at'
+            'cree_par', 'cree_par_nom', 'initial_ref', 'raison_amendement', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'is_validated', 'date_validation', 'valide_par', 'created_at', 'updated_at']
 
@@ -71,10 +71,11 @@ class CDRCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de CDR"""
     class Meta:
         model = CDR
-        fields = ['annee', 'processus', 'type_tableau', 'initial_ref']
+        fields = ['annee', 'processus', 'type_tableau', 'initial_ref', 'raison_amendement']
         extra_kwargs = {
             'type_tableau': {'required': False, 'allow_null': True},
             'initial_ref': {'required': False, 'allow_null': True},
+            'raison_amendement': {'required': False, 'allow_blank': True, 'allow_null': True},
         }
 
     def validate(self, data):

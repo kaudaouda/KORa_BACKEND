@@ -50,6 +50,11 @@ class CDR(BaseModel):
         blank=True,
         help_text='Référence au CDR initial (pour les amendements)'
     )
+    raison_amendement = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Raison ou cause de la création de cet amendement"
+    )
     cree_par = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
