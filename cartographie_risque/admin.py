@@ -13,16 +13,20 @@ class CDRAdmin(admin.ModelAdmin):
         'annee', 'type_tableau', 'processus', 'is_validated', 'created_at'
     ]
     search_fields = [
-        'processus__nom', 'processus__numero_processus', 'cree_par__username'
+        'processus__nom', 'processus__numero_processus', 'cree_par__username', 'raison_amendement'
     ]
     readonly_fields = [
         'uuid', 'created_at', 'updated_at', 'date_validation', 'valide_par'
     ]
     ordering = ['-annee', 'processus__numero_processus', 'type_tableau']
-    
+
     fieldsets = (
         ('Informations', {
             'fields': ('uuid', 'annee', 'processus', 'type_tableau')
+        }),
+        ('Amendement', {
+            'fields': ('initial_ref', 'raison_amendement'),
+            'description': 'Informations sur l\'amendement (si applicable)'
         }),
         ('Validation', {
             'fields': ('is_validated', 'date_validation', 'valide_par'),
