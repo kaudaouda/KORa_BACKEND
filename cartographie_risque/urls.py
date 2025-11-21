@@ -35,5 +35,9 @@ urlpatterns = [
     path('suivis-action/<uuid:uuid>/', views.suivi_action_detail, name='suivi_action_detail'),
     path('suivis-action/create/', views.suivi_action_create, name='suivi_action_create'),
     path('suivis-action/<uuid:uuid>/update/', views.suivi_action_update, name='suivi_action_update'),
+
+    # Versions d'évaluation CDR endpoints
+    path('versions-evaluation/', views.versions_evaluation_list, name='versions_evaluation_list'),
+    path('details-cdr/<uuid:detail_cdr_uuid>/create-reevaluation/', views.create_reevaluation, name='create_reevaluation'),
 ]
 

@@ -610,6 +610,25 @@ def evaluation_risque_create(request):
     try:
         logger.info(f"[evaluation_risque_create] Données reçues: {request.data}")
 
+        # Ajouter la version par défaut si non fournie
+        if 'version_evaluation' not in request.data or not request.data['version_evaluation']:
+            from parametre.models import VersionEvaluationCDR
+            try:
+                # Récupérer la première version active (la plus ancienne = évaluation initiale)
+                version_initiale = VersionEvaluationCDR.objects.filter(is_active=True).order_by('created_at').first()
+                if not version_initiale:
+                    logger.error("[evaluation_risque_create] Aucune version d'évaluation active trouvée")
+                    return Response({
+                        'error': 'Aucune version d\'évaluation disponible. Veuillez initialiser les versions.'
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                request.data['version_evaluation'] = str(version_initiale.uuid)
+                logger.info(f"[evaluation_risque_create] Version par défaut assignée: {version_initiale.nom}")
+            except Exception as e:
+                logger.error(f"[evaluation_risque_create] Erreur récupération version: {str(e)}")
+                return Response({
+                    'error': 'Erreur lors de la récupération de la version d\'évaluation.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         serializer = EvaluationRisqueCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             evaluation = serializer.save()
@@ -1001,5 +1020,101 @@ def validate_cdr(request, uuid):
             'success': False,
             'error': 'Erreur lors de la validation',
             'details': str(e) if settings.DEBUG else None
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== ENDPOINTS VERSIONS ÉVALUATION CDR ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def versions_evaluation_list(request):
+    """Liste toutes les versions d'évaluation actives triées par date de création"""
+    try:
+        from parametre.models import VersionEvaluationCDR
+        from .serializers import VersionEvaluationCDRSerializer
+
+        versions = VersionEvaluationCDR.objects.filter(is_active=True).order_by('created_at')
+        serializer = VersionEvaluationCDRSerializer(versions, many=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f'Erreur lors de la récupération des versions: {str(e)}')
+        return Response({
+            'error': 'Impossible de récupérer les versions d\'évaluation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_reevaluation(request, detail_cdr_uuid):
+    """
+    Créer une nouvelle réévaluation pour un détail CDR
+    Trouve automatiquement la prochaine version disponible et pré-remplit avec la dernière évaluation
+    """
+    try:
+        from parametre.models import VersionEvaluationCDR
+        from .serializers import EvaluationRisqueCreateSerializer, EvaluationRisqueSerializer
+
+        # Récupérer le détail CDR
+        detail_cdr = DetailsCDR.objects.select_related('cdr').get(uuid=detail_cdr_uuid)
+
+        # Vérifier que la CDR appartient à l'utilisateur connecté
+        if detail_cdr.cdr.cree_par != request.user:
+            return Response({
+                'error': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Vérifier que la CDR n'est pas validée
+        if detail_cdr.cdr.is_validated:
+            return Response({
+                'error': 'Cette CDR est validée. Impossible de créer une réévaluation.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Récupérer toutes les versions déjà utilisées pour ce détail
+        versions_utilisees_ids = EvaluationRisque.objects.filter(
+            details_cdr=detail_cdr
+        ).values_list('version_evaluation__uuid', flat=True)
+
+        # Trouver la prochaine version disponible (ordre chronologique par created_at)
+        version = VersionEvaluationCDR.objects.filter(
+            is_active=True
+        ).exclude(
+            uuid__in=versions_utilisees_ids
+        ).order_by('created_at').first()
+
+        if not version:
+            return Response({
+                'error': 'Toutes les versions d\'évaluation disponibles ont été utilisées pour ce détail CDR'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Créer une réévaluation vide (sans copier les valeurs de l'évaluation précédente)
+        data = {
+            'details_cdr': str(detail_cdr.uuid),
+            'version_evaluation': str(version.uuid),
+            'frequence': None,
+            'gravite': None,
+            'criticite': None,
+            'risque': None,
+        }
+
+        serializer = EvaluationRisqueCreateSerializer(data=data, context={'request': request})
+        if serializer.is_valid():
+            reevaluation = serializer.save()
+            logger.info(f"✅ Réévaluation créée: {version.nom} pour détail CDR {detail_cdr.numero_cdr}")
+            return Response(EvaluationRisqueSerializer(reevaluation).data, status=status.HTTP_201_CREATED)
+
+        logger.error(f"Erreurs validation réévaluation: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except DetailsCDR.DoesNotExist:
+        return Response({
+            'error': 'Détail CDR non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur création réévaluation: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Impossible de créer la réévaluation'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

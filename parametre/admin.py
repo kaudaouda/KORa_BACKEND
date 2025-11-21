@@ -6,7 +6,7 @@ from .models import (
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
     DysfonctionnementRecommandation, Frequence, Periodicite, Cible, Versions, Annee,
-    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque
+    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR
 )
 
 
@@ -628,3 +628,45 @@ class RisqueAdmin(admin.ModelAdmin):
             return ', '.join(obj.niveaux_risque)
         return '-'
     niveaux_risque_display.short_description = 'Niveaux de risque'
+
+class EvaluationRisqueInline(admin.TabularInline):
+    """Inline pour afficher les évaluations de risque liées à une version"""
+    model = None  # Sera défini après l'import
+    extra = 0
+    can_delete = False
+    show_change_link = True
+    fields = ('details_cdr', 'frequence', 'gravite', 'criticite', 'risque', 'created_at')
+    readonly_fields = ('details_cdr', 'frequence', 'gravite', 'criticite', 'risque', 'created_at')
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(VersionEvaluationCDR)
+class VersionEvaluationCDRAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'evaluations_count', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
+    search_fields = ('nom', 'description')
+    readonly_fields = ('uuid', 'created_at', 'updated_at', 'evaluations_count')
+    ordering = ('created_at', 'nom')
+
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('nom', 'description')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Statistiques', {
+            'fields': ('evaluations_count',)
+        }),
+        ('Métadonnées', {
+            'fields': ('uuid', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def evaluations_count(self, obj):
+        """Afficher le nombre d'évaluations utilisant cette version"""
+        return obj.evaluations.count()
+    evaluations_count.short_description = 'Nombre d\'évaluations'
