@@ -5,7 +5,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from .models import CDR, DetailsCDR, EvaluationRisque, PlanAction, SuiviAction, PlanActionResponsable
-from parametre.models import Processus, Versions, Media, Direction, SousDirection, Service
+from parametre.models import Processus, Versions, Media, Direction, SousDirection, Service, VersionEvaluationCDR
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -31,6 +31,14 @@ class ProcessusSerializer(serializers.ModelSerializer):
         model = Processus
         fields = ['uuid', 'nom', 'numero_processus']
         read_only_fields = ['uuid']
+
+
+class VersionEvaluationCDRSerializer(serializers.ModelSerializer):
+    """Serializer pour les versions d'évaluation CDR"""
+    class Meta:
+        model = VersionEvaluationCDR
+        fields = ['uuid', 'nom', 'description', 'is_active', 'created_at']
+        read_only_fields = ['uuid', 'created_at']
 
 
 class CDRSerializer(serializers.ModelSerializer):
@@ -243,16 +251,22 @@ class DetailsCDRUpdateSerializer(serializers.ModelSerializer):
 
 class EvaluationRisqueSerializer(serializers.ModelSerializer):
     """Serializer pour les évaluations de risque"""
+    # Champs existants
     frequence_libelle = serializers.CharField(source='frequence.libelle', read_only=True)
     gravite_libelle = serializers.CharField(source='gravite.libelle', read_only=True)
     criticite_libelle = serializers.CharField(source='criticite.libelle', read_only=True)
     risque_libelle = serializers.CharField(source='risque.libelle', read_only=True)
     details_cdr_uuid = serializers.UUIDField(source='details_cdr.uuid', read_only=True)
-    
+
+    # Nouveaux champs pour la version d'évaluation
+    version_evaluation_nom = serializers.CharField(source='version_evaluation.nom', read_only=True)
+    version_evaluation = VersionEvaluationCDRSerializer(read_only=True)
+
     class Meta:
         model = EvaluationRisque
         fields = [
             'uuid', 'details_cdr', 'details_cdr_uuid',
+            'version_evaluation', 'version_evaluation_nom',
             'frequence', 'frequence_libelle',
             'gravite', 'gravite_libelle',
             'criticite', 'criticite_libelle',
@@ -265,11 +279,12 @@ class EvaluationRisqueSerializer(serializers.ModelSerializer):
 
 class EvaluationRisqueCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création d'évaluations de risque"""
-    
+
     class Meta:
         model = EvaluationRisque
-        fields = ['details_cdr', 'frequence', 'gravite', 'criticite', 'risque']
+        fields = ['details_cdr', 'version_evaluation', 'frequence', 'gravite', 'criticite', 'risque']
         extra_kwargs = {
+            'version_evaluation': {'required': True},
             'frequence': {'required': False, 'allow_null': True},
             'gravite': {'required': False, 'allow_null': True},
             'criticite': {'required': False, 'allow_null': True},
@@ -289,6 +304,23 @@ class EvaluationRisqueCreateSerializer(serializers.ModelSerializer):
                     "Cette CDR est validée. Impossible de créer une nouvelle évaluation."
                 )
         return value
+
+    def validate(self, data):
+        """Valider qu'une évaluation n'existe pas déjà pour cette version"""
+        details_cdr = data.get('details_cdr')
+        version_evaluation = data.get('version_evaluation')
+
+        # Vérifier l'unicité (details_cdr, version_evaluation)
+        if details_cdr and version_evaluation:
+            if EvaluationRisque.objects.filter(
+                details_cdr=details_cdr,
+                version_evaluation=version_evaluation
+            ).exists():
+                raise serializers.ValidationError({
+                    'version_evaluation': f"Une évaluation '{version_evaluation.nom}' existe déjà pour ce détail CDR."
+                })
+
+        return data
     
     def calculate_criticite(self, frequence, gravite):
         """Calculer automatiquement la criticité à partir de la fréquence et de la gravité"""

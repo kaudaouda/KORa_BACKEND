@@ -105,24 +105,24 @@ class DetailsCDRAdmin(admin.ModelAdmin):
 @admin.register(EvaluationRisque)
 class EvaluationRisqueAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les évaluations de risque"""
-    
+
     list_display = [
-        'details_cdr', 'risque', 'frequence', 'gravite', 'criticite', 'created_at', 'updated_at'
+        'details_cdr', 'version_evaluation', 'risque', 'frequence', 'gravite', 'criticite', 'created_at'
     ]
     list_filter = [
-        'frequence', 'gravite', 'criticite', 'risque', 'created_at', 'updated_at'
+        'version_evaluation', 'frequence', 'gravite', 'criticite', 'risque', 'created_at'
     ]
     search_fields = [
-        'details_cdr__numero_cdr', 'risque__libelle', 'details_cdr__cdr__processus__nom'
+        'details_cdr__numero_cdr', 'risque__libelle', 'details_cdr__cdr__processus__nom', 'version_evaluation__nom'
     ]
     readonly_fields = [
         'uuid', 'created_at', 'updated_at'
     ]
-    ordering = ['details_cdr', 'created_at']
-    
+    ordering = ['details_cdr', 'version_evaluation__created_at', 'created_at']
+
     fieldsets = (
         ('Informations générales', {
-            'fields': ('uuid', 'details_cdr')
+            'fields': ('uuid', 'details_cdr', 'version_evaluation')
         }),
         ('Évaluation', {
             'fields': ('frequence', 'gravite', 'criticite', 'risque')
@@ -132,11 +132,11 @@ class EvaluationRisqueAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-    
+
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
         return super().get_queryset(request).select_related(
-            'details_cdr', 'details_cdr__cdr', 'frequence', 'gravite', 'criticite', 'risque'
+            'details_cdr', 'details_cdr__cdr', 'version_evaluation', 'frequence', 'gravite', 'criticite', 'risque'
         )
 
 
