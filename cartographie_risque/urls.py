@@ -18,6 +18,7 @@ urlpatterns = [
     path('details-cdr/cdr/<uuid:cdr_uuid>/', views.details_cdr_by_cdr, name='details_cdr_by_cdr'),
     path('details-cdr/create/', views.details_cdr_create, name='details_cdr_create'),
     path('details-cdr/<uuid:uuid>/update/', views.details_cdr_update, name='details_cdr_update'),
+    path('details-cdr/<uuid:uuid>/delete/', views.details_cdr_delete, name='details_cdr_delete'),
     
     # Evaluation Risque endpoints
     path('details-cdr/<uuid:detail_cdr_uuid>/evaluations/', views.evaluations_by_detail_cdr, name='evaluations_by_detail_cdr'),
@@ -34,5 +35,9 @@ urlpatterns = [
     path('suivis-action/<uuid:uuid>/', views.suivi_action_detail, name='suivi_action_detail'),
     path('suivis-action/create/', views.suivi_action_create, name='suivi_action_create'),
     path('suivis-action/<uuid:uuid>/update/', views.suivi_action_update, name='suivi_action_update'),
+
+    # Versions d'évaluation CDR endpoints
+    path('versions-evaluation/', views.versions_evaluation_list, name='versions_evaluation_list'),
+    path('details-cdr/<uuid:detail_cdr_uuid>/create-reevaluation/', views.create_reevaluation, name='create_reevaluation'),
 ]
 

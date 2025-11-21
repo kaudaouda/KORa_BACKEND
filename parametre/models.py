@@ -1028,3 +1028,36 @@ class Risque(HasActiveStatus):
 
     def __str__(self):
         return self.libelle
+
+
+class VersionEvaluationCDR(HasActiveStatus):
+    """
+    Modèle pour les versions d'évaluation CDR (Evaluation Initiale, Réévaluation 1, Réévaluation 2, etc.)
+    Permet de gérer plusieurs évaluations d'un même risque dans le temps
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nom = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Nom de la version (ex: Évaluation Initiale, Réévaluation 1)"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description de cette version d'évaluation"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'version_evaluation_cdr'
+        verbose_name = 'Version Évaluation CDR'
+        verbose_name_plural = 'Versions Évaluation CDR'
+        ordering = ['created_at', 'nom']
+
+    def __str__(self):
+        return self.nom
+
+    def get_display_name(self):
+        """Retourne le nom d'affichage"""
+        return self.nom
