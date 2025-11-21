@@ -5,7 +5,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from parametre.models import Processus, Versions, Media, FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Direction
+from parametre.models import Processus, Versions, Media, FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Direction, VersionEvaluationCDR
 import uuid
 
 
@@ -140,13 +140,20 @@ class DetailsCDR(BaseModel):
 
 class EvaluationRisque(BaseModel):
     """
-    Modèle pour l'évaluation des risques
+    Modèle pour l'évaluation des risques avec support de versioning
+    Permet de créer plusieurs évaluations (initiale, réévaluation 1, etc.) pour un même détail CDR
     """
     details_cdr = models.ForeignKey(
         DetailsCDR,
         on_delete=models.CASCADE,
         related_name='evaluations',
         help_text="Détail CDR associé"
+    )
+    version_evaluation = models.ForeignKey(
+        VersionEvaluationCDR,
+        on_delete=models.PROTECT,
+        related_name='evaluations',
+        help_text="Version de l'évaluation (Initiale, Réévaluation 1, etc.)"
     )
     frequence = models.ForeignKey(
         FrequenceRisque,
@@ -185,10 +192,13 @@ class EvaluationRisque(BaseModel):
         db_table = 'evaluation_risque'
         verbose_name = 'Évaluation des Risques'
         verbose_name_plural = 'Évaluations des Risques'
-        ordering = ['details_cdr', 'created_at']
+        ordering = ['details_cdr', 'version_evaluation__created_at', 'created_at']
+        unique_together = ['details_cdr', 'version_evaluation']
 
     def __str__(self):
-        return f"Évaluation {self.risque.libelle} - {self.details_cdr.numero_cdr}"
+        version_nom = self.version_evaluation.nom if self.version_evaluation else "Sans version"
+        risque_lib = self.risque.libelle if self.risque else "Sans risque"
+        return f"{version_nom} - {risque_lib} - {self.details_cdr.numero_cdr}"
 
 
 class PlanAction(BaseModel):
