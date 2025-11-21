@@ -299,10 +299,8 @@ class EvaluationRisqueCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Vous n'avez pas les permissions pour ajouter une évaluation à ce détail CDR."
                 )
-            if value.cdr.is_validated:
-                raise serializers.ValidationError(
-                    "Cette CDR est validée. Impossible de créer une nouvelle évaluation."
-                )
+            # Note: On autorise la création d'évaluations même si la CDR est validée
+            # car les réévaluations sont créées après validation
         return value
 
     def validate(self, data):
@@ -470,11 +468,23 @@ class EvaluationRisqueUpdateSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         """Mettre à jour une évaluation de risque avec détection automatique du risque"""
-        # Protection : empêcher la modification si la CDR est validée
+        # Protection : empêcher la modification de l'évaluation initiale si la CDR est validée
+        # Les réévaluations (versions autres que INITIAL) peuvent être modifiées après validation
         if instance.details_cdr.cdr.is_validated:
-            raise serializers.ValidationError(
-                "Cette CDR est validée. Les champs d'évaluation ne peuvent plus être modifiés."
-            )
+            # Vérifier si c'est l'évaluation initiale
+            is_initial = False
+            if instance.version_evaluation:
+                version_code = getattr(instance.version_evaluation, 'code', None)
+                version_nom = getattr(instance.version_evaluation, 'nom', '')
+                is_initial = version_code == 'INITIAL' or 'initial' in version_nom.lower()
+            else:
+                # Si pas de version, c'est probablement l'évaluation initiale
+                is_initial = True
+
+            if is_initial:
+                raise serializers.ValidationError(
+                    "Cette CDR est validée. L'évaluation initiale ne peut plus être modifiée."
+                )
         
         # Récupérer la fréquence et la gravité (soit depuis validated_data, soit depuis l'instance)
         frequence = validated_data.get('frequence', instance.frequence)
