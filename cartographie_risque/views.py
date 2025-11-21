@@ -659,11 +659,41 @@ def evaluation_risque_update(request, uuid):
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Protection : empêcher la modification si la CDR est validée
-        if evaluation.details_cdr.cdr.is_validated:
+        # Protection : empêcher la modification si un amendement supérieur existe
+        current_cdr = evaluation.details_cdr.cdr
+        current_type_code = getattr(current_cdr.type_tableau, 'code', None) if current_cdr.type_tableau else None
+
+        # Vérifier si un amendement supérieur existe
+        has_superior_amendment = False
+        if current_type_code in ['INITIAL', 'AMENDEMENT_1']:
+            superior_types = ['AMENDEMENT_1', 'AMENDEMENT_2'] if current_type_code == 'INITIAL' else ['AMENDEMENT_2']
+            has_superior_amendment = CDR.objects.filter(
+                cree_par=request.user,
+                annee=current_cdr.annee,
+                processus=current_cdr.processus,
+                type_tableau__code__in=superior_types
+            ).exists()
+
+        if has_superior_amendment:
             return Response({
-                'error': 'Cette CDR est validée. Les champs d\'évaluation ne peuvent plus être modifiés.'
+                'error': 'Un amendement supérieur existe. Les évaluations de ce tableau ne peuvent plus être modifiées.'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Protection : empêcher la modification de l'évaluation initiale si la CDR est validée
+        # Les réévaluations peuvent être modifiées après validation
+        if current_cdr.is_validated:
+            is_initial = False
+            if evaluation.version_evaluation:
+                version_code = getattr(evaluation.version_evaluation, 'code', None)
+                version_nom = getattr(evaluation.version_evaluation, 'nom', '')
+                is_initial = version_code == 'INITIAL' or 'initial' in version_nom.lower()
+            else:
+                is_initial = True
+
+            if is_initial:
+                return Response({
+                    'error': 'Cette CDR est validée. L\'évaluation initiale ne peut plus être modifiée.'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = EvaluationRisqueUpdateSerializer(evaluation, data=request.data, partial=True)
         if serializer.is_valid():
@@ -940,23 +970,25 @@ def validate_cdr(request, uuid):
             if not detail.consequences or detail.consequences.strip() == '':
                 detail_errors.append('Les conséquences sont requises')
             
-            # Vérifier qu'il y a une évaluation de risque
-            evaluations = EvaluationRisque.objects.filter(details_cdr=detail)
+            # Vérifier qu'il y a une évaluation de risque initiale (version INITIAL)
+            # On ne vérifie que l'évaluation initiale, pas les réévaluations
+            evaluations = EvaluationRisque.objects.filter(details_cdr=detail).select_related('version_evaluation').order_by('created_at')
             if evaluations.count() == 0:
                 detail_errors.append('Une évaluation de risque est requise')
             else:
-                # Vérifier que l'évaluation a tous les champs requis
+                # Vérifier que l'évaluation initiale (première créée) a tous les champs requis
                 evaluation = evaluations.first()
                 if not evaluation.frequence:
-                    detail_errors.append('La fréquence du risque est requise dans l\'évaluation')
+                    detail_errors.append('La fréquence du risque est requise dans l\'évaluation initiale')
                 if not evaluation.gravite:
-                    detail_errors.append('La gravité du risque est requise dans l\'évaluation')
+                    detail_errors.append('La gravité du risque est requise dans l\'évaluation initiale')
                 if not evaluation.criticite:
-                    detail_errors.append('La criticité du risque est requise dans l\'évaluation')
+                    detail_errors.append('La criticité du risque est requise dans l\'évaluation initiale')
                 if not evaluation.risque:
-                    detail_errors.append('Le type de risque est requis dans l\'évaluation')
+                    detail_errors.append('Le type de risque est requis dans l\'évaluation initiale')
             
             # Vérifier qu'il y a au moins un plan d'action
+            from .models import PlanActionResponsable
             plans = PlanAction.objects.filter(details_cdr=detail)
             if plans.count() == 0:
                 detail_errors.append('Au moins un plan d\'action est requis')
@@ -966,11 +998,13 @@ def validate_cdr(request, uuid):
                     plan_errors = []
                     if not plan.actions_mesures or plan.actions_mesures.strip() == '':
                         plan_errors.append('Les actions/mesures sont requises')
-                    if not plan.responsable:
+                    # Vérifier les responsables (nouveau modèle PlanActionResponsable ou ancien champ responsable)
+                    has_responsable = plan.responsable is not None or PlanActionResponsable.objects.filter(plan_action=plan).exists()
+                    if not has_responsable:
                         plan_errors.append('Le responsable est requis')
                     if not plan.delai_realisation:
                         plan_errors.append('Le délai de réalisation est requis')
-                    
+
                     if plan_errors:
                         detail_errors.append(f'Plan d\'action: {", ".join(plan_errors)}')
             
@@ -1064,11 +1098,29 @@ def create_reevaluation(request, detail_cdr_uuid):
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Vérifier que la CDR n'est pas validée
-        if detail_cdr.cdr.is_validated:
+        # Vérifier que la CDR EST validée (réévaluation possible seulement après validation)
+        if not detail_cdr.cdr.is_validated:
             return Response({
-                'error': 'Cette CDR est validée. Impossible de créer une réévaluation.'
+                'error': 'La CDR doit être validée avant de pouvoir créer une réévaluation.'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Vérifier qu'un amendement supérieur n'existe pas
+        current_cdr = detail_cdr.cdr
+        current_type_code = getattr(current_cdr.type_tableau, 'code', None) if current_cdr.type_tableau else None
+
+        if current_type_code in ['INITIAL', 'AMENDEMENT_1']:
+            superior_types = ['AMENDEMENT_1', 'AMENDEMENT_2'] if current_type_code == 'INITIAL' else ['AMENDEMENT_2']
+            has_superior_amendment = CDR.objects.filter(
+                cree_par=request.user,
+                annee=current_cdr.annee,
+                processus=current_cdr.processus,
+                type_tableau__code__in=superior_types
+            ).exists()
+
+            if has_superior_amendment:
+                return Response({
+                    'error': 'Un amendement supérieur existe. Impossible de créer une réévaluation sur ce tableau.'
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         # Récupérer toutes les versions déjà utilisées pour ce détail
         versions_utilisees_ids = EvaluationRisque.objects.filter(
