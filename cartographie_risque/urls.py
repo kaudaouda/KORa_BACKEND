@@ -39,5 +39,8 @@ urlpatterns = [
     # Versions d'évaluation CDR endpoints
     path('versions-evaluation/', views.versions_evaluation_list, name='versions_evaluation_list'),
     path('details-cdr/<uuid:detail_cdr_uuid>/create-reevaluation/', views.create_reevaluation, name='create_reevaluation'),
+
+    # Copie depuis l'année précédente
+    path('cdrs/last-previous-year/', views.get_last_cdr_previous_year, name='get_last_cdr_previous_year'),
 ]
 
