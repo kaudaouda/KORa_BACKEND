@@ -1170,3 +1170,71 @@ def create_reevaluation(request, detail_cdr_uuid):
             'error': 'Impossible de créer la réévaluation'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_last_cdr_previous_year(request):
+    """
+    Récupérer le dernier CDR (INITIAL, AMENDEMENT_1 ou AMENDEMENT_2) de l'année précédente
+    pour un processus donné.
+
+    Query params:
+    - annee: année actuelle (pour calculer l'année précédente)
+    - processus: UUID du processus
+
+    Retourne le dernier type de tableau (ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL)
+    """
+    try:
+        annee = request.query_params.get('annee')
+        processus_uuid = request.query_params.get('processus')
+
+        if not annee or not processus_uuid:
+            return Response({
+                'error': 'Les paramètres annee et processus sont requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            annee = int(annee)
+        except (ValueError, TypeError):
+            return Response({
+                'error': 'Le paramètre annee doit être un nombre entier'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculer l'année précédente
+        annee_precedente = annee - 1
+
+        logger.info(f"[get_last_cdr_previous_year] Recherche du dernier CDR pour processus={processus_uuid}, année={annee_precedente}")
+
+        # Chercher tous les CDR de l'année précédente pour ce processus
+        # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
+        codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
+
+        for code in codes_order:
+            cdr = CDR.objects.filter(
+                cree_par=request.user,
+                annee=annee_precedente,
+                processus__uuid=processus_uuid,
+                type_tableau__code=code
+            ).select_related('processus', 'type_tableau', 'cree_par', 'valide_par').first()
+
+            if cdr:
+                logger.info(f"[get_last_cdr_previous_year] CDR trouvé: {cdr.uuid} (type: {code})")
+                serializer = CDRSerializer(cdr)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Aucun CDR trouvé pour l'année précédente
+        logger.info(f"[get_last_cdr_previous_year] Aucun CDR trouvé pour l'année {annee_precedente}")
+        return Response({
+            'message': f'Aucune cartographie trouvée pour l\'année {annee_precedente}',
+            'found': False
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du dernier CDR de l'année précédente: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération du CDR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
