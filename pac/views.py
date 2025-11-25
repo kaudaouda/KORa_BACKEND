@@ -2232,3 +2232,75 @@ def pac_stats(request):
             'success': False,
             'error': 'Erreur lors de la récupération des statistiques PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_last_pac_previous_year(request):
+    """
+    Récupérer le dernier PAC (INITIAL, AMENDEMENT_1 ou AMENDEMENT_2) de l'année précédente
+    pour un processus donné.
+
+    Query params:
+    - annee: UUID de l'année actuelle
+    - processus: UUID du processus
+
+    Retourne le dernier type de tableau (ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL)
+    """
+    try:
+        from parametre.models import Annee
+
+        annee_uuid = request.query_params.get('annee')
+        processus_uuid = request.query_params.get('processus')
+
+        if not annee_uuid or not processus_uuid:
+            return Response({
+                'error': 'Les paramètres annee et processus sont requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Récupérer l'année actuelle et calculer l'année précédente
+        try:
+            annee_actuelle = Annee.objects.get(uuid=annee_uuid)
+            annee_precedente_valeur = annee_actuelle.annee - 1
+            annee_precedente = Annee.objects.get(annee=annee_precedente_valeur)
+        except Annee.DoesNotExist:
+            logger.info(f"[get_last_pac_previous_year] Année précédente {annee_precedente_valeur if 'annee_precedente_valeur' in locals() else 'N/A'} non trouvée")
+            return Response({
+                'message': f'Aucune année {annee_precedente_valeur if "annee_precedente_valeur" in locals() else "précédente"} trouvée dans le système',
+                'found': False
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        logger.info(f"[get_last_pac_previous_year] Recherche du dernier PAC pour processus={processus_uuid}, année={annee_precedente.annee}")
+
+        # Chercher tous les PACs de l'année précédente pour ce processus
+        # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
+        codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
+
+        for code in codes_order:
+            pac = Pac.objects.filter(
+                cree_par=request.user,
+                annee=annee_precedente,
+                processus__uuid=processus_uuid,
+                type_tableau__code=code
+            ).select_related('processus', 'annee', 'type_tableau', 'cree_par', 'validated_by').first()
+
+            if pac:
+                logger.info(f"[get_last_pac_previous_year] PAC trouvé: {pac.uuid} (type: {code})")
+                serializer = PacSerializer(pac)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Aucun PAC trouvé pour l'année précédente
+        logger.info(f"[get_last_pac_previous_year] Aucun PAC trouvé pour l'année {annee_precedente.annee}")
+        return Response({
+            'message': f'Aucun Plan d\'Action de Conformité trouvé pour l\'année {annee_precedente.annee}',
+            'found': False
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du dernier PAC de l'année précédente: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération du PAC',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
