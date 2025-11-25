@@ -1101,22 +1101,27 @@ def pac_delete(request, uuid):
     """Supprimer un PAC"""
     try:
         pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+
+        # Récupérer le premier détail pour avoir un libellé (si existant)
+        premier_detail = pac.details.first()
+        libelle = premier_detail.libelle if premier_detail else 'N/A'
+
         pac_info = {
             'uuid': str(pac.uuid),
-            'libelle': pac.libelle,
+            'libelle': libelle,
             'processus': pac.processus.nom if pac.processus else None
         }
-        
+
         # Log de l'activité avant suppression
         logger.info(
             f"Suppression PAC - User: {request.user.email}, "
             f"PAC: {pac_info['libelle']}, UUID: {pac_info['uuid']}, "
             f"IP: {get_client_ip(request)}"
         )
-        
+
         # Suppression du PAC (cascade sur traitements et suivis)
         pac.delete()
-        
+
         return Response({
             'message': 'PAC supprimé avec succès',
             'pac': pac_info
@@ -1827,19 +1832,25 @@ def details_pac_delete(request, uuid):
     """Supprimer un détail de PAC"""
     try:
         detail = DetailsPac.objects.select_related('pac').get(uuid=uuid)
-        
+
         # Vérifier que le PAC du détail appartient à l'utilisateur connecté
         if detail.pac.cree_par != request.user:
             return Response({
                 'error': 'Accès non autorisé'
             }, status=status.HTTP_403_FORBIDDEN)
-        
+
+        # Vérifier que le PAC n'est pas validé
+        if detail.pac.is_validated:
+            return Response({
+                'error': 'Impossible de supprimer un détail d\'un PAC validé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         detail_info = {
             'uuid': str(detail.uuid),
             'libelle': detail.libelle,
             'pac': detail.pac.uuid if detail.pac else None
         }
-        
+
         # Suppression du détail
         detail.delete()
         
