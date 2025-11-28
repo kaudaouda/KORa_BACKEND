@@ -1783,3 +1783,70 @@ def observations_by_indicateur(request, indicateur_uuid):
             'success': False,
             'error': 'Erreur lors de la récupération de l\'observation de l\'indicateur'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_last_tableau_bord_previous_year(request):
+    """
+    Récupérer le dernier Tableau de Bord (INITIAL, AMENDEMENT_1 ou AMENDEMENT_2) de l'année précédente
+    pour un processus donné.
+
+    Query params:
+    - annee: année actuelle (nombre entier, ex: 2025)
+    - processus: UUID du processus
+
+    Retourne le dernier type de tableau (ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL)
+    """
+    try:
+        annee = request.query_params.get('annee')
+        processus_uuid = request.query_params.get('processus')
+
+        if not annee or not processus_uuid:
+            return Response({
+                'error': 'Les paramètres annee et processus sont requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            annee = int(annee)
+        except (ValueError, TypeError):
+            return Response({
+                'error': 'Le paramètre annee doit être un nombre entier'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculer l'année précédente
+        annee_precedente = annee - 1
+
+        logger.info(f"[get_last_tableau_bord_previous_year] Recherche du dernier Tableau de Bord pour processus={processus_uuid}, année={annee_precedente}")
+
+        # Chercher tous les Tableaux de Bord de l'année précédente pour ce processus
+        # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
+        codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
+
+        for code in codes_order:
+            tableau = TableauBord.objects.filter(
+                cree_par=request.user,
+                annee=annee_precedente,
+                processus__uuid=processus_uuid,
+                type_tableau__code=code
+            ).select_related('processus', 'type_tableau', 'cree_par', 'valide_par').first()
+
+            if tableau:
+                logger.info(f"[get_last_tableau_bord_previous_year] Tableau de Bord trouvé: {tableau.uuid} (type: {code})")
+                serializer = TableauBordSerializer(tableau)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Aucun Tableau de Bord trouvé pour l'année précédente
+        logger.info(f"[get_last_tableau_bord_previous_year] Aucun Tableau de Bord trouvé pour l'année {annee_precedente}")
+        return Response({
+            'message': f'Aucun Tableau de Bord trouvé pour l\'année {annee_precedente}',
+            'found': False
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du dernier Tableau de Bord de l'année précédente: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la récupération du Tableau de Bord',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
