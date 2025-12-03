@@ -721,6 +721,37 @@ class ReminderEmailLog(models.Model):
         return f"Relance {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
 
 
+class Mois(models.Model):
+    """
+    Modèle de référence pour les mois de l'année
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    numero = models.IntegerField(
+        unique=True,
+        help_text="Numéro du mois (1-12)"
+    )
+    nom = models.CharField(
+        max_length=50,
+        unique=True,
+        help_text="Nom complet du mois (ex: Janvier, Février, etc.)"
+    )
+    abreviation = models.CharField(
+        max_length=10,
+        help_text="Abréviation du mois (première lettre: J, F, M, etc.)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'mois'
+        verbose_name = 'Mois'
+        verbose_name_plural = 'Mois'
+        ordering = ['numero']
+
+    def __str__(self):
+        return self.nom
+
+
 class Frequence(models.Model):
     """
     Modèle pour les fréquences de mesure des indicateurs
@@ -1061,3 +1092,5 @@ class VersionEvaluationCDR(HasActiveStatus):
     def get_display_name(self):
         """Retourne le nom d'affichage"""
         return self.nom
+
+# MoisAP déplacé dans activite_periodique pour résoudre les dépendances circulaires

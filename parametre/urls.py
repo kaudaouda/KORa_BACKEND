@@ -93,6 +93,9 @@ urlpatterns = [
     # ==================== FRÉQUENCES ====================
     path('frequences/', views.frequences_list, name='frequences_list'),
     
+    # ==================== MOIS ====================
+    path('mois/', views.mois_list, name='mois_list'),
+    
     # ==================== PÉRIODICITÉS ====================
     path('periodicites/', views.periodicites_list, name='periodicites_list'),
     
