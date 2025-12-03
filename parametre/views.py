@@ -1931,6 +1931,27 @@ def frequences_list(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def mois_list(request):
+    """
+    Liste tous les mois avec leurs abréviations
+    """
+    try:
+        from parametre.models import Mois
+        mois = Mois.objects.all().order_by('numero')
+        data = [{
+            'uuid': str(m.uuid),
+            'numero': m.numero,
+            'nom': m.nom,
+            'abreviation': m.abreviation
+        } for m in mois]
+        return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste des mois: {str(e)}")
+        return Response({'error': 'Impossible de lister les mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def periodicites_list(request):
     """Liste toutes les périodicités"""
     try:
