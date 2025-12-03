@@ -5,7 +5,7 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Preuve, StatutActionCDR,
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
-    DysfonctionnementRecommandation, Frequence, Periodicite, Cible, Versions, Annee,
+    DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR
 )
 
@@ -253,6 +253,24 @@ class ReminderEmailLogAdmin(admin.ModelAdmin):
     search_fields = ('recipient', 'subject', 'context_hash')
     list_filter = ('sent_at',)
     readonly_fields = ('uuid', 'recipient', 'subject', 'context_hash', 'sent_at')
+
+
+@admin.register(Mois)
+class MoisAdmin(admin.ModelAdmin):
+    list_display = ('numero', 'nom', 'abreviation', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('nom', 'abreviation')
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
+    ordering = ('numero',)
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'numero', 'nom', 'abreviation')
+        }),
+        ('Dates', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
 
 
 @admin.register(Frequence)
