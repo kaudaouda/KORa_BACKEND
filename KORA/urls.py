@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/dashboard/', include('dashboard.urls')),  # API du tableau de bord
     path('api/cartographie-risque/', include('cartographie_risque.urls')),  # API cartographie de risque
     path('api/activite-periodique/', include('activite_periodique.urls')),  # API activité périodique
+    path('api/documentation/', include('documentation.urls')),  # API documentation
 ]
 
 # Servir les fichiers média en développement
