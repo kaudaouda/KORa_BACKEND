@@ -30,21 +30,19 @@ class AmendmentInline(admin.TabularInline):
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
     list_display = (
-        'name', 
-        'date_application', 
-        'is_active', 
-        'annee', 
-        'get_edition', 
-        'get_amendement', 
+        'name',
+        'date_application',
+        'is_active',
+        'get_edition',
+        'get_amendement',
         'get_is_amendment_badge',
         'get_parent_document',
         'get_amendments_count',
-        'get_medias_count', 
+        'get_medias_count',
         'created_at'
     )
     list_filter = (
-        'is_active', 
-        'annee', 
+        'is_active',
         'date_application',
         ('parent_document', admin.EmptyFieldListFilter),  # Filtre pour documents originaux vs amendements
     )
@@ -67,13 +65,10 @@ class DocumentAdmin(admin.ModelAdmin):
         return count if count > 0 else '-'
     get_medias_count.short_description = 'Nb Médias'
 
-    def get_categories(self, obj):
-        """Affiche les catégories associées au document"""
-        categories = obj.categories.all()
-        if categories.exists():
-            return ', '.join([cat.nom for cat in categories])
-        return '-'
-    get_categories.short_description = 'Catégories'
+    def get_type(self, obj):
+        """Affiche le type du document"""
+        return obj.type.nom if obj.type else '-'
+    get_type.short_description = 'Type'
 
     def get_is_amendment_badge(self, obj):
         """Badge pour indiquer si c'est un amendement"""
@@ -140,8 +135,6 @@ class DocumentAdmin(admin.ModelAdmin):
 
     inlines = [MediaDocumentInline, AmendmentInline]
 
-    filter_horizontal = ['categories']  # Widget pour sélectionner facilement les catégories
-
     fieldsets = (
         ('Informations générales', {
             'fields': ('uuid', 'name', 'description')
@@ -152,7 +145,7 @@ class DocumentAdmin(admin.ModelAdmin):
                           'Si ce document amende un autre document, sélectionnez le document parent.'
         }),
         ('Relations', {
-            'fields': ('annee', 'edition', 'amendement', 'categories')
+            'fields': ('edition', 'amendement', 'type')
         }),
         ('Dates', {
             'fields': ('date_application',)
