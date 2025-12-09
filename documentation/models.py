@@ -23,14 +23,6 @@ class Document(models.Model):
         default=True,
         help_text="Indique si ce document est actif et peut être utilisé"
     )
-    annee = models.ForeignKey(
-        'parametre.Annee',
-        on_delete=models.SET_NULL,
-        related_name='documents',
-        null=True,
-        blank=True,
-        help_text="Année associée au document"
-    )
     edition = models.ForeignKey(
         'parametre.EditionDocument',
         on_delete=models.SET_NULL,
@@ -47,11 +39,13 @@ class Document(models.Model):
         blank=True,
         help_text="Amendement associé au document"
     )
-    categories = models.ManyToManyField(
-        'parametre.CategorieDocument',
+    type = models.ForeignKey(
+        'parametre.TypeDocument',
+        on_delete=models.SET_NULL,
         related_name='documents',
+        null=True,
         blank=True,
-        help_text="Catégories associées au document"
+        help_text="Type de document"
     )
     parent_document = models.ForeignKey(
         'self',

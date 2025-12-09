@@ -8,33 +8,28 @@ from parametre.models import Annee
 
 class DocumentSerializer(serializers.ModelSerializer):
     """Serializer pour les documents"""
-    annee_nom = serializers.SerializerMethodField()
     edition_nom = serializers.SerializerMethodField()
     amendement_nom = serializers.SerializerMethodField()
-    categories_details = serializers.SerializerMethodField()
+    type_details = serializers.SerializerMethodField()
+    type_nom = serializers.SerializerMethodField()
     media_url = serializers.SerializerMethodField()
     has_amendments = serializers.SerializerMethodField()
     is_amendment = serializers.SerializerMethodField()
     version_info = serializers.SerializerMethodField()
+    version_number = serializers.SerializerMethodField()
+    amendment_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
         fields = [
             'uuid', 'name', 'description', 'date_application',
-            'is_active', 'annee', 'annee_nom', 'edition', 'edition_nom',
-            'amendement', 'amendement_nom', 'categories', 'categories_details',
+            'is_active', 'edition', 'edition_nom',
+            'amendement', 'amendement_nom', 'type', 'type_nom', 'type_details',
             'media_url', 'created_at', 'updated_at',
-            'parent_document', 'has_amendments', 'is_amendment', 'version_info'
+            'parent_document', 'has_amendments', 'is_amendment', 'version_info',
+            'version_number', 'amendment_count'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
-
-    def get_annee_nom(self, obj):
-        """Retourner le nom de l'année"""
-        if obj.annee:
-            if hasattr(obj.annee, 'libelle') and obj.annee.libelle:
-                return obj.annee.libelle
-            return str(obj.annee.annee)
-        return None
 
     def get_edition_nom(self, obj):
         """Retourner le nom de l'édition"""
@@ -48,16 +43,21 @@ class DocumentSerializer(serializers.ModelSerializer):
             return obj.amendement.title
         return None
 
-    def get_categories_details(self, obj):
-        """Retourner les détails des catégories"""
-        return [
-            {
-                'uuid': str(cat.uuid),
-                'nom': cat.nom,
-                'code': cat.code
+    def get_type_nom(self, obj):
+        """Retourner le nom du type"""
+        if obj.type:
+            return obj.type.nom
+        return None
+
+    def get_type_details(self, obj):
+        """Retourner les détails du type de document"""
+        if obj.type:
+            return {
+                'uuid': str(obj.type.uuid),
+                'nom': obj.type.nom,
+                'code': obj.type.code
             }
-            for cat in obj.categories.all()
-        ]
+        return None
 
     def get_media_url(self, obj):
         """Retourner l'URL du premier média associé au document"""
@@ -87,19 +87,34 @@ class DocumentSerializer(serializers.ModelSerializer):
     def get_has_amendments(self, obj):
         """Indique si ce document a des amendements"""
         return obj.amendments.exists()
-    
+
     def get_is_amendment(self, obj):
         """Indique si ce document est lui-même un amendement"""
         return obj.parent_document is not None
-    
+
+    def get_version_number(self, obj):
+        """Calculer le numéro de version en remontant la chaîne"""
+        version_number = 1
+        current = obj
+        while current.parent_document:
+            version_number += 1
+            current = current.parent_document
+        return version_number
+
+    def get_amendment_count(self, obj):
+        """Retourner le nombre d'amendements de ce document"""
+        return obj.amendments.count()
+
     def get_version_info(self, obj):
         """Retourner les informations de version"""
         version_label = f"{obj.edition.title if obj.edition else 'N/A'} - {obj.amendement.title if obj.amendement else 'N/A'}"
+
         return {
             'version_label': version_label,
             'has_parent': obj.parent_document is not None,
             'parent_uuid': str(obj.parent_document.uuid) if obj.parent_document else None,
-            'amendments_count': obj.amendments.count()
+            'amendments_count': obj.amendments.count(),
+            'version_number': self.get_version_number(obj)
         }
 
 
@@ -110,7 +125,7 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
         model = Document
         fields = [
             'name', 'description', 'date_application',
-            'is_active', 'annee', 'edition', 'amendement', 'categories'
+            'is_active', 'edition', 'amendement', 'type'
         ]
 
     def validate_name(self, value):
@@ -160,7 +175,7 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
         model = Document
         fields = [
             'name', 'description', 'date_application',
-            'is_active', 'annee', 'edition', 'amendement', 'categories'
+            'is_active', 'edition', 'amendement', 'type'
         ]
 
     def validate_name(self, value):
@@ -172,13 +187,13 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
 
 class DocumentAmendSerializer(serializers.ModelSerializer):
     """Serializer pour amender un document (créer une nouvelle version)"""
-    
+
     class Meta:
         model = Document
         fields = [
             'name', 'description', 'date_application',
-            'is_active', 'annee', 'edition', 'amendement', 
-            'categories', 'parent_document'
+            'is_active', 'edition', 'amendement',
+            'type', 'parent_document'
         ]
     
     def validate_name(self, value):

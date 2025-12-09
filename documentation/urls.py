@@ -15,8 +15,8 @@ urlpatterns = [
     path('documents/<uuid:uuid>/amend/', views.document_amend, name='document_amend'),
     path('documents/<uuid:uuid>/version-chain/', views.document_version_chain, name='document_version_chain'),
 
-    # ==================== API EDITIONS, AMENDEMENTS & CATEGORIES ====================
+    # ==================== API EDITIONS, AMENDEMENTS & TYPES ====================
     path('editions/', views.editions_list, name='editions_list'),
     path('amendements/', views.amendements_list, name='amendements_list'),
-    path('categories/', views.categories_list, name='categories_list'),
+    path('types/', views.types_document_list, name='types_document_list'),
 ]

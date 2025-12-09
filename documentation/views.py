@@ -7,6 +7,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ValidationError
 from .models import Document
 from .serializers import (
     DocumentSerializer,
@@ -14,9 +15,33 @@ from .serializers import (
     DocumentUpdateSerializer,
     DocumentAmendSerializer
 )
-from parametre.models import EditionDocument, AmendementDocument, CategorieDocument, Media, MediaDocument  # Pour editions_list, amendements_list et categories_list
+from parametre.models import EditionDocument, AmendementDocument, TypeDocument, Media, MediaDocument  # Pour editions_list, amendements_list et types_document_list
 
 logger = logging.getLogger(__name__)
+
+
+def validate_pdf_file(fichier):
+    """
+    Valide qu'un fichier est un PDF
+    """
+    if not fichier:
+        return True  # Pas de fichier = pas d'erreur
+
+    # Vérifier l'extension du fichier
+    if not fichier.name.lower().endswith('.pdf'):
+        raise ValidationError('Seuls les fichiers PDF sont acceptés')
+
+    # Vérifier le type MIME
+    content_type = fichier.content_type
+    if content_type and content_type != 'application/pdf':
+        raise ValidationError('Le fichier doit être au format PDF')
+
+    # Vérifier la taille (10MB max)
+    max_size = 10 * 1024 * 1024  # 10MB
+    if fichier.size > max_size:
+        raise ValidationError('La taille du fichier ne doit pas dépasser 10MB')
+
+    return True
 
 
 @api_view(['GET'])
@@ -28,12 +53,14 @@ def document_list(request):
     Paramètres query:
         - show_all=true : pour afficher tous les documents (actifs + inactifs)
         - is_active=true/false : pour filtrer par statut actif
+        - latest_only=true : pour afficher uniquement les derniers amendements (sans les versions précédentes)
     """
     try:
         # Par défaut, filtrer sur les documents actifs
         show_all = request.GET.get('show_all', 'false').lower() == 'true'
         is_active = request.GET.get('is_active', None)
-        
+        latest_only = request.GET.get('latest_only', 'false').lower() == 'true'
+
         if show_all:
             # Afficher tous les documents (actifs + inactifs)
             documents = Document.objects.all().order_by('-created_at')
@@ -44,7 +71,13 @@ def document_list(request):
         else:
             # Par défaut : uniquement les documents actifs
             documents = Document.objects.filter(is_active=True).order_by('-created_at')
-        
+
+        # Si latest_only=true, filtrer pour n'afficher que les derniers amendements
+        if latest_only:
+            # Exclure tous les documents qui ont des amendements (ne garder que les feuilles)
+            # Un document est "latest" s'il n'a pas d'amendements
+            documents = documents.filter(amendments__isnull=True)
+
         serializer = DocumentSerializer(documents, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
@@ -99,12 +132,21 @@ def document_create(request):
     try:
         # Récupérer le fichier s'il est présent
         fichier = request.FILES.get('document_file')
-        
+
+        # Valider le fichier PDF
+        try:
+            validate_pdf_file(fichier)
+        except ValidationError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Créer le document avec les données du formulaire
         serializer = DocumentCreateSerializer(data=request.data)
         if serializer.is_valid():
             document = serializer.save()
-            
+
             # Si un fichier est fourni, créer le média et la relation
             if fichier:
                 try:
@@ -216,10 +258,19 @@ def document_amend(request, uuid):
         
         # Ajouter le parent_document
         data['parent_document'] = str(parent_document.uuid)
-        
+
         # Récupérer le fichier s'il est présent
         fichier = request.FILES.get('document_file')
-        
+
+        # Valider le fichier PDF
+        try:
+            validate_pdf_file(fichier)
+        except ValidationError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Créer l'amendement avec validation
         serializer = DocumentAmendSerializer(data=data)
         if serializer.is_valid():
@@ -337,13 +388,13 @@ def amendements_list(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def categories_list(request):
+def types_document_list(request):
     """
-    Récupérer la liste des catégories actives
+    Récupérer la liste des types de documents actifs
     """
     try:
-        categories = CategorieDocument.objects.filter(is_active=True).order_by('nom')
-        data = [{'uuid': str(c.uuid), 'nom': c.nom, 'code': c.code, 'description': c.description} for c in categories]
+        types = TypeDocument.objects.filter(is_active=True).order_by('nom')
+        data = [{'uuid': str(t.uuid), 'nom': t.nom, 'code': t.code, 'description': t.description} for t in types]
         return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
