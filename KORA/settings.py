@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'pac',
     'activite_periodique',
+    'documentation',
     'parametre',
     'dashboard',
     'cartographie_risque',

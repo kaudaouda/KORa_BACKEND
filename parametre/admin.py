@@ -6,7 +6,8 @@ from .models import (
     Direction, SousDirection, Service, Processus,
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
     DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
-    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR
+    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
+    CategorieDocument, EditionDocument, AmendementDocument, MediaDocument
 )
 
 
@@ -688,3 +689,135 @@ class VersionEvaluationCDRAdmin(admin.ModelAdmin):
         """Afficher le nombre d'évaluations utilisant cette version"""
         return obj.evaluations.count()
     evaluations_count.short_description = 'Nombre d\'évaluations'
+
+
+# ==================== ADMIN POUR LA DOCUMENTATION ====================
+
+@admin.register(CategorieDocument)
+class CategorieDocumentAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les catégories de documents"""
+
+    list_display = [
+        'nom', 'code', 'is_active', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'nom', 'code', 'description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['nom']
+
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'nom', 'code', 'description')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(EditionDocument)
+class EditionDocumentAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les éditions de documents"""
+
+    list_display = [
+        'title', 'is_active', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'title', 'description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['-created_at']
+
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'title', 'description')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(AmendementDocument)
+class AmendementDocumentAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les amendements de documents"""
+
+    list_display = [
+        'title', 'is_active', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'title', 'description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['-created_at']
+
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'title', 'description')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(MediaDocument)
+class MediaDocumentAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les médias de documents"""
+    
+    list_display = [
+        'document', 'media', 'created_at'
+    ]
+    list_filter = [
+        'created_at', 'document'
+    ]
+    search_fields = [
+        'document__name', 'media__description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at'
+    ]
+    ordering = ['-created_at']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'document', 'media')
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_queryset(self, request):
+        """Optimiser les requêtes avec select_related"""
+        qs = super().get_queryset(request)
+        return qs.select_related('document', 'media')

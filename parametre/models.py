@@ -1093,4 +1093,126 @@ class VersionEvaluationCDR(HasActiveStatus):
         """Retourne le nom d'affichage"""
         return self.nom
 
+
+# ==================== MODÈLES POUR LA DOCUMENTATION ====================
+
+class CategorieDocument(HasActiveStatus):
+    """
+    Modèle pour les catégories de documents
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nom = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Nom de la catégorie (ex: 'Règlements', 'Procédures')"
+    )
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        blank=True,
+        null=True,
+        help_text="Code court pour la catégorie (ex: 'REG', 'PROC')"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description de la catégorie"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'categorie_document'
+        verbose_name = 'Catégorie de Document'
+        verbose_name_plural = 'Catégories de Documents'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
+class EditionDocument(HasActiveStatus):
+    """
+    Modèle pour les éditions de documents
+    Table de référence simple pour les éditions
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(
+        max_length=200,
+        help_text="Titre de l'édition"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description de l'édition"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'edition_document'
+        verbose_name = 'Édition de Document'
+        verbose_name_plural = 'Éditions de Documents'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+
+class AmendementDocument(HasActiveStatus):
+    """
+    Modèle pour les amendements de documents
+    Table de référence simple pour les amendements
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(
+        max_length=200,
+        help_text="Titre de l'amendement"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description de l'amendement"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'amendement_document'
+        verbose_name = 'Amendement de Document'
+        verbose_name_plural = 'Amendements de Documents'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+
+class MediaDocument(models.Model):
+    """
+    Modèle pour les médias associés aux documents
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(
+        'documentation.Document',
+        on_delete=models.CASCADE,
+        related_name='medias',
+        help_text="Document associé à ce média"
+    )
+    media = models.ForeignKey(
+        Media,
+        on_delete=models.CASCADE,
+        related_name='document_medias',
+        help_text="Média associé à ce document"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'media_document'
+        verbose_name = 'Média de Document'
+        verbose_name_plural = 'Médias de Documents'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Média pour {self.document.name}"
+
 # MoisAP déplacé dans activite_periodique pour résoudre les dépendances circulaires
