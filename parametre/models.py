@@ -1096,39 +1096,43 @@ class VersionEvaluationCDR(HasActiveStatus):
 
 # ==================== MODÈLES POUR LA DOCUMENTATION ====================
 
-class CategorieDocument(HasActiveStatus):
+class TypeDocument(HasActiveStatus):
     """
-    Modèle pour les catégories de documents
+    Modèle pour les types de documents
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     nom = models.CharField(
         max_length=100,
         unique=True,
-        help_text="Nom de la catégorie (ex: 'Règlements', 'Procédures')"
+        help_text="Nom du type de document (ex: 'Règlements', 'Procédures')"
     )
     code = models.CharField(
         max_length=20,
         unique=True,
         blank=True,
         null=True,
-        help_text="Code court pour la catégorie (ex: 'REG', 'PROC')"
+        help_text="Code court pour le type de document (ex: 'REG', 'PROC')"
     )
     description = models.TextField(
         blank=True,
         null=True,
-        help_text="Description de la catégorie"
+        help_text="Description du type de document"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'categorie_document'
-        verbose_name = 'Catégorie de Document'
-        verbose_name_plural = 'Catégories de Documents'
+        db_table = 'type_document'
+        verbose_name = 'Type de Document'
+        verbose_name_plural = 'Types de Documents'
         ordering = ['nom']
 
     def __str__(self):
         return self.nom
+
+
+# Alias pour la compatibilité temporaire
+CategorieDocument = TypeDocument
 
 
 class EditionDocument(HasActiveStatus):

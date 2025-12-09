@@ -7,7 +7,7 @@ from .models import (
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
     DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
-    CategorieDocument, EditionDocument, AmendementDocument, MediaDocument
+    TypeDocument, EditionDocument, AmendementDocument, MediaDocument
 )
 
 
@@ -693,9 +693,9 @@ class VersionEvaluationCDRAdmin(admin.ModelAdmin):
 
 # ==================== ADMIN POUR LA DOCUMENTATION ====================
 
-@admin.register(CategorieDocument)
-class CategorieDocumentAdmin(admin.ModelAdmin):
-    """Configuration de l'interface d'administration pour les catégories de documents"""
+@admin.register(TypeDocument)
+class TypeDocumentAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les types de documents"""
 
     list_display = [
         'nom', 'code', 'is_active', 'created_at'
