@@ -775,13 +775,14 @@ def suivi_ap_delete(request, uuid):
             uuid=uuid,
             details_ap__activite_periodique__cree_par=request.user
         )
-        
-        # Vérifier que l'AP n'est pas validée
-        if suivi.details_ap.activite_periodique.is_validated:
+
+        # Vérifier que l'AP n'a pas d'amendements (verrouillée)
+        ap = suivi.details_ap.activite_periodique
+        if _has_amendements_following(ap):
             return Response({
-                'error': 'Impossible de supprimer un suivi d\'une Activité Périodique validée'
+                'error': 'Ce tableau ne peut plus être modifié car un amendement a été créé. Veuillez modifier l\'amendement correspondant.'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         suivi.delete()
         return Response({
             'message': 'Suivi AP supprimé avec succès'
