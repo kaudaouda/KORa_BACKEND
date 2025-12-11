@@ -14,6 +14,11 @@ from .serializers import (
     SuiviActionSerializer, SuiviActionCreateSerializer, SuiviActionUpdateSerializer
 )
 from parametre.models import Versions
+from parametre.views import (
+    log_cdr_creation,
+    log_cdr_validation,
+    get_client_ip
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -298,6 +303,14 @@ def cdr_get_or_create(request):
                 logger.info(f"[cdr_get_or_create] Serializer valide, données validées: {serializer.validated_data}")
                 cdr = serializer.save()
                 logger.info(f"[cdr_get_or_create] CDR créée avec succès: {cdr.uuid}")
+
+                # Log de l'activité
+                try:
+                    ip_address = get_client_ip(request)
+                    user_agent = request.META.get('HTTP_USER_AGENT', '')
+                    log_cdr_creation(request.user, cdr, ip_address, user_agent)
+                except Exception as log_error:
+                    logger.error(f"Erreur lors du logging de la création de la CDR: {log_error}")
 
                 # Sérialiser la CDR créée pour la réponse
                 response_serializer = CDRSerializer(cdr)
@@ -1027,9 +1040,17 @@ def validate_cdr(request, uuid):
         cdr.date_validation = timezone.now()
         cdr.valide_par = request.user
         cdr.save()
-        
+
         logger.info(f"CDR {cdr.uuid} validée par {request.user.username}")
-        
+
+        # Log de l'activité
+        try:
+            ip_address = get_client_ip(request)
+            user_agent = request.META.get('HTTP_USER_AGENT', '')
+            log_cdr_validation(request.user, cdr, ip_address, user_agent)
+        except Exception as log_error:
+            logger.error(f"Erreur lors du logging de la validation de la CDR: {log_error}")
+
         return Response({
             'success': True,
             'message': 'CDR validée avec succès',
