@@ -16,6 +16,12 @@ from .serializers import (
     SuivisAPCreateSerializer
 )
 from parametre.models import Processus, Annee, Versions
+from parametre.views import (
+    log_activite_periodique_creation,
+    log_activite_periodique_update,
+    log_activite_periodique_validation,
+    get_client_ip
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -249,6 +255,14 @@ def activite_periodique_get_or_create(request):
                 ap = serializer.save()
                 logger.info(f"[activite_periodique_get_or_create] AP créée avec succès: {ap.uuid}")
 
+                # Log de l'activité
+                try:
+                    ip_address = get_client_ip(request)
+                    user_agent = request.META.get('HTTP_USER_AGENT', '')
+                    log_activite_periodique_creation(request.user, ap, ip_address, user_agent)
+                except Exception as log_error:
+                    logger.error(f"Erreur lors du logging de la création de l'AP: {log_error}")
+
                 response_serializer = ActivitePeriodiqueSerializer(ap)
                 return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
@@ -274,9 +288,18 @@ def activite_periodique_create(request):
         # Ne pas passer cree_par dans data, le serializer le gère via le contexte
         
         serializer = ActivitePeriodiqueSerializer(data=data, context={'request': request})
-        
+
         if serializer.is_valid():
             ap = serializer.save()
+
+            # Log de l'activité
+            try:
+                ip_address = get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                log_activite_periodique_creation(request.user, ap, ip_address, user_agent)
+            except Exception as log_error:
+                logger.error(f"Erreur lors du logging de la création de l'AP: {log_error}")
+
             response_serializer = ActivitePeriodiqueSerializer(ap)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         
@@ -305,9 +328,18 @@ def activite_periodique_update(request, uuid):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = ActivitePeriodiqueSerializer(ap, data=request.data, partial=True, context={'request': request})
-        
+
         if serializer.is_valid():
-            serializer.save()
+            ap = serializer.save()
+
+            # Log de l'activité
+            try:
+                ip_address = get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                log_activite_periodique_update(request.user, ap, ip_address, user_agent)
+            except Exception as log_error:
+                logger.error(f"Erreur lors du logging de la mise à jour de l'AP: {log_error}")
+
             return Response(serializer.data, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -413,7 +445,15 @@ def activite_periodique_validate(request, uuid):
         ap.validated_at = timezone.now()
         ap.validated_by = request.user
         ap.save()
-        
+
+        # Log de l'activité
+        try:
+            ip_address = get_client_ip(request)
+            user_agent = request.META.get('HTTP_USER_AGENT', '')
+            log_activite_periodique_validation(request.user, ap, ip_address, user_agent)
+        except Exception as log_error:
+            logger.error(f"Erreur lors du logging de la validation de l'AP: {log_error}")
+
         serializer = ActivitePeriodiqueSerializer(ap)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except ActivitePeriodique.DoesNotExist:

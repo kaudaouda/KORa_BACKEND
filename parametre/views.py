@@ -383,6 +383,287 @@ def log_user_logout(user, ip_address=None, user_agent=None):
     )
 
 
+# ============================================
+# LOGS POUR ACTIVITÉS PÉRIODIQUES
+# ============================================
+
+def log_activite_periodique_creation(user, ap, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'une Activité Périodique
+    """
+    processus_nom = ap.processus.nom if hasattr(ap, 'processus') and ap.processus else 'N/A'
+    annee = ap.annee_valeur if hasattr(ap, 'annee_valeur') else (ap.annee.libelle if hasattr(ap, 'annee') and ap.annee else 'N/A')
+    type_tableau = ap.type_tableau.nom if hasattr(ap, 'type_tableau') and ap.type_tableau else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='activite_periodique',
+        entity_id=str(ap.uuid),
+        entity_name=f"{processus_nom} - {annee}",
+        description=f"Création de l'Activité Périodique pour {processus_nom} - {annee} ({type_tableau})",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_activite_periodique_update(user, ap, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la modification d'une Activité Périodique
+    """
+    processus_nom = ap.processus.nom if hasattr(ap, 'processus') and ap.processus else 'N/A'
+    annee = ap.annee_valeur if hasattr(ap, 'annee_valeur') else (ap.annee.libelle if hasattr(ap, 'annee') and ap.annee else 'N/A')
+
+    return log_activity(
+        user=user,
+        action='update',
+        entity_type='activite_periodique',
+        entity_id=str(ap.uuid),
+        entity_name=f"{processus_nom} - {annee}",
+        description=f"Modification de l'Activité Périodique pour {processus_nom} - {annee}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_activite_periodique_validation(user, ap, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la validation d'une Activité Périodique
+    """
+    processus_nom = ap.processus.nom if hasattr(ap, 'processus') and ap.processus else 'N/A'
+    annee = ap.annee_valeur if hasattr(ap, 'annee_valeur') else (ap.annee.libelle if hasattr(ap, 'annee') and ap.annee else 'N/A')
+
+    return log_activity(
+        user=user,
+        action='update',
+        entity_type='activite_periodique',
+        entity_id=str(ap.uuid),
+        entity_name=f"{processus_nom} - {annee}",
+        description=f"Validation de l'Activité Périodique pour {processus_nom} - {annee}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+# ============================================
+# LOGS POUR CARTOGRAPHIE DE RISQUE (CDR)
+# ============================================
+
+def log_cdr_creation(user, cdr, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'une Cartographie de Risque
+    """
+    processus_nom = cdr.processus.nom if hasattr(cdr, 'processus') and cdr.processus else 'N/A'
+    annee = cdr.annee if hasattr(cdr, 'annee') else 'N/A'
+    type_tableau = cdr.type_tableau.nom if hasattr(cdr, 'type_tableau') and cdr.type_tableau else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='cdr',
+        entity_id=str(cdr.uuid),
+        entity_name=f"{processus_nom} - {annee}",
+        description=f"Création de la Cartographie de Risque pour {processus_nom} - {annee} ({type_tableau})",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_cdr_update(user, cdr, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la modification d'une Cartographie de Risque
+    """
+    processus_nom = cdr.processus.nom if hasattr(cdr, 'processus') and cdr.processus else 'N/A'
+    annee = cdr.annee if hasattr(cdr, 'annee') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='update',
+        entity_type='cdr',
+        entity_id=str(cdr.uuid),
+        entity_name=f"{processus_nom} - {annee}",
+        description=f"Modification de la Cartographie de Risque pour {processus_nom} - {annee}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_cdr_validation(user, cdr, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la validation d'une Cartographie de Risque
+    """
+    processus_nom = cdr.processus.nom if hasattr(cdr, 'processus') and cdr.processus else 'N/A'
+    annee = cdr.annee if hasattr(cdr, 'annee') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='update',
+        entity_type='cdr',
+        entity_id=str(cdr.uuid),
+        entity_name=f"{processus_nom} - {annee}",
+        description=f"Validation de la Cartographie de Risque pour {processus_nom} - {annee}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+# ============================================
+# LOGS POUR DOCUMENTATION
+# ============================================
+
+def log_document_creation(user, document, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un Document
+    """
+    titre = document.titre if hasattr(document, 'titre') else 'N/A'
+    type_doc = document.type_document.nom if hasattr(document, 'type_document') and document.type_document else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='document',
+        entity_id=str(document.uuid),
+        entity_name=titre[:100],
+        description=f"Création du document '{titre}' ({type_doc})",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_document_update(user, document, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la modification d'un Document
+    """
+    titre = document.titre if hasattr(document, 'titre') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='update',
+        entity_type='document',
+        entity_id=str(document.uuid),
+        entity_name=titre[:100],
+        description=f"Modification du document '{titre}'",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_document_edition_creation(user, edition, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'une Édition de document
+    """
+    document_titre = edition.document.titre if hasattr(edition, 'document') and edition.document else 'N/A'
+    numero = edition.numero if hasattr(edition, 'numero') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='document_edition',
+        entity_id=str(edition.uuid),
+        entity_name=f"{document_titre} - Édition {numero}",
+        description=f"Création de l'édition {numero} du document '{document_titre}'",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_document_amendement_creation(user, amendement, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un Amendement de document
+    """
+    document_titre = amendement.document.titre if hasattr(amendement, 'document') and amendement.document else 'N/A'
+    numero = amendement.numero if hasattr(amendement, 'numero') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='document_amendement',
+        entity_id=str(amendement.uuid),
+        entity_name=f"{document_titre} - Amendement {numero}",
+        description=f"Création de l'amendement {numero} du document '{document_titre}'",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+# ============================================
+# LOGS POUR TABLEAU DE BORD
+# ============================================
+
+def log_tableau_bord_creation(user, tableau, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un Tableau de Bord
+    """
+    nom = tableau.nom if hasattr(tableau, 'nom') else 'N/A'
+    annee = tableau.annee.libelle if hasattr(tableau, 'annee') and tableau.annee else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='tableau_bord',
+        entity_id=str(tableau.uuid),
+        entity_name=f"{nom} - {annee}",
+        description=f"Création du Tableau de Bord '{nom}' pour l'année {annee}",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_tableau_bord_update(user, tableau, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la modification d'un Tableau de Bord
+    """
+    nom = tableau.nom if hasattr(tableau, 'nom') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='update',
+        entity_type='tableau_bord',
+        entity_id=str(tableau.uuid),
+        entity_name=nom,
+        description=f"Modification du Tableau de Bord '{nom}'",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_objectif_creation(user, objectif, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un Objectif
+    """
+    nom = objectif.nom if hasattr(objectif, 'nom') else 'N/A'
+    numero = objectif.numero if hasattr(objectif, 'numero') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='objectif',
+        entity_id=str(objectif.uuid),
+        entity_name=f"Objectif {numero}: {nom[:50]}",
+        description=f"Création de l'objectif '{nom}'",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+def log_indicateur_creation(user, indicateur, ip_address=None, user_agent=None):
+    """
+    Log spécifique pour la création d'un Indicateur
+    """
+    nom = indicateur.nom if hasattr(indicateur, 'nom') else 'N/A'
+
+    return log_activity(
+        user=user,
+        action='create',
+        entity_type='indicateur',
+        entity_id=str(indicateur.uuid),
+        entity_name=nom[:100],
+        description=f"Création de l'indicateur '{nom}'",
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def recent_activities(request):
@@ -393,12 +674,12 @@ def recent_activities(request):
         limit = int(request.GET.get('limit', 10))
         user_specific = request.GET.get('user_only', 'false').lower() == 'true'
         
-        # Récupération des activités directement
-        queryset = ActivityLog.objects.select_related('user')
-        
+        # Récupération des activités directement (exclure login/logout)
+        queryset = ActivityLog.objects.select_related('user').exclude(action__in=['login', 'logout'])
+
         if user_specific:
             queryset = queryset.filter(user=request.user)
-        
+
         activities = queryset.order_by('-created_at')[:limit]
         
         # Formatage des données
@@ -446,9 +727,9 @@ def user_activities(request):
     """
     try:
         limit = int(request.GET.get('limit', 20))
-        
-        # Récupération des activités de l'utilisateur
-        activities = ActivityLog.objects.filter(user=request.user).select_related('user').order_by('-created_at')[:limit]
+
+        # Récupération des activités de l'utilisateur (exclure login/logout)
+        activities = ActivityLog.objects.filter(user=request.user).exclude(action__in=['login', 'logout']).select_related('user').order_by('-created_at')[:limit]
         
         # Formatage des données
         data = []

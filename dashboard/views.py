@@ -9,6 +9,13 @@ from django.http import JsonResponse
 from django.utils import timezone
 import logging
 from .models import Objectives, Indicateur, Observation, TableauBord
+from parametre.views import (
+    log_tableau_bord_creation,
+    log_tableau_bord_update,
+    log_objectif_creation,
+    log_indicateur_creation,
+    get_client_ip
+)
 
 logger = logging.getLogger(__name__)
 from .serializers import (
@@ -142,6 +149,15 @@ def tableaux_bord_list_create(request):
                 try:
                     instance = serializer.save()
                     logger.info(f"Tableau créé avec succès: {instance.uuid}")
+
+                    # Log de l'activité
+                    try:
+                        ip_address = get_client_ip(request)
+                        user_agent = request.META.get('HTTP_USER_AGENT', '')
+                        log_tableau_bord_creation(request.user, instance, ip_address, user_agent)
+                    except Exception as log_error:
+                        logger.error(f"Erreur lors du logging de la création du tableau: {log_error}")
+
                     # Si amendement et clone demandé, copier les objectifs (+ éléments associés)
                     if instance.type_tableau.code in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone and instance.initial_ref:
                         initial = instance.initial_ref
@@ -214,6 +230,15 @@ def tableau_bord_detail(request, uuid):
         if serializer.is_valid():
             try:
                 instance = serializer.save()
+
+                # Log de l'activité
+                try:
+                    ip_address = get_client_ip(request)
+                    user_agent = request.META.get('HTTP_USER_AGENT', '')
+                    log_tableau_bord_update(request.user, instance, ip_address, user_agent)
+                except Exception as log_error:
+                    logger.error(f"Erreur lors du logging de la mise à jour du tableau: {log_error}")
+
                 return Response({'success': True, 'data': TableauBordSerializer(instance).data})
             except Exception as e:
                 return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -606,13 +631,21 @@ def objectives_create(request):
                 }, status=status.HTTP_404_NOT_FOUND)
         
         serializer = ObjectivesCreateSerializer(data=request.data, context={'request': request})
-        
+
         if serializer.is_valid():
             objective = serializer.save()
-            
+
+            # Log de l'activité
+            try:
+                ip_address = get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                log_objectif_creation(request.user, objective, ip_address, user_agent)
+            except Exception as log_error:
+                logger.error(f"Erreur lors du logging de la création de l'objectif: {log_error}")
+
             # Retourner l'objectif créé avec tous ses détails
             response_serializer = ObjectivesSerializer(objective)
-            
+
             return Response({
                 'success': True,
                 'message': 'Objectif créé avec succès',
@@ -897,15 +930,23 @@ def indicateurs_create(request):
                 }, status=status.HTTP_404_NOT_FOUND)
         
         serializer = IndicateurCreateSerializer(data=request.data)
-        
+
         if serializer.is_valid():
             indicateur = serializer.save()
-            
+
+            # Log de l'activité
+            try:
+                ip_address = get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                log_indicateur_creation(request.user, indicateur, ip_address, user_agent)
+            except Exception as log_error:
+                logger.error(f"Erreur lors du logging de la création de l'indicateur: {log_error}")
+
             # Retourner l'indicateur créé avec tous ses détails
             response_serializer = IndicateurSerializer(indicateur)
-            
+
             logger.info(f"Indicateur créé: {indicateur.libelle} par {request.user.username}")
-            
+
             return Response({
                 'success': True,
                 'message': 'Indicateur créé avec succès',

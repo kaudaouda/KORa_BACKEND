@@ -16,6 +16,11 @@ from .serializers import (
     DocumentAmendSerializer
 )
 from parametre.models import EditionDocument, AmendementDocument, TypeDocument, Media, MediaDocument  # Pour editions_list, amendements_list et types_document_list
+from parametre.views import (
+    log_document_creation,
+    log_document_update,
+    get_client_ip
+)
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +160,7 @@ def document_create(request):
                         fichier=fichier,
                         description=f'Fichier du document: {document.name}'
                     )
-                    
+
                     # Créer la relation MediaDocument
                     MediaDocument.objects.create(
                         document=document,
@@ -165,7 +170,15 @@ def document_create(request):
                     # Si l'upload du média échoue, on continue quand même
                     # Le document est créé mais sans média
                     logger.error(f"Erreur lors de la création du média pour le document {document.uuid}: {str(media_error)}")
-            
+
+            # Log de l'activité
+            try:
+                ip_address = get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                log_document_creation(request.user, document, ip_address, user_agent)
+            except Exception as log_error:
+                logger.error(f"Erreur lors du logging de la création du document: {log_error}")
+
             response_serializer = DocumentSerializer(document, context={'request': request})
             return Response(
                 response_serializer.data,
@@ -197,6 +210,15 @@ def document_update(request, uuid):
         )
         if serializer.is_valid():
             document = serializer.save()
+
+            # Log de l'activité
+            try:
+                ip_address = get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                log_document_update(request.user, document, ip_address, user_agent)
+            except Exception as log_error:
+                logger.error(f"Erreur lors du logging de la mise à jour du document: {log_error}")
+
             response_serializer = DocumentSerializer(document, context={'request': request})
             return Response(
                 response_serializer.data,
@@ -275,7 +297,7 @@ def document_amend(request, uuid):
         serializer = DocumentAmendSerializer(data=data)
         if serializer.is_valid():
             amended_document = serializer.save()
-            
+
             # Si un fichier est fourni, créer le média et la relation
             if fichier:
                 try:
@@ -284,7 +306,7 @@ def document_amend(request, uuid):
                         fichier=fichier,
                         description=f'Fichier de l\'amendement: {amended_document.name}'
                     )
-                    
+
                     # Créer la relation MediaDocument
                     MediaDocument.objects.create(
                         document=amended_document,
@@ -292,7 +314,15 @@ def document_amend(request, uuid):
                     )
                 except Exception as media_error:
                     logger.error(f"Erreur lors de la création du média: {str(media_error)}")
-            
+
+            # Log de l'activité
+            try:
+                ip_address = get_client_ip(request)
+                user_agent = request.META.get('HTTP_USER_AGENT', '')
+                log_document_creation(request.user, amended_document, ip_address, user_agent)
+            except Exception as log_error:
+                logger.error(f"Erreur lors du logging de la création de l'amendement: {log_error}")
+
             response_serializer = DocumentSerializer(amended_document, context={'request': request})
             return Response(
                 {

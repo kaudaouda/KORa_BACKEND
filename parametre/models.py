@@ -450,6 +450,14 @@ class ActivityLog(models.Model):
         ('user', 'Utilisateur'),
         ('media', 'Média'),
         ('preuve', 'Preuve'),
+        ('activite_periodique', 'Activité Périodique'),
+        ('cdr', 'Cartographie de Risque'),
+        ('document', 'Document'),
+        ('document_edition', 'Édition de Document'),
+        ('document_amendement', 'Amendement de Document'),
+        ('tableau_bord', 'Tableau de Bord'),
+        ('objectif', 'Objectif'),
+        ('indicateur', 'Indicateur'),
     ]
 
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
