@@ -283,7 +283,7 @@ class SuivisAPSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
     def validate_mois(self, value):
-        """Valider que le mois est autorisé selon la fréquence du détail AP"""
+        """Valider que le mois est autorisé selon la fréquence et les mois déjà renseignés"""
         # Récupérer l'instance depuis l'objet si c'est une mise à jour
         if self.instance:
             detail_ap = self.instance.details_ap
@@ -296,36 +296,82 @@ class SuivisAPSerializer(serializers.ModelSerializer):
                 detail_ap = DetailsAP.objects.select_related('frequence').get(uuid=details_ap_uuid)
             except DetailsAP.DoesNotExist:
                 return value
-        
+
         # Si pas de fréquence définie, autoriser tous les mois
         if not detail_ap.frequence:
             return value
-        
+
         frequence_nom = detail_ap.frequence.nom.lower()
         mois_numero = value.numero
-        
-        # Définir les mois autorisés selon la fréquence
+
+        # Récupérer les suivis existants pour ce détail AP (excluant l'instance actuelle si mise à jour)
+        suivis_existants = detail_ap.suivis.all()
+        if self.instance:
+            suivis_existants = suivis_existants.exclude(uuid=self.instance.uuid)
+
+        # Extraire les numéros de mois déjà renseignés
+        mois_renseignes = list(suivis_existants.values_list('mois__numero', flat=True))
+
+        # Définir les mois autorisés selon la fréquence et les mois déjà renseignés
         mois_autorises = []
         if frequence_nom == 'trimestrielle':
-            # Trimestrielle : 3ème mois de chaque trimestre (Mars, Juin, Septembre, Décembre)
-            mois_autorises = [3, 6, 9, 12]
+            # Trimestrielle : déterminer le trimestre en fonction du premier mois renseigné
+            # T1: 1,2,3 / T2: 4,5,6 / T3: 7,8,9 / T4: 10,11,12
+            if mois_renseignes:
+                # Déterminer le trimestre déjà commencé
+                premier_mois = min(mois_renseignes)
+                if premier_mois in [1, 2, 3]:
+                    mois_autorises = [1, 2, 3]
+                elif premier_mois in [4, 5, 6]:
+                    mois_autorises = [4, 5, 6]
+                elif premier_mois in [7, 8, 9]:
+                    mois_autorises = [7, 8, 9]
+                elif premier_mois in [10, 11, 12]:
+                    mois_autorises = [10, 11, 12]
+            else:
+                # Aucun mois renseigné, tous les trimestres sont possibles
+                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
         elif frequence_nom == 'semestrielle':
-            # Semestrielle : chaque 6ème mois (Juin, Décembre)
-            mois_autorises = [6, 12]
+            # Semestrielle : déterminer le semestre en fonction du premier mois renseigné
+            # S1: 1,2,3,4,5,6 / S2: 7,8,9,10,11,12
+            if mois_renseignes:
+                # Déterminer le semestre déjà commencé
+                premier_mois = min(mois_renseignes)
+                if premier_mois in [1, 2, 3, 4, 5, 6]:
+                    mois_autorises = [1, 2, 3, 4, 5, 6]
+                elif premier_mois in [7, 8, 9, 10, 11, 12]:
+                    mois_autorises = [7, 8, 9, 10, 11, 12]
+            else:
+                # Aucun mois renseigné, tous les semestres sont possibles
+                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
         elif frequence_nom == 'annuelle':
-            # Annuelle : seulement le 12ème mois (Décembre)
-            mois_autorises = [12]
+            # Annuelle : tous les mois de l'année sont toujours autorisés
+            mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
         else:
-            # Pour les autres fréquences, autoriser tous les mois
+            # Pour les autres fréquences (mensuelle, etc.), autoriser tous les mois
             return value
-        
+
         if mois_numero not in mois_autorises:
             mois_nom = value.nom
-            raise serializers.ValidationError(
-                f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'. "
-                f"Mois autorisés : {', '.join([str(m) for m in mois_autorises])}"
-            )
-        
+            if frequence_nom == 'trimestrielle' and mois_renseignes:
+                trimestre_actuel = (min(mois_renseignes) - 1) // 3 + 1
+                raise serializers.ValidationError(
+                    f"Pour la fréquence trimestrielle, vous avez déjà commencé à renseigner le trimestre {trimestre_actuel}. "
+                    f"Vous ne pouvez renseigner que les mois de ce trimestre."
+                )
+            elif frequence_nom == 'semestrielle' and mois_renseignes:
+                semestre_actuel = (min(mois_renseignes) - 1) // 6 + 1
+                raise serializers.ValidationError(
+                    f"Pour la fréquence semestrielle, vous avez déjà commencé à renseigner le semestre {semestre_actuel}. "
+                    f"Vous ne pouvez renseigner que les mois de ce semestre."
+                )
+            else:
+                raise serializers.ValidationError(
+                    f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'."
+                )
+
         return value
 
 
@@ -375,16 +421,16 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_mois(self, value):
-        """Valider que le mois est autorisé selon la fréquence du détail AP"""
+        """Valider que le mois est autorisé selon la fréquence et les mois déjà renseignés"""
         details_ap = self.initial_data.get('details_ap')
         if not details_ap:
             return value
-        
+
         try:
             detail_ap = DetailsAP.objects.select_related('activite_periodique', 'frequence').get(uuid=details_ap)
         except DetailsAP.DoesNotExist:
             return value
-        
+
         # Vérifier que l'AP est validée (les suivis ne peuvent être créés que si l'AP est validée)
         # Exception : permettre la création lors de la copie d'amendement
         from_amendment_copy = self.initial_data.get('from_amendment_copy', False)
@@ -392,36 +438,80 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "L'Activité Périodique doit être validée avant de pouvoir renseigner les suivis. Veuillez remplir tous les champs requis des détails et valider le tableau."
             )
-        
+
         # Si pas de fréquence définie, autoriser tous les mois
         if not detail_ap.frequence:
             return value
-        
+
         frequence_nom = detail_ap.frequence.nom.lower()
         mois_numero = value.numero
-        
-        # Définir les mois autorisés selon la fréquence
+
+        # Récupérer les suivis existants pour ce détail AP
+        suivis_existants = detail_ap.suivis.all()
+
+        # Extraire les numéros de mois déjà renseignés
+        mois_renseignes = list(suivis_existants.values_list('mois__numero', flat=True))
+
+        # Définir les mois autorisés selon la fréquence et les mois déjà renseignés
         mois_autorises = []
         if frequence_nom == 'trimestrielle':
-            # Trimestrielle : 3ème mois de chaque trimestre (Mars, Juin, Septembre, Décembre)
-            mois_autorises = [3, 6, 9, 12]
+            # Trimestrielle : déterminer le trimestre en fonction du premier mois renseigné
+            # T1: 1,2,3 / T2: 4,5,6 / T3: 7,8,9 / T4: 10,11,12
+            if mois_renseignes:
+                # Déterminer le trimestre déjà commencé
+                premier_mois = min(mois_renseignes)
+                if premier_mois in [1, 2, 3]:
+                    mois_autorises = [1, 2, 3]
+                elif premier_mois in [4, 5, 6]:
+                    mois_autorises = [4, 5, 6]
+                elif premier_mois in [7, 8, 9]:
+                    mois_autorises = [7, 8, 9]
+                elif premier_mois in [10, 11, 12]:
+                    mois_autorises = [10, 11, 12]
+            else:
+                # Aucun mois renseigné, tous les trimestres sont possibles
+                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
         elif frequence_nom == 'semestrielle':
-            # Semestrielle : chaque 6ème mois (Juin, Décembre)
-            mois_autorises = [6, 12]
+            # Semestrielle : déterminer le semestre en fonction du premier mois renseigné
+            # S1: 1,2,3,4,5,6 / S2: 7,8,9,10,11,12
+            if mois_renseignes:
+                # Déterminer le semestre déjà commencé
+                premier_mois = min(mois_renseignes)
+                if premier_mois in [1, 2, 3, 4, 5, 6]:
+                    mois_autorises = [1, 2, 3, 4, 5, 6]
+                elif premier_mois in [7, 8, 9, 10, 11, 12]:
+                    mois_autorises = [7, 8, 9, 10, 11, 12]
+            else:
+                # Aucun mois renseigné, tous les semestres sont possibles
+                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
         elif frequence_nom == 'annuelle':
-            # Annuelle : seulement le 12ème mois (Décembre)
-            mois_autorises = [12]
+            # Annuelle : tous les mois de l'année sont toujours autorisés
+            mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
         else:
-            # Pour les autres fréquences, autoriser tous les mois
+            # Pour les autres fréquences (mensuelle, etc.), autoriser tous les mois
             return value
-        
+
         if mois_numero not in mois_autorises:
             mois_nom = value.nom
-            raise serializers.ValidationError(
-                f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'. "
-                f"Mois autorisés : {', '.join([str(m) for m in mois_autorises])}"
-            )
-        
+            if frequence_nom == 'trimestrielle' and mois_renseignes:
+                trimestre_actuel = (min(mois_renseignes) - 1) // 3 + 1
+                raise serializers.ValidationError(
+                    f"Pour la fréquence trimestrielle, vous avez déjà commencé à renseigner le trimestre {trimestre_actuel}. "
+                    f"Vous ne pouvez renseigner que les mois de ce trimestre."
+                )
+            elif frequence_nom == 'semestrielle' and mois_renseignes:
+                semestre_actuel = (min(mois_renseignes) - 1) // 6 + 1
+                raise serializers.ValidationError(
+                    f"Pour la fréquence semestrielle, vous avez déjà commencé à renseigner le semestre {semestre_actuel}. "
+                    f"Vous ne pouvez renseigner que les mois de ce semestre."
+                )
+            else:
+                raise serializers.ValidationError(
+                    f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'."
+                )
+
         return value
 
 
