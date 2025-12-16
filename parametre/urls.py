@@ -119,4 +119,23 @@ urlpatterns = [
     path('risques/create/', views.risque_create, name='risque_create'),
     path('risques/<uuid:uuid>/update/', views.risque_update, name='risque_update'),
     path('risques/<uuid:uuid>/delete/', views.risque_delete, name='risque_delete'),
+    
+    # ==================== SYSTÈME DE RÔLES ====================
+    path('roles/', views.roles_list, name='roles_list'),
+    path('roles/all/', views.roles_all_list, name='roles_all_list'),
+    path('roles/create/', views.role_create, name='role_create'),
+    path('roles/<uuid:uuid>/update/', views.role_update, name='role_update'),
+    
+    # ==================== USER PROCESSUS ====================
+    path('user-processus/', views.user_processus_list, name='user_processus_list'),
+    path('user-processus/create/', views.user_processus_create, name='user_processus_create'),
+    path('user-processus/<uuid:uuid>/update/', views.user_processus_update, name='user_processus_update'),
+    path('user-processus/<uuid:uuid>/delete/', views.user_processus_delete, name='user_processus_delete'),
+    path('admin/user-processus/', views.admin_get_user_processus, name='admin_get_user_processus'),
+    
+    # ==================== USER PROCESSUS ROLE ====================
+    path('user-processus-role/', views.user_processus_role_list, name='user_processus_role_list'),
+    path('user-processus-role/create/', views.user_processus_role_create, name='user_processus_role_create'),
+    path('user-processus-role/<uuid:uuid>/update/', views.user_processus_role_update, name='user_processus_role_update'),
+    path('user-processus-role/<uuid:uuid>/delete/', views.user_processus_role_delete, name='user_processus_role_delete'),
 ]
