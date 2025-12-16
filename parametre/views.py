@@ -17,13 +17,15 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Direction,
     SousDirection, Service, Processus, Preuve, ActivityLog, StatutActionCDR,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
-    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque
+    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque,
+    Role, UserProcessus, UserProcessusRole
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
     SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
     DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
-    RisqueSerializer, StatutActionCDRSerializer
+    RisqueSerializer, StatutActionCDRSerializer,
+    RoleSerializer, UserProcessusSerializer, UserProcessusRoleSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -2538,3 +2540,357 @@ def risque_delete(request, uuid):
         logger.error(f"Erreur lors de la suppression du risque: {str(e)}")
         return Response({'error': 'Impossible de supprimer le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# ==================== SYSTÈME DE RÔLES ====================
+
+# Roles CRUD
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def roles_list(request):
+    """Liste des rôles actifs"""
+    try:
+        roles = Role.objects.filter(is_active=True).order_by('nom')
+        serializer = RoleSerializer(roles, many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des rôles: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des rôles',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def roles_all_list(request):
+    """Liste de tous les rôles (y compris les désactivés)"""
+    try:
+        roles = Role.objects.all().order_by('nom')
+        serializer = RoleSerializer(roles, many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de tous les rôles: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération de tous les rôles',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def role_create(request):
+    """Créer un nouveau rôle"""
+    try:
+        serializer = RoleSerializer(data=request.data)
+        if serializer.is_valid():
+            role = serializer.save()
+            log_activity(
+                user=request.user,
+                action='create',
+                entity_type='role',
+                entity_id=str(role.uuid),
+                entity_name=role.nom,
+                description=f"Création du rôle {role.nom}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            return Response(RoleSerializer(role).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du rôle: {str(e)}")
+        return Response({'error': 'Impossible de créer le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def role_update(request, uuid):
+    """Mettre à jour un rôle"""
+    try:
+        role = Role.objects.get(uuid=uuid)
+        serializer = RoleSerializer(role, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            log_activity(
+                user=request.user,
+                action='update',
+                entity_type='role',
+                entity_id=str(role.uuid),
+                entity_name=role.nom,
+                description=f"Modification du rôle {role.nom}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Role.DoesNotExist:
+        return Response({'error': 'Rôle non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du rôle: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# UserProcessus CRUD
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_processus_list(request):
+    """Liste des attributions processus-utilisateur"""
+    try:
+        user_id = request.GET.get('user_id')
+        processus_id = request.GET.get('processus_id')
+        
+        queryset = UserProcessus.objects.select_related('user', 'processus', 'attribue_par').filter(is_active=True)
+        
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        if processus_id:
+            queryset = queryset.filter(processus_id=processus_id)
+        
+        serializer = UserProcessusSerializer(queryset.order_by('-date_attribution'), many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des attributions processus: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des attributions processus',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def user_processus_create(request):
+    """Créer une nouvelle attribution processus-utilisateur"""
+    try:
+        data = request.data.copy()
+        data['attribue_par'] = request.user.id
+        
+        serializer = UserProcessusSerializer(data=data)
+        if serializer.is_valid():
+            user_processus = serializer.save()
+            log_activity(
+                user=request.user,
+                action='create',
+                entity_type='user_processus',
+                entity_id=str(user_processus.uuid),
+                entity_name=f"{user_processus.user.username} - {user_processus.processus.nom}",
+                description=f"Attribution du processus {user_processus.processus.nom} à {user_processus.user.username}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            return Response(UserProcessusSerializer(user_processus).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'attribution processus: {str(e)}")
+        return Response({'error': 'Impossible de créer l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def user_processus_update(request, uuid):
+    """Mettre à jour une attribution processus-utilisateur"""
+    try:
+        user_processus = UserProcessus.objects.get(uuid=uuid)
+        serializer = UserProcessusSerializer(user_processus, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            log_activity(
+                user=request.user,
+                action='update',
+                entity_type='user_processus',
+                entity_id=str(user_processus.uuid),
+                entity_name=f"{user_processus.user.username} - {user_processus.processus.nom}",
+                description=f"Modification de l'attribution processus {user_processus.processus.nom} pour {user_processus.user.username}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except UserProcessus.DoesNotExist:
+        return Response({'error': 'Attribution processus non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de l'attribution processus: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def user_processus_delete(request, uuid):
+    """Supprimer une attribution processus-utilisateur"""
+    try:
+        user_processus = UserProcessus.objects.get(uuid=uuid)
+        user_processus.delete()
+        log_activity(
+            user=request.user,
+            action='delete',
+            entity_type='user_processus',
+            entity_id=str(user_processus.uuid),
+            entity_name=f"{user_processus.user.username} - {user_processus.processus.nom}",
+            description=f"Suppression de l'attribution processus {user_processus.processus.nom} pour {user_processus.user.username}",
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+        return Response({'message': 'Attribution processus supprimée avec succès'}, status=status.HTTP_200_OK)
+    except UserProcessus.DoesNotExist:
+        return Response({'error': 'Attribution processus non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de l'attribution processus: {str(e)}")
+        return Response({'error': 'Impossible de supprimer l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# UserProcessusRole CRUD
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_processus_role_list(request):
+    """Liste des rôles attribués aux utilisateurs pour les processus"""
+    try:
+        user_id = request.GET.get('user_id')
+        processus_id = request.GET.get('processus_id')
+        role_id = request.GET.get('role_id')
+        
+        queryset = UserProcessusRole.objects.select_related('user', 'processus', 'role', 'attribue_par').filter(is_active=True)
+        
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        if processus_id:
+            queryset = queryset.filter(processus_id=processus_id)
+        if role_id:
+            queryset = queryset.filter(role_id=role_id)
+        
+        serializer = UserProcessusRoleSerializer(queryset.order_by('-date_attribution'), many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des rôles utilisateur-processus: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des rôles utilisateur-processus',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def user_processus_role_create(request):
+    """Créer une nouvelle attribution de rôle utilisateur-processus"""
+    try:
+        data = request.data.copy()
+        data['attribue_par'] = request.user.id
+        
+        serializer = UserProcessusRoleSerializer(data=data)
+        if serializer.is_valid():
+            user_processus_role = serializer.save()
+            log_activity(
+                user=request.user,
+                action='create',
+                entity_type='user_processus_role',
+                entity_id=str(user_processus_role.uuid),
+                entity_name=f"{user_processus_role.user.username} - {user_processus_role.processus.nom} - {user_processus_role.role.nom}",
+                description=f"Attribution du rôle {user_processus_role.role.nom} pour {user_processus_role.user.username} sur le processus {user_processus_role.processus.nom}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            return Response(UserProcessusRoleSerializer(user_processus_role).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'attribution de rôle: {str(e)}")
+        return Response({'error': 'Impossible de créer l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def user_processus_role_update(request, uuid):
+    """Mettre à jour une attribution de rôle utilisateur-processus"""
+    try:
+        user_processus_role = UserProcessusRole.objects.get(uuid=uuid)
+        serializer = UserProcessusRoleSerializer(user_processus_role, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            log_activity(
+                user=request.user,
+                action='update',
+                entity_type='user_processus_role',
+                entity_id=str(user_processus_role.uuid),
+                entity_name=f"{user_processus_role.user.username} - {user_processus_role.processus.nom} - {user_processus_role.role.nom}",
+                description=f"Modification de l'attribution du rôle {user_processus_role.role.nom} pour {user_processus_role.user.username} sur le processus {user_processus_role.processus.nom}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except UserProcessusRole.DoesNotExist:
+        return Response({'error': 'Attribution de rôle non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de l'attribution de rôle: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def user_processus_role_delete(request, uuid):
+    """Supprimer une attribution de rôle utilisateur-processus"""
+    try:
+        user_processus_role = UserProcessusRole.objects.get(uuid=uuid)
+        user_processus_role.delete()
+        log_activity(
+            user=request.user,
+            action='delete',
+            entity_type='user_processus_role',
+            entity_id=str(user_processus_role.uuid),
+            entity_name=f"{user_processus_role.user.username} - {user_processus_role.processus.nom} - {user_processus_role.role.nom}",
+            description=f"Suppression de l'attribution du rôle {user_processus_role.role.nom} pour {user_processus_role.user.username} sur le processus {user_processus_role.processus.nom}",
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+        return Response({'message': 'Attribution de rôle supprimée avec succès'}, status=status.HTTP_200_OK)
+    except UserProcessusRole.DoesNotExist:
+        return Response({'error': 'Attribution de rôle non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de l'attribution de rôle: {str(e)}")
+        return Response({'error': 'Impossible de supprimer l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_get_user_processus(request):
+    """Vue pour l'admin Django : retourne les processus d'un utilisateur"""
+    from django.contrib.auth.models import User
+    from django.http import JsonResponse
+    
+    user_id = request.GET.get('user_id')
+    if not user_id:
+        return JsonResponse({'processus': []}, safe=False)
+    
+    try:
+        user = User.objects.get(id=user_id)
+        processus_list = UserProcessus.objects.filter(
+            user=user,
+            is_active=True
+        ).select_related('processus')
+        
+        processus_data = []
+        for up in processus_list:
+            processus_data.append({
+                'uuid': str(up.processus.uuid),
+                'nom': up.processus.nom,
+                'numero_processus': up.processus.numero_processus
+            })
+        
+        return JsonResponse({'processus': processus_data}, safe=False)
+    except User.DoesNotExist:
+        return JsonResponse({'processus': []}, safe=False)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des processus utilisateur: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

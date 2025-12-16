@@ -19,6 +19,7 @@ from parametre.views import (
     log_cdr_validation,
     get_client_ip
 )
+from parametre.permissions import check_permission_or_403, get_user_processus_list, user_has_access_to_processus
 import logging
 
 logger = logging.getLogger(__name__)
@@ -93,12 +94,29 @@ def cartographie_risque_home(request):
 def cdr_list(request):
     """Liste toutes les CDR de l'utilisateur connecté"""
     try:
-        cdrs = CDR.objects.filter(cree_par=request.user).select_related(
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucune CDR trouvée pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        # Filtrer les CDR par les processus où l'utilisateur a un rôle actif
+        cdrs = CDR.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
             'processus', 'type_tableau', 'cree_par', 'valide_par'
         ).order_by('-annee', 'processus__numero_processus')
+        # ========== FIN FILTRAGE ==========
         
         serializer = CDRSerializer(cdrs, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': cdrs.count()
+        }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f'Erreur dans cdr_list: {str(e)}')
         import traceback
@@ -116,10 +134,21 @@ def cdr_detail(request, uuid):
     try:
         cdr = CDR.objects.select_related(
             'processus', 'type_tableau', 'cree_par', 'valide_par'
-        ).get(uuid=uuid, cree_par=request.user)
+        ).get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, cdr.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette CDR. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         serializer = CDRSerializer(cdr)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
     except CDR.DoesNotExist:
         return Response({
             'error': 'CDR non trouvée'
@@ -223,7 +252,21 @@ def cdr_get_or_create(request):
                 'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
+        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=processus_uuid,
+            role_code='ecrire',
+            error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer une Cartographie des Risques pour ce processus."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
+
         # Vérifier si une CDR existe déjà avec ce (processus, annee, type_tableau)
+        # Note: On cherche d'abord une CDR créée par l'utilisateur pour ce contexte
+        # Si aucune n'existe, on vérifiera l'accès au processus avant de créer
         try:
             cdr = CDR.objects.get(
                 processus__uuid=processus_uuid,
@@ -233,9 +276,21 @@ def cdr_get_or_create(request):
             )
             logger.info(f"[cdr_get_or_create] CDR existante trouvée: {cdr.uuid}")
             
+            # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+            # Même si la CDR a été créée par l'utilisateur, vérifier qu'il a toujours accès au processus
+            if not user_has_access_to_processus(request.user, cdr.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cette CDR. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            # ========== FIN VÉRIFICATION ==========
+            
             # Sérialiser la CDR existante pour la réponse
             serializer = CDRSerializer(cdr)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response({
+                'success': True,
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
             
         except CDR.DoesNotExist:
             logger.info(f"[cdr_get_or_create] Aucune CDR existante, création d'une nouvelle CDR")
@@ -345,14 +400,25 @@ def cdr_get_or_create(request):
 def details_cdr_by_cdr(request, cdr_uuid):
     """Récupérer tous les détails CDR pour une CDR spécifique"""
     try:
-        # Vérifier que la CDR existe et appartient à l'utilisateur
-        cdr = CDR.objects.get(uuid=cdr_uuid, cree_par=request.user)
+        cdr = CDR.objects.get(uuid=cdr_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, cdr.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette CDR. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les détails CDR
         details = DetailsCDR.objects.filter(cdr=cdr).order_by('numero_cdr', 'created_at')
         
         serializer = DetailsCDRSerializer(details, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': details.count()
+        }, status=status.HTTP_200_OK)
     except CDR.DoesNotExist:
         return Response({
             'error': 'CDR non trouvée'
@@ -379,6 +445,26 @@ def details_cdr_create(request):
             try:
                 cdr = CDR.objects.get(uuid=request.data['cdr'])
                 logger.info(f"[details_cdr_create] CDR trouvée: {cdr.uuid}, validée: {cdr.is_validated}")
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, cdr.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à cette CDR. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=cdr.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un détail CDR."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
+                
                 if cdr.is_validated:
                     return Response({
                         'error': 'Cette CDR est validée. Impossible de créer un nouveau détail.'
@@ -418,12 +504,15 @@ def details_cdr_create(request):
 def evaluations_by_detail_cdr(request, detail_cdr_uuid):
     """Récupérer toutes les évaluations pour un détail CDR spécifique"""
     try:
-        # Vérifier que le détail CDR existe et appartient à l'utilisateur
-        detail = DetailsCDR.objects.select_related('cdr').get(uuid=detail_cdr_uuid)
-        if detail.cdr.cree_par != request.user:
+        detail = DetailsCDR.objects.select_related('cdr__processus').get(uuid=detail_cdr_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les évaluations
         evaluations = EvaluationRisque.objects.filter(
@@ -451,12 +540,15 @@ def evaluations_by_detail_cdr(request, detail_cdr_uuid):
 def plans_action_by_detail_cdr(request, detail_cdr_uuid):
     """Récupérer tous les plans d'action pour un détail CDR spécifique"""
     try:
-        # Vérifier que le détail CDR existe et appartient à l'utilisateur
-        detail = DetailsCDR.objects.select_related('cdr').get(uuid=detail_cdr_uuid)
-        if detail.cdr.cree_par != request.user:
+        detail = DetailsCDR.objects.select_related('cdr', 'cdr__processus').get(uuid=detail_cdr_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les plans d'action
         plans = PlanAction.objects.filter(
@@ -464,7 +556,11 @@ def plans_action_by_detail_cdr(request, detail_cdr_uuid):
         ).select_related('responsable', 'details_cdr').order_by('delai_realisation', 'created_at')
         
         serializer = PlanActionSerializer(plans, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': plans.count()
+        }, status=status.HTTP_200_OK)
     except DetailsCDR.DoesNotExist:
         return Response({
             'error': 'Détail CDR non trouvé'
@@ -485,15 +581,17 @@ def suivi_action_detail(request, uuid):
     """Récupérer un suivi d'action par son UUID"""
     try:
         suivi = SuiviAction.objects.select_related(
-            'plan_action__details_cdr__cdr', 
+            'plan_action__details_cdr__cdr__processus', 
             'element_preuve'
         ).prefetch_related('element_preuve__medias').get(uuid=uuid)
         
-        # Vérifier que le suivi appartient à l'utilisateur connecté
-        if suivi.plan_action.details_cdr.cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.plan_action.details_cdr.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         serializer = SuiviActionSerializer(suivi)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -516,12 +614,15 @@ def suivi_action_detail(request, uuid):
 def suivis_by_plan_action(request, plan_action_uuid):
     """Récupérer tous les suivis pour un plan d'action spécifique"""
     try:
-        # Vérifier que le plan d'action existe et appartient à l'utilisateur
-        plan = PlanAction.objects.select_related('details_cdr__cdr').get(uuid=plan_action_uuid)
-        if plan.details_cdr.cdr.cree_par != request.user:
+        plan = PlanAction.objects.select_related('details_cdr__cdr__processus').get(uuid=plan_action_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, plan.details_cdr.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce plan d\'action. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les suivis
         suivis = SuiviAction.objects.filter(
@@ -551,13 +652,26 @@ def suivis_by_plan_action(request, plan_action_uuid):
 def details_cdr_update(request, uuid):
     """Mettre à jour un détail CDR"""
     try:
-        detail = DetailsCDR.objects.select_related('cdr').get(uuid=uuid)
+        detail = DetailsCDR.objects.select_related('cdr', 'cdr__processus').get(uuid=uuid)
         
-        # Vérifier que la CDR du détail appartient à l'utilisateur connecté
-        if detail.cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail.cdr.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce détail CDR."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Protection : empêcher la modification si la CDR est validée
         if detail.cdr.is_validated:
@@ -588,13 +702,26 @@ def details_cdr_update(request, uuid):
 def details_cdr_delete(request, uuid):
     """Supprimer un détail CDR avec toutes ses données associées (cascade)"""
     try:
-        detail = DetailsCDR.objects.select_related('cdr').get(uuid=uuid)
+        detail = DetailsCDR.objects.select_related('cdr', 'cdr__processus').get(uuid=uuid)
 
-        # Vérifier que la CDR du détail appartient à l'utilisateur connecté
-        if detail.cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail.cdr.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce détail CDR."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
 
         # Supprimer le détail (cascade automatique vers évaluations, plans, suivis)
         detail.delete()
@@ -622,6 +749,32 @@ def evaluation_risque_create(request):
     """Créer une nouvelle évaluation de risque"""
     try:
         logger.info(f"[evaluation_risque_create] Données reçues: {request.data}")
+
+        # Vérifier l'accès au processus et la permission "ecrire"
+        if 'details_cdr' in request.data:
+            try:
+                detail_cdr = DetailsCDR.objects.select_related('cdr__processus').get(uuid=request.data['details_cdr'])
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, detail_cdr.cdr.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=detail_cdr.cdr.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer une évaluation de risque."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
+            except DetailsCDR.DoesNotExist:
+                pass  # La validation du serializer gérera cette erreur
 
         # Ajouter la version par défaut si non fournie
         if 'version_evaluation' not in request.data or not request.data['version_evaluation']:
@@ -664,13 +817,26 @@ def evaluation_risque_create(request):
 def evaluation_risque_update(request, uuid):
     """Mettre à jour une évaluation de risque"""
     try:
-        evaluation = EvaluationRisque.objects.select_related('details_cdr__cdr').get(uuid=uuid)
+        evaluation = EvaluationRisque.objects.select_related('details_cdr__cdr__processus').get(uuid=uuid)
         
-        # Vérifier que la CDR appartient à l'utilisateur connecté
-        if evaluation.details_cdr.cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, evaluation.details_cdr.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette évaluation. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=evaluation.details_cdr.cdr.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier cette évaluation de risque."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Protection : empêcher la modification si un amendement supérieur existe
         current_cdr = evaluation.details_cdr.cdr
@@ -733,6 +899,32 @@ def plan_action_create(request):
     try:
         logger.info(f"[plan_action_create] Données reçues: {request.data}")
         
+        # Vérifier l'accès au processus et la permission "ecrire"
+        if 'details_cdr' in request.data:
+            try:
+                detail_cdr = DetailsCDR.objects.select_related('cdr__processus').get(uuid=request.data['details_cdr'])
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, detail_cdr.cdr.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=detail_cdr.cdr.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un plan d'action."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
+            except DetailsCDR.DoesNotExist:
+                pass  # La validation du serializer gérera cette erreur
+        
         serializer = PlanActionCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             plan = serializer.save()
@@ -755,13 +947,26 @@ def plan_action_create(request):
 def plan_action_update(request, uuid):
     """Mettre à jour un plan d'action"""
     try:
-        plan = PlanAction.objects.select_related('details_cdr__cdr').get(uuid=uuid)
+        plan = PlanAction.objects.select_related('details_cdr__cdr__processus').get(uuid=uuid)
         
-        # Vérifier que la CDR appartient à l'utilisateur connecté
-        if plan.details_cdr.cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, plan.details_cdr.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce plan d\'action. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=plan.details_cdr.cdr.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce plan d'action."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Protection : empêcher la modification si la CDR est validée
         if plan.details_cdr.cdr.is_validated:
@@ -812,6 +1017,25 @@ def suivi_action_create(request):
                     'details_cdr__cdr__processus'
                 ).get(uuid=plan_action_uuid)
                 cdr = plan_action.details_cdr.cdr
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, cdr.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à ce plan d\'action. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=cdr.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un suivi d'action."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
                 cdr_type_code = cdr.type_tableau.code if cdr.type_tableau else None
                 
                 # Si c'est un CDR INITIAL, vérifier si un AMENDEMENT_1 existe
@@ -871,11 +1095,24 @@ def suivi_action_update(request, uuid):
         
         cdr = suivi.plan_action.details_cdr.cdr
         
-        # Vérifier que la CDR appartient à l'utilisateur connecté
-        if cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=cdr.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce suivi d'action."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Les suivis d'actions ne peuvent être modifiés que si la CDR est validée
         if not cdr.is_validated:
@@ -939,14 +1176,26 @@ def validate_cdr(request, uuid):
         from django.utils import timezone
         from django.conf import settings
         
-        cdr = CDR.objects.get(uuid=uuid)
+        cdr = CDR.objects.select_related('processus').get(uuid=uuid)
         
-        # Vérifier que la CDR appartient à l'utilisateur connecté
-        if cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, cdr.processus.uuid):
             return Response({
                 'success': False,
-                'error': 'Accès non autorisé'
+                'error': 'Vous n\'avez pas accès à cette CDR. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=cdr.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour valider cette CDR."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que la CDR n'est pas déjà validée
         if cdr.is_validated:
@@ -1111,13 +1360,26 @@ def create_reevaluation(request, detail_cdr_uuid):
         from .serializers import EvaluationRisqueCreateSerializer, EvaluationRisqueSerializer
 
         # Récupérer le détail CDR
-        detail_cdr = DetailsCDR.objects.select_related('cdr').get(uuid=detail_cdr_uuid)
+        detail_cdr = DetailsCDR.objects.select_related('cdr__processus').get(uuid=detail_cdr_uuid)
 
-        # Vérifier que la CDR appartient à l'utilisateur connecté
-        if detail_cdr.cdr.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail_cdr.cdr.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail_cdr.cdr.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer une réévaluation."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
 
         # Vérifier que la CDR EST validée (réévaluation possible seulement après validation)
         if not detail_cdr.cdr.is_validated:
@@ -1230,9 +1492,16 @@ def get_last_cdr_previous_year(request):
         # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
         codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
 
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus_uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce processus. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
         for code in codes_order:
             cdr = CDR.objects.filter(
-                cree_par=request.user,
                 annee=annee_precedente,
                 processus__uuid=processus_uuid,
                 type_tableau__code=code

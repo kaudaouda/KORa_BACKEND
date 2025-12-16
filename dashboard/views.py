@@ -16,6 +16,7 @@ from parametre.views import (
     log_indicateur_creation,
     get_client_ip
 )
+from parametre.permissions import check_permission_or_403, user_can_create_for_processus, get_user_processus_list, user_has_access_to_processus
 
 logger = logging.getLogger(__name__)
 from .serializers import (
@@ -37,7 +38,28 @@ def tableaux_bord_list_create(request):
     """Lister ou créer des tableaux de bord"""
     try:
         if request.method == 'GET':
-            qs = TableauBord.objects.select_related('processus', 'initial_ref', 'type_tableau').order_by('-annee', 'processus__numero_processus', 'type_tableau__code')
+            # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+            # Récupérer les processus accessibles par l'utilisateur
+            from parametre.permissions import get_user_processus_list
+            user_processus_uuids = get_user_processus_list(request.user)
+            
+            # Si l'utilisateur n'a aucun processus, retourner une liste vide
+            if not user_processus_uuids:
+                return Response({
+                    'success': True,
+                    'data': [],
+                    'count': 0,
+                    'message': 'Aucun processus assigné. Vous ne pouvez pas voir de tableaux de bord.'
+                }, status=status.HTTP_200_OK)
+            
+            # Filtrer les tableaux de bord pour ne montrer que ceux des processus de l'utilisateur
+            qs = TableauBord.objects.filter(
+                processus__uuid__in=user_processus_uuids
+            ).select_related('processus', 'initial_ref', 'type_tableau').order_by(
+                '-annee', 'processus__numero_processus', 'type_tableau__code'
+            )
+            # ========== FIN FILTRAGE ==========
+            
             serializer = TableauBordSerializer(qs, many=True)
             return Response({
                 'success': True,
@@ -141,6 +163,18 @@ def tableaux_bord_list_create(request):
             
             # ========== FIN VALIDATION ==========
             
+            # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
+            # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=processus_uuid,
+                role_code='ecrire',
+                error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer un tableau de bord pour ce processus."
+            )
+            if not has_permission:
+                return error_response
+            # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
+            
             logger.info(f"Données reçues pour création tableau: {data}")
             
             serializer = TableauBordSerializer(data=data, context={'request': request})
@@ -220,12 +254,32 @@ def tableau_bord_detail(request, uuid):
     """Détail / mise à jour / suppression d'un tableau de bord"""
     try:
         tb = TableauBord.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, tb.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
     except TableauBord.DoesNotExist:
         return Response({'success': False, 'error': 'Tableau de bord non trouvé'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
         return Response({'success': True, 'data': TableauBordSerializer(tb).data})
     elif request.method == 'PATCH':
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=tb.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce tableau de bord."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
         serializer = TableauBordSerializer(tb, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             try:
@@ -243,7 +297,18 @@ def tableau_bord_detail(request, uuid):
             except Exception as e:
                 return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-    else:
+    else:  # DELETE
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=tb.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce tableau de bord."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
         tb.delete()
         return Response({'success': True, 'message': 'Tableau de bord supprimé avec succès'}, status=status.HTTP_200_OK)
 
@@ -256,6 +321,26 @@ def create_amendement(request, tableau_initial_uuid):
         # Récupérer le tableau initial
         try:
             initial_tableau = TableauBord.objects.get(uuid=tableau_initial_uuid, type_tableau__code='INITIAL')
+            
+            # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+            if not user_has_access_to_processus(request.user, initial_tableau.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            # ========== FIN VÉRIFICATION ==========
+            
+            # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=initial_tableau.processus.uuid,
+                role_code='ecrire',
+                error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un amendement pour ce processus."
+            )
+            if not has_permission:
+                return error_response
+            # ========== FIN VÉRIFICATION ==========
+            
         except TableauBord.DoesNotExist:
             return Response({
                 'success': False, 
@@ -266,7 +351,7 @@ def create_amendement(request, tableau_initial_uuid):
         clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
         
         # Déterminer le type d'amendement
-        from parametre.models import TypeTableau
+        from parametre.models import TypeTableau, Versions
         
         existing_amendements = TableauBord.objects.filter(
             annee=initial_tableau.annee,
@@ -395,6 +480,15 @@ def get_amendements_by_initial(request, tableau_initial_uuid):
         # Vérifier que le tableau initial existe
         try:
             initial_tableau = TableauBord.objects.get(uuid=tableau_initial_uuid, type_tableau__code='INITIAL')
+            
+            # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+            if not user_has_access_to_processus(request.user, initial_tableau.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            # ========== FIN VÉRIFICATION ==========
+            
         except TableauBord.DoesNotExist:
             return Response({
                 'success': False, 
@@ -434,6 +528,25 @@ def validate_tableau_bord(request, uuid):
     """Valider un tableau de bord pour permettre la saisie des trimestres"""
     try:
         tableau = TableauBord.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, tableau.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=tableau.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour valider ce tableau de bord."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que le tableau n'est pas déjà validé
         if tableau.is_validated:
@@ -507,6 +620,15 @@ def tableau_bord_objectives(request, uuid):
         # Vérifier que le tableau de bord existe
         try:
             tb = TableauBord.objects.get(uuid=uuid)
+            
+            # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+            if not user_has_access_to_processus(request.user, tb.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            # ========== FIN VÉRIFICATION ==========
+            
         except TableauBord.DoesNotExist:
             return Response({'success': False, 'error': 'Tableau de bord non trouvé'}, status=status.HTTP_404_NOT_FOUND)
         
@@ -541,7 +663,19 @@ def tableau_bord_objectives(request, uuid):
 def objectives_list(request):
     """Liste tous les objectifs"""
     try:
-        objectives = Objectives.objects.all().order_by('number')
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        # Récupérer les processus accessibles par l'utilisateur
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        # Filtrer les objectifs pour ne montrer que ceux des tableaux de bord accessibles
+        if user_processus_uuids:
+            objectives = Objectives.objects.filter(
+                tableau_bord__processus__uuid__in=user_processus_uuids
+            ).order_by('number')
+        else:
+            objectives = Objectives.objects.none()  # Aucun processus, donc aucun objectif
+        # ========== FIN FILTRAGE ==========
+        
         serializer = ObjectivesSerializer(objectives, many=True)
         
         return Response({
@@ -564,6 +698,16 @@ def objectives_detail(request, uuid):
     """Détail d'un objectif"""
     try:
         objective = Objectives.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if objective.tableau_bord:
+            if not user_has_access_to_processus(request.user, objective.tableau_bord.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cet objectif. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
         serializer = ObjectivesSerializer(objective)
         
         return Response({
@@ -596,6 +740,26 @@ def objectives_create(request):
         if tableau_bord_uuid:
             try:
                 tableau = TableauBord.objects.get(uuid=tableau_bord_uuid)
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, tableau.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=tableau.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un objectif."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
+                
                 if tableau.is_validated:
                     return Response({
                         'success': False,
@@ -673,6 +837,27 @@ def objectives_update(request, uuid):
     try:
         objective = Objectives.objects.get(uuid=uuid)
         
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if objective.tableau_bord:
+            if not user_has_access_to_processus(request.user, objective.tableau_bord.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cet objectif. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        if objective.tableau_bord:
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=objective.tableau_bord.processus.uuid,
+                role_code='ecrire',
+                error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier cet objectif."
+            )
+            if not has_permission:
+                return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
         # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
         if objective.tableau_bord:
             if objective.tableau_bord.is_validated:
@@ -730,8 +915,29 @@ def objectives_delete(request, uuid):
     """Supprimer un objectif"""
     try:
         objective = Objectives.objects.get(uuid=uuid)
-        objective_number = objective.number
         
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if objective.tableau_bord:
+            if not user_has_access_to_processus(request.user, objective.tableau_bord.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cet objectif. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        if objective.tableau_bord:
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=objective.tableau_bord.processus.uuid,
+                role_code='ecrire',
+                error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer cet objectif."
+            )
+            if not has_permission:
+                return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
+        objective_number = objective.number
         objective.delete()
         
         logger.info(f"Objectif supprimé: {objective_number} par {request.user.username}")
@@ -762,36 +968,58 @@ def objectives_delete(request, uuid):
 def dashboard_stats(request):
     """Statistiques du tableau de bord"""
     try:
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        # Récupérer les processus accessibles par l'utilisateur
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        # Filtrer les données selon les processus accessibles
+        if user_processus_uuids:
+            objectives_filter = Objectives.objects.filter(
+                tableau_bord__processus__uuid__in=user_processus_uuids
+            )
+            indicateurs_filter = Indicateur.objects.filter(
+                objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
+            )
+        else:
+            objectives_filter = Objectives.objects.none()
+            indicateurs_filter = Indicateur.objects.none()
+        # ========== FIN FILTRAGE ==========
+        
         # Compter les objectifs
-        total_objectives = Objectives.objects.count()
+        total_objectives = objectives_filter.count()
         
         # Compter les fréquences
         from parametre.models import Frequence
         total_frequences = Frequence.objects.count()
         
         # Compter les indicateurs
-        total_indicateurs = Indicateur.objects.count()
+        total_indicateurs = indicateurs_filter.count()
         
         # Objectifs créés aujourd'hui
         today = timezone.now().date()
-        objectives_today = Objectives.objects.filter(created_at__date=today).count()
+        objectives_today = objectives_filter.filter(created_at__date=today).count()
         
         # Objectifs créés cette semaine
         from datetime import timedelta
         week_ago = today - timedelta(days=7)
-        objectives_this_week = Objectives.objects.filter(created_at__date__gte=week_ago).count()
+        objectives_this_week = objectives_filter.filter(created_at__date__gte=week_ago).count()
         
         # Objectifs créés ce mois
         month_ago = today - timedelta(days=30)
-        objectives_this_month = Objectives.objects.filter(created_at__date__gte=month_ago).count()
+        objectives_this_month = objectives_filter.filter(created_at__date__gte=month_ago).count()
         
         # Calculer les pourcentages de cibles atteintes et non atteintes
         from parametre.models import Cible, Periodicite
         from django.db.models import Q, Count, Case, When, DecimalField, F
         import decimal
         
-        # Récupérer toutes les cibles avec leurs indicateurs
-        cibles_with_periodicites = Cible.objects.select_related('indicateur_id').all()
+        # Récupérer toutes les cibles avec leurs indicateurs (filtrées par processus)
+        if user_processus_uuids:
+            cibles_with_periodicites = Cible.objects.filter(
+                indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
+            ).select_related('indicateur_id')
+        else:
+            cibles_with_periodicites = Cible.objects.none()
         
         total_cibles = cibles_with_periodicites.count()
         cibles_atteintes = 0
@@ -855,7 +1083,19 @@ def dashboard_stats(request):
 def indicateurs_list(request):
     """Liste tous les indicateurs"""
     try:
-        indicateurs = Indicateur.objects.all().order_by('objective_id', 'libelle')
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        # Récupérer les processus accessibles par l'utilisateur
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        # Filtrer les indicateurs pour ne montrer que ceux des tableaux de bord accessibles
+        if user_processus_uuids:
+            indicateurs = Indicateur.objects.filter(
+                objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
+            ).order_by('objective_id', 'libelle')
+        else:
+            indicateurs = Indicateur.objects.none()  # Aucun processus, donc aucun indicateur
+        # ========== FIN FILTRAGE ==========
+        
         serializer = IndicateurSerializer(indicateurs, many=True)
         
         return Response({
@@ -878,6 +1118,16 @@ def indicateurs_detail(request, uuid):
     """Détail d'un indicateur"""
     try:
         indicateur = Indicateur.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if indicateur.objective_id.tableau_bord:
+            if not user_has_access_to_processus(request.user, indicateur.objective_id.tableau_bord.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cet indicateur. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
         serializer = IndicateurSerializer(indicateur)
         
         return Response({
@@ -911,6 +1161,15 @@ def indicateurs_create(request):
                 objective = Objectives.objects.get(uuid=objective_uuid)
                 if objective.tableau_bord:
                     tableau = objective.tableau_bord
+                    
+                    # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                    if not user_has_access_to_processus(request.user, tableau.processus.uuid):
+                        return Response({
+                            'success': False,
+                            'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+                        }, status=status.HTTP_403_FORBIDDEN)
+                    # ========== FIN VÉRIFICATION ==========
+                    
                     if tableau.is_validated:
                         return Response({
                             'success': False,
@@ -974,6 +1233,27 @@ def indicateurs_update(request, uuid):
     try:
         indicateur = Indicateur.objects.get(uuid=uuid)
         
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if indicateur.objective_id.tableau_bord:
+            if not user_has_access_to_processus(request.user, indicateur.objective_id.tableau_bord.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cet indicateur. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        if indicateur.objective_id.tableau_bord:
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=indicateur.objective_id.tableau_bord.processus.uuid,
+                role_code='ecrire',
+                error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier cet indicateur."
+            )
+            if not has_permission:
+                return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
         # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
         if indicateur.objective_id.tableau_bord:
             tableau = indicateur.objective_id.tableau_bord
@@ -1032,8 +1312,29 @@ def indicateurs_delete(request, uuid):
     """Supprimer un indicateur"""
     try:
         indicateur = Indicateur.objects.get(uuid=uuid)
-        indicateur_libelle = indicateur.libelle
         
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if indicateur.objective_id.tableau_bord:
+            if not user_has_access_to_processus(request.user, indicateur.objective_id.tableau_bord.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cet indicateur. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        if indicateur.objective_id.tableau_bord:
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=indicateur.objective_id.tableau_bord.processus.uuid,
+                role_code='ecrire',
+                error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer cet indicateur."
+            )
+            if not has_permission:
+                return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
+        indicateur_libelle = indicateur.libelle
         indicateur.delete()
         
         logger.info(f"Indicateur supprimé: {indicateur_libelle} par {request.user.username}")
@@ -1103,7 +1404,20 @@ def cibles_list(request):
     """Liste toutes les cibles"""
     try:
         from parametre.models import Cible
-        cibles = Cible.objects.all().order_by('indicateur_id', 'created_at')
+        
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        # Récupérer les processus accessibles par l'utilisateur
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        # Filtrer les cibles pour ne montrer que celles des tableaux de bord accessibles
+        if user_processus_uuids:
+            cibles = Cible.objects.filter(
+                indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
+            ).order_by('indicateur_id', 'created_at')
+        else:
+            cibles = Cible.objects.none()  # Aucun processus, donc aucune cible
+        # ========== FIN FILTRAGE ==========
+        
         serializer = CibleSerializer(cibles, many=True)
         
         return Response({
@@ -1162,6 +1476,26 @@ def cibles_create(request):
                 indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
                 if indicateur.objective_id.tableau_bord:
                     tableau = indicateur.objective_id.tableau_bord
+                    
+                    # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                    if not user_has_access_to_processus(request.user, tableau.processus.uuid):
+                        return Response({
+                            'success': False,
+                            'error': 'Vous n\'avez pas accès à ce tableau de bord. Vous n\'avez pas de rôle actif pour ce processus.'
+                        }, status=status.HTTP_403_FORBIDDEN)
+                    # ========== FIN VÉRIFICATION ==========
+                    
+                    # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                    has_permission, error_response = check_permission_or_403(
+                        user=request.user,
+                        processus_uuid=tableau.processus.uuid,
+                        role_code='ecrire',
+                        error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer une cible."
+                    )
+                    if not has_permission:
+                        return error_response
+                    # ========== FIN VÉRIFICATION ==========
+                    
                     if tableau.is_validated:
                         return Response({
                             'success': False,
@@ -1221,6 +1555,26 @@ def cibles_update(request, uuid):
             indicateur = Indicateur.objects.get(uuid=cible.indicateur_id.uuid)
             if indicateur.objective_id.tableau_bord:
                 tableau = indicateur.objective_id.tableau_bord
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, tableau.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à cette cible. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=tableau.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier cette cible."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
+                
                 if tableau.is_validated:
                     return Response({
                         'success': False,
@@ -1277,6 +1631,20 @@ def cibles_delete(request, uuid):
     try:
         from parametre.models import Cible
         cible = Cible.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        try:
+            indicateur = Indicateur.objects.get(uuid=cible.indicateur_id.uuid)
+            if indicateur.objective_id.tableau_bord:
+                if not user_has_access_to_processus(request.user, indicateur.objective_id.tableau_bord.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à cette cible. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+        except Indicateur.DoesNotExist:
+            pass  # Continuer avec la suppression
+        # ========== FIN VÉRIFICATION ==========
+        
         cible.delete()
         
         logger.info(f"Cible supprimée: {cible} par {request.user.username}")
@@ -1310,6 +1678,15 @@ def cibles_by_indicateur(request, indicateur_uuid):
         
         # Récupérer l'indicateur
         indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if indicateur.objective_id.tableau_bord:
+            if not user_has_access_to_processus(request.user, indicateur.objective_id.tableau_bord.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cet indicateur. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer la cible liée à l'indicateur (une seule)
         cible = Cible.objects.filter(indicateur_id=indicateur).first()
@@ -1858,6 +2235,13 @@ def get_last_tableau_bord_previous_year(request):
         annee_precedente = annee - 1
 
         logger.info(f"[get_last_tableau_bord_previous_year] Recherche du dernier Tableau de Bord pour processus={processus_uuid}, année={annee_precedente}")
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus_uuid):
+            return Response({
+                'error': 'Vous n\'avez pas accès à ce processus. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
 
         # Chercher tous les Tableaux de Bord de l'année précédente pour ce processus
         # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
