@@ -15,6 +15,7 @@ from django.utils import timezone
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Versions
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
+from parametre.permissions import check_permission_or_403, user_can_create_for_processus, get_user_processus_list, user_has_access_to_processus
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
     PacSerializer, PacCreateSerializer, PacUpdateSerializer, PacCompletSerializer,
@@ -650,12 +651,20 @@ def pac_list(request):
     try:
         logger.info(f"[pac_list] Utilisateur connecté: {request.user.username} (ID: {request.user.id})")
 
-        # Compter tous les PACs dans la base
-        total_pacs = Pac.objects.count()
-        logger.info(f"[pac_list] Nombre total de PACs dans la base: {total_pacs}")
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            logger.info(f"[pac_list] Aucun processus assigné pour l'utilisateur {request.user.username}")
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucun PAC trouvé pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
 
-        # Compter les PACs de l'utilisateur avec leurs détails
-        pacs = Pac.objects.filter(cree_par=request.user).select_related(
+        # Filtrer les PACs par les processus où l'utilisateur a un rôle actif
+        pacs = Pac.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
             'processus', 'cree_par', 'annee', 'type_tableau', 'validated_by'
         ).prefetch_related(
             'details__dysfonctionnement_recommandation',
@@ -663,21 +672,18 @@ def pac_list(request):
             'details__categorie',
             'details__source'
         )
+        # ========== FIN FILTRAGE ==========
 
         logger.info(f"[pac_list] Nombre de PACs pour l'utilisateur {request.user.username}: {pacs.count()}")
-
-        # Logger les détails des PACs trouvés
-        if pacs.count() == 0 and total_pacs > 0:
-            # Il y a des PACs mais pas pour cet utilisateur
-            all_pacs = Pac.objects.all().select_related('cree_par')
-            logger.warning(f"[pac_list] PACs trouvés dans la base mais pas pour l'utilisateur actuel:")
-            for pac in all_pacs[:5]:  # Limiter à 5 pour ne pas surcharger les logs
-                logger.warning(f"  - PAC {pac.uuid}: créé par {pac.cree_par.username if pac.cree_par else 'NULL'}")
 
         # Utiliser PacCompletSerializer pour inclure les détails
         serializer = PacCompletSerializer(pacs, many=True)
         logger.info(f"[pac_list] Données sérialisées: {len(serializer.data)} PACs")
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': pacs.count()
+        }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des PACs: {str(e)}")
         return Response({
@@ -696,6 +702,19 @@ def pac_create(request):
         annee_uuid = data.get('annee')
         processus_uuid = data.get('processus')
         type_tableau_uuid = data.get('type_tableau')
+
+        # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
+        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
+        if processus_uuid:
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=processus_uuid,
+                role_code='ecrire',
+                error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer un PAC pour ce processus."
+            )
+            if not has_permission:
+                return error_response
+        # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
 
         # Si type_tableau manque mais annee + processus sont fournis, déterminer automatiquement le type
         if annee_uuid and processus_uuid and not type_tableau_uuid:
@@ -741,16 +760,30 @@ def pac_create(request):
 def pac_detail(request, uuid):
     """Détails d'un PAC"""
     try:
-        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        pac = Pac.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
         serializer = PacSerializer(pac)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
     except Pac.DoesNotExist:
         return Response({
+            'success': False,
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération du PAC: {str(e)}")
         return Response({
+            'success': False,
             'error': 'Impossible de récupérer le PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -776,17 +809,30 @@ def pac_complet(request, uuid):
             'details__traitement__suivi__statut',
             'details__traitement__suivi__cree_par',
             'details__traitement__suivi__preuve__medias'
-        ).get(uuid=uuid, cree_par=request.user)
+        ).get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         serializer = PacCompletSerializer(pac)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
     except Pac.DoesNotExist:
         return Response({
+            'success': False,
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération du PAC complet: {str(e)}")
         return Response({
+            'success': False,
             'error': 'Impossible de récupérer le PAC complet'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -871,6 +917,18 @@ def pac_get_or_create(request):
             return Response({
                 'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
+        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=processus_uuid,
+            role_code='ecrire',
+            error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer un PAC pour ce processus."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
 
         # Vérifier si un PAC existe déjà avec ce (processus, annee, type_tableau)
         try:
@@ -1056,7 +1114,26 @@ def pac_get_or_create(request):
 def pac_update(request, uuid):
     """Mettre à jour un PAC"""
     try:
-        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        pac = Pac.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce PAC."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Protection : empêcher la modification du processus après création
         if 'processus' in request.data:
@@ -1100,7 +1177,26 @@ def pac_update(request, uuid):
 def pac_delete(request, uuid):
     """Supprimer un PAC"""
     try:
-        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        pac = Pac.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce PAC."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
 
         # Récupérer le premier détail pour avoir un libellé (si existant)
         premier_detail = pac.details.first()
@@ -1144,11 +1240,24 @@ def pac_validate(request, uuid):
     try:
         pac = Pac.objects.select_related('validated_by', 'cree_par').get(uuid=uuid)
         
-        # Vérifier que l'utilisateur est le créateur ou un admin
-        if pac.cree_par != request.user and not request.user.is_staff:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
             return Response({
-                'error': 'Vous n\'avez pas les permissions pour valider ce PAC'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour valider ce PAC."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier si le PAC est déjà validé
         if pac.is_validated:
@@ -1218,12 +1327,30 @@ def pac_validate_by_type(request):
                 'error': 'processus, annee et type_tableau sont requis'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Récupérer tous les PACs du même contexte (processus, année, type_tableau)
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus_uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce processus. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=processus_uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour valider ces PACs."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Récupérer tous les PACs du même contexte (processus, année, type_tableau) des processus de l'utilisateur
         pacs_to_validate = Pac.objects.filter(
             processus__uuid=processus_uuid,
             annee__uuid=annee_uuid,
-            type_tableau__uuid=type_tableau_uuid,
-            cree_par=request.user
+            type_tableau__uuid=type_tableau_uuid
         ).select_related('processus', 'annee', 'type_tableau').prefetch_related('details__traitement')
         
         if not pacs_to_validate.exists():
@@ -1303,11 +1430,24 @@ def pac_unvalidate(request, uuid):
     try:
         pac = Pac.objects.select_related('validated_by', 'cree_par').get(uuid=uuid)
         
-        # Vérifier que l'utilisateur est le créateur ou un admin
-        if pac.cree_par != request.user and not request.user.is_staff:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
             return Response({
-                'error': 'Vous n\'avez pas les permissions pour dévalider ce PAC'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour dévalider ce PAC."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier si le PAC n'est pas validé
         if not pac.is_validated:
@@ -1359,12 +1499,32 @@ def pac_unvalidate(request, uuid):
 def traitement_list(request):
     """Liste des traitements"""
     try:
-        traitements = TraitementPac.objects.filter(details_pac__pac__cree_par=request.user).order_by('-delai_realisation')
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucun traitement trouvé pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        traitements = TraitementPac.objects.filter(
+            details_pac__pac__processus__uuid__in=user_processus_uuids
+        ).order_by('-delai_realisation')
+        # ========== FIN FILTRAGE ==========
+        
         serializer = TraitementPacSerializer(traitements, many=True)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': traitements.count()
+        }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des traitements: {str(e)}")
         return Response({
+            'success': False,
             'error': 'Impossible de récupérer les traitements'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1384,6 +1544,25 @@ def traitement_create(request):
             try:
                 details_pac = DetailsPac.objects.select_related('pac').get(uuid=details_pac_uuid)
                 logger.info(f"[traitement_create] DetailsPac trouvé: {details_pac.uuid}, PAC validé: {details_pac.pac.is_validated}")
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, details_pac.pac.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à ce traitement. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=details_pac.pac.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un traitement."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
                 
                 # Vérifier si un traitement existe déjà pour ce détail
                 existing_traitement = TraitementPac.objects.filter(details_pac=details_pac).first()
@@ -1449,20 +1628,33 @@ def traitement_create(request):
 def pac_traitements(request, uuid):
     """Récupérer les traitements d'un PAC spécifique"""
     try:
-        # Vérifier que le PAC appartient à l'utilisateur connecté
-        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        pac = Pac.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les traitements du PAC via les détails (OneToOne)
         traitements = TraitementPac.objects.filter(details_pac__pac=pac).order_by('-delai_realisation')
         serializer = TraitementPacSerializer(traitements, many=True)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': traitements.count()
+        }, status=status.HTTP_200_OK)
     except Pac.DoesNotExist:
         return Response({
+            'success': False,
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des traitements du PAC: {str(e)}")
         return Response({
+            'success': False,
             'error': 'Impossible de récupérer les traitements'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1474,14 +1666,19 @@ def traitement_detail(request, uuid):
     try:
         traitement = TraitementPac.objects.select_related('details_pac', 'details_pac__pac').get(uuid=uuid)
         
-        # Vérifier que le PAC du détail du traitement appartient à l'utilisateur connecté
-        if traitement.details_pac.pac.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, traitement.details_pac.pac.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce traitement. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         serializer = TraitementPacSerializer(traitement)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
     except TraitementPac.DoesNotExist:
         return Response({
             'error': 'Traitement non trouvé'
@@ -1500,11 +1697,24 @@ def traitement_update(request, uuid):
     try:
         traitement = TraitementPac.objects.select_related('details_pac', 'details_pac__pac').get(uuid=uuid)
         
-        # Vérifier que le PAC du détail du traitement appartient à l'utilisateur connecté
-        if traitement.details_pac.pac.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, traitement.details_pac.pac.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce traitement. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=traitement.details_pac.pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce traitement."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Protection : empêcher la modification si le PAC est validé
         if traitement.details_pac.pac.is_validated:
@@ -1535,12 +1745,32 @@ def traitement_update(request, uuid):
 def suivi_list(request):
     """Liste des suivis"""
     try:
-        suivis = PacSuivi.objects.filter(cree_par=request.user).order_by('-created_at')
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucun suivi trouvé pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        suivis = PacSuivi.objects.filter(
+            traitement__details_pac__pac__processus__uuid__in=user_processus_uuids
+        ).order_by('-created_at')
+        # ========== FIN FILTRAGE ==========
+        
         serializer = PacSuiviSerializer(suivis, many=True)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': suivis.count()
+        }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des suivis: {str(e)}")
         return Response({
+            'success': False,
             'error': 'Impossible de récupérer les suivis'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1552,12 +1782,14 @@ def traitement_suivis(request, uuid):
     try:
         # Charger les relations nécessaires (OneToOne : un seul suivi par traitement)
         try:
-            traitement = TraitementPac.objects.select_related('suivi').get(uuid=uuid)
-            # Vérifier que le traitement appartient à un PAC de l'utilisateur connecté
-            if traitement.details_pac.pac.cree_par != request.user:
+            traitement = TraitementPac.objects.select_related('suivi', 'details_pac', 'details_pac__pac').get(uuid=uuid)
+            # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+            if not user_has_access_to_processus(request.user, traitement.details_pac.pac.processus.uuid):
                 return Response({
-                    'error': 'Accès non autorisé'
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à ce traitement. Vous n\'avez pas de rôle actif pour ce processus.'
                 }, status=status.HTTP_403_FORBIDDEN)
+            # ========== FIN VÉRIFICATION ==========
             
             if hasattr(traitement, 'suivi') and traitement.suivi:
                 suivi = traitement.suivi
@@ -1652,11 +1884,24 @@ def suivi_detail(request, uuid):
     """Récupérer le détail d'un suivi"""
     try:
         suivi = PacSuivi.objects.select_related(
-            'traitement', 'etat_mise_en_oeuvre', 'appreciation', 'preuve', 'statut'
+            'traitement', 'traitement__details_pac', 'traitement__details_pac__pac',
+            'etat_mise_en_oeuvre', 'appreciation', 'preuve', 'statut'
         ).prefetch_related(
             'preuve__medias'
-        ).get(uuid=uuid, cree_par=request.user)
-        return Response(PacSuiviSerializer(suivi).data)
+        ).get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.traitement.details_pac.pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        return Response({
+            'success': True,
+            'data': PacSuiviSerializer(suivi).data
+        }, status=status.HTTP_200_OK)
     except PacSuivi.DoesNotExist:
         return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
@@ -1670,8 +1915,25 @@ def suivi_update(request, uuid):
     """Mettre à jour un suivi"""
     try:
         suivi = PacSuivi.objects.select_related('traitement', 'traitement__details_pac', 'traitement__details_pac__pac').get(uuid=uuid)
-        if suivi.cree_par != request.user:
-            return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.traitement.details_pac.pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=suivi.traitement.details_pac.pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce suivi."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Protection : empêcher la modification si le PAC n'est pas validé
         if not suivi.traitement.details_pac.pac.is_validated:
@@ -1705,8 +1967,15 @@ def suivi_update(request, uuid):
 def details_pac_list(request, uuid):
     """Liste des détails d'un PAC spécifique"""
     try:
-        # Vérifier que le PAC appartient à l'utilisateur connecté
-        pac = Pac.objects.get(uuid=uuid, cree_par=request.user)
+        pac = Pac.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, pac.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les détails du PAC
         details = DetailsPac.objects.filter(pac=pac).select_related(
@@ -1714,7 +1983,11 @@ def details_pac_list(request, uuid):
         ).order_by('periode_de_realisation')
         
         serializer = DetailsPacSerializer(details, many=True)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': details.count()
+        }, status=status.HTTP_200_OK)
     except Pac.DoesNotExist:
         return Response({
             'error': 'PAC non trouvé'
@@ -1738,6 +2011,26 @@ def details_pac_create(request):
             try:
                 pac = Pac.objects.get(uuid=request.data['pac'])
                 logger.info(f"[details_pac_create] PAC trouvé: {pac.uuid}, validé: {pac.is_validated}")
+                
+                # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+                if not user_has_access_to_processus(request.user, pac.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': 'Vous n\'avez pas accès à ce PAC. Vous n\'avez pas de rôle actif pour ce processus.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                # ========== FIN VÉRIFICATION ==========
+                
+                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+                has_permission, error_response = check_permission_or_403(
+                    user=request.user,
+                    processus_uuid=pac.processus.uuid,
+                    role_code='ecrire',
+                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un détail."
+                )
+                if not has_permission:
+                    return error_response
+                # ========== FIN VÉRIFICATION ==========
+                
                 if pac.is_validated:
                     return Response({
                         'error': 'Ce PAC est validé. Impossible de créer un nouveau détail.'
@@ -1772,14 +2065,19 @@ def details_pac_detail(request, uuid):
             'pac', 'dysfonctionnement_recommandation', 'nature', 'categorie', 'source'
         ).get(uuid=uuid)
         
-        # Vérifier que le PAC du détail appartient à l'utilisateur connecté
-        if detail.pac.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.pac.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         serializer = DetailsPacSerializer(detail)
-        return Response(serializer.data)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
     except DetailsPac.DoesNotExist:
         return Response({
             'error': 'Détail non trouvé'
@@ -1798,11 +2096,24 @@ def details_pac_update(request, uuid):
     try:
         detail = DetailsPac.objects.select_related('pac').get(uuid=uuid)
         
-        # Vérifier que le PAC du détail appartient à l'utilisateur connecté
-        if detail.pac.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.pac.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail.pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce détail."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Protection : empêcher la modification si le PAC est validé
         if detail.pac.is_validated:
@@ -1833,11 +2144,24 @@ def details_pac_delete(request, uuid):
     try:
         detail = DetailsPac.objects.select_related('pac').get(uuid=uuid)
 
-        # Vérifier que le PAC du détail appartient à l'utilisateur connecté
-        if detail.pac.cree_par != request.user:
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.pac.processus.uuid):
             return Response({
-                'error': 'Accès non autorisé'
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail.pac.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce détail."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
 
         # Vérifier que le PAC n'est pas validé
         if detail.pac.is_validated:
@@ -1880,10 +2204,21 @@ def pac_upcoming_notifications(request):
         
         today = timezone.now().date()
         
-        # Récupérer tous les traitements de l'utilisateur avec leurs délais de réalisation
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucune notification trouvée pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        # Récupérer tous les traitements des processus de l'utilisateur avec leurs délais de réalisation
         traitements = TraitementPac.objects.filter(
             details_pac__isnull=False,
-            details_pac__pac__cree_par=request.user,
+            details_pac__pac__processus__uuid__in=user_processus_uuids,
             delai_realisation__isnull=False
         ).select_related(
             'details_pac', 
@@ -2004,9 +2339,25 @@ def pac_stats(request):
     try:
         logger.info(f"[pac_stats] Début de la fonction pour l'utilisateur: {request.user.username}")
         
-        # Récupérer tous les PACs de l'utilisateur
-        pacs_base = Pac.objects.filter(cree_par=request.user)
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': {
+                    'total_pacs': 0, 'pacs_valides': 0, 'pacs_non_valides': 0,
+                    'pacs_avec_traitement': 0, 'pacs_sans_traitement': 0,
+                    'pacs_avec_suivi': 0, 'pacs_sans_suivi': 0,
+                    'total_traitements': 0, 'total_suivis': 0
+                },
+                'message': 'Aucune donnée de PAC trouvée pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        # Récupérer tous les PACs des processus de l'utilisateur
+        pacs_base = Pac.objects.filter(processus__uuid__in=user_processus_uuids)
         logger.info(f"[pac_stats] Queryset créé")
+        # ========== FIN FILTRAGE ==========
         
         # Filtrer uniquement les PACs initiaux (exclure les amendements)
         # Vérifier tous les codes de type_tableau pour debug
@@ -2040,7 +2391,7 @@ def pac_stats(request):
         # Un PAC est considéré comme validé si is_validated=True OU si validated_at/validated_by sont remplis
         from django.db.models import Q
         pacs_valides_filter1 = Pac.objects.filter(
-            cree_par=request.user,
+            processus__uuid__in=user_processus_uuids,
             type_tableau__isnull=False,
             type_tableau__code__in=['INITIAL', 'INITIALE']
         ).filter(
@@ -2050,7 +2401,7 @@ def pac_stats(request):
         
         # Essayer avec une requête qui vérifie explicitement que ce n'est pas False
         pacs_valides_filter2 = Pac.objects.filter(
-            cree_par=request.user,
+            processus__uuid__in=user_processus_uuids,
             type_tableau__isnull=False,
             type_tableau__code__in=['INITIAL', 'INITIALE']
         ).exclude(is_validated=False).count()
@@ -2093,8 +2444,8 @@ def pac_stats(request):
         pacs_avec_traitement = 0
         pacs_avec_suivi = 0
         
-        # Récupérer TOUS les PACs de l'utilisateur (initiaux ET amendements) pour compter ceux avec traitement
-        all_pacs = Pac.objects.filter(cree_par=request.user).select_related(
+        # Récupérer TOUS les PACs des processus de l'utilisateur (initiaux ET amendements) pour compter ceux avec traitement
+        all_pacs = Pac.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
             'processus', 'cree_par', 'annee', 'type_tableau'
         ).prefetch_related('details__traitement', 'details__traitement__suivi')
         
@@ -2147,7 +2498,7 @@ def pac_stats(request):
         # Filtrer uniquement les traitements qui ont un details_pac et un pac initial associé
         traitements = TraitementPac.objects.filter(
             details_pac__isnull=False,
-            details_pac__pac__cree_par=request.user,
+            details_pac__pac__processus__uuid__in=user_processus_uuids,
             details_pac__pac__type_tableau__code__in=['INITIAL', 'INITIALE'],
             delai_realisation__isnull=False
         ).select_related('details_pac', 'details_pac__pac')
@@ -2198,7 +2549,7 @@ def pac_stats(request):
         # Filtrer uniquement les traitements qui ont un details_pac et un pac initial associé
         total_traitements = TraitementPac.objects.filter(
             details_pac__isnull=False,
-            details_pac__pac__cree_par=request.user,
+            details_pac__pac__processus__uuid__in=user_processus_uuids,
             details_pac__pac__type_tableau__code__in=['INITIAL', 'INITIALE']
         ).count()
         
@@ -2207,7 +2558,7 @@ def pac_stats(request):
         total_suivis = PacSuivi.objects.filter(
             traitement__isnull=False,
             traitement__details_pac__isnull=False,
-            traitement__details_pac__pac__cree_par=request.user,
+            traitement__details_pac__pac__processus__uuid__in=user_processus_uuids,
             traitement__details_pac__pac__type_tableau__code__in=['INITIAL', 'INITIALE']
         ).count()
         
@@ -2283,13 +2634,20 @@ def get_last_pac_previous_year(request):
 
         logger.info(f"[get_last_pac_previous_year] Recherche du dernier PAC pour processus={processus_uuid}, année={annee_precedente.annee}")
 
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus_uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce processus. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
         # Chercher tous les PACs de l'année précédente pour ce processus
         # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
         codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
 
         for code in codes_order:
             pac = Pac.objects.filter(
-                cree_par=request.user,
                 annee=annee_precedente,
                 processus__uuid=processus_uuid,
                 type_tableau__code=code

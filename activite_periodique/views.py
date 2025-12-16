@@ -22,6 +22,7 @@ from parametre.views import (
     log_activite_periodique_validation,
     get_client_ip
 )
+from parametre.permissions import check_permission_or_403, get_user_processus_list, user_has_access_to_processus
 import logging
 
 logger = logging.getLogger(__name__)
@@ -130,17 +131,35 @@ def activite_periodique_home(request):
 def activites_periodiques_list(request):
     """Liste toutes les Activités Périodiques de l'utilisateur connecté"""
     try:
-        aps = ActivitePeriodique.objects.filter(cree_par=request.user).select_related(
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucune Activité Périodique trouvée pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        # Filtrer les Activités Périodiques par les processus où l'utilisateur a un rôle actif
+        aps = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
             'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
         ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
+        # ========== FIN FILTRAGE ==========
         
         serializer = ActivitePeriodiqueSerializer(aps, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': aps.count()
+        }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f'Erreur dans activites_periodiques_list: {str(e)}')
         import traceback
         logger.error(traceback.format_exc())
         return Response({
+            'success': False,
             'error': 'Erreur lors de la récupération des Activités Périodiques',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -160,10 +179,21 @@ def activite_periodique_detail(request, uuid):
             'details__responsables_directions',
             'details__responsables_sous_directions',
             'details__responsables_services'
-        ).get(uuid=uuid, cree_par=request.user)
+        ).get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, ap.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         serializer = ActivitePeriodiqueCompletSerializer(ap)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
     except ActivitePeriodique.DoesNotExist:
         return Response({
             'error': 'Activité Périodique non trouvée'
@@ -221,6 +251,18 @@ def activite_periodique_get_or_create(request):
                 'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
+        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=processus_uuid,
+            role_code='ecrire',
+            error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer une Activité Périodique pour ce processus."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
+
         # Récupérer l'objet Annee
         try:
             annee_obj = Annee.objects.get(annee=annee_value)
@@ -230,6 +272,8 @@ def activite_periodique_get_or_create(request):
             }, status=status.HTTP_404_NOT_FOUND)
 
         # Vérifier si une AP existe déjà avec ce (processus, annee, type_tableau)
+        # Note: On cherche d'abord une AP créée par l'utilisateur pour ce contexte
+        # Si aucune n'existe, on vérifiera l'accès au processus avant de créer
         try:
             ap = ActivitePeriodique.objects.get(
                 processus__uuid=processus_uuid,
@@ -238,8 +282,21 @@ def activite_periodique_get_or_create(request):
                 cree_par=request.user
             )
             logger.info(f"[activite_periodique_get_or_create] AP existante trouvée: {ap.uuid}")
+            
+            # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+            # Même si l'AP a été créée par l'utilisateur, vérifier qu'il a toujours accès au processus
+            if not user_has_access_to_processus(request.user, ap.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            # ========== FIN VÉRIFICATION ==========
+            
             serializer = ActivitePeriodiqueSerializer(ap)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response({
+                'success': True,
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
             
         except ActivitePeriodique.DoesNotExist:
             logger.info(f"[activite_periodique_get_or_create] Aucune AP existante, création d'une nouvelle AP")
@@ -285,8 +342,22 @@ def activite_periodique_create(request):
     """Créer une nouvelle Activité Périodique"""
     try:
         data = request.data.copy()
-        # Ne pas passer cree_par dans data, le serializer le gère via le contexte
+        processus_uuid = data.get('processus')
         
+        # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
+        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
+        if processus_uuid:
+            has_permission, error_response = check_permission_or_403(
+                user=request.user,
+                processus_uuid=processus_uuid,
+                role_code='ecrire',
+                error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer une Activité Périodique pour ce processus."
+            )
+            if not has_permission:
+                return error_response
+        # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
+        
+        # Ne pas passer cree_par dans data, le serializer le gère via le contexte
         serializer = ActivitePeriodiqueSerializer(data=data, context={'request': request})
 
         if serializer.is_valid():
@@ -319,7 +390,26 @@ def activite_periodique_create(request):
 def activite_periodique_update(request, uuid):
     """Mettre à jour une Activité Périodique"""
     try:
-        ap = ActivitePeriodique.objects.select_related('type_tableau', 'processus', 'annee').get(uuid=uuid, cree_par=request.user)
+        ap = ActivitePeriodique.objects.select_related('type_tableau', 'processus', 'annee').get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, ap.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=ap.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier cette Activité Périodique."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP n'a pas d'amendements suivants (les tableaux précédents ne peuvent plus être modifiés)
         if _has_amendements_following(ap):
@@ -362,9 +452,30 @@ def activite_periodique_update(request, uuid):
 def activite_periodique_delete(request, uuid):
     """Supprimer une Activité Périodique"""
     try:
-        ap = ActivitePeriodique.objects.get(uuid=uuid, cree_par=request.user)
+        ap = ActivitePeriodique.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, ap.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=ap.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer cette Activité Périodique."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
+        
         ap.delete()
         return Response({
+            'success': True,
             'message': 'Activité Périodique supprimée avec succès'
         }, status=status.HTTP_200_OK)
     except ActivitePeriodique.DoesNotExist:
@@ -391,7 +502,26 @@ def activite_periodique_validate(request, uuid):
             'details__responsables_directions',
             'details__responsables_sous_directions',
             'details__responsables_services'
-        ).get(uuid=uuid, cree_par=request.user)
+        ).get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, ap.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=ap.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour valider cette Activité Périodique."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier qu'il y a au moins un détail
         details = ap.details.all()
@@ -477,12 +607,30 @@ def activite_periodique_validate(request, uuid):
 def details_ap_list(request):
     """Liste tous les détails AP de l'utilisateur connecté"""
     try:
-        details = DetailsAP.objects.filter(activite_periodique__cree_par=request.user).select_related(
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucun détail AP trouvé pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        details = DetailsAP.objects.filter(
+            activite_periodique__processus__uuid__in=user_processus_uuids
+        ).select_related(
             'activite_periodique', 'responsabilite_direction', 'responsabilite_sous_direction', 'responsabilite_service'
         ).prefetch_related('responsables_directions', 'responsables_sous_directions', 'responsables_services')
+        # ========== FIN FILTRAGE ==========
         
         serializer = DetailsAPSerializer(details, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': details.count()
+        }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f'Erreur dans details_ap_list: {str(e)}')
         import traceback
@@ -498,8 +646,15 @@ def details_ap_list(request):
 def details_ap_by_activite_periodique(request, ap_uuid):
     """Récupérer tous les détails AP pour une Activité Périodique spécifique"""
     try:
-        # Vérifier que l'AP existe et appartient à l'utilisateur
-        ap = ActivitePeriodique.objects.get(uuid=ap_uuid, cree_par=request.user)
+        ap = ActivitePeriodique.objects.get(uuid=ap_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, ap.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les détails AP
         details = DetailsAP.objects.filter(activite_periodique=ap).select_related(
@@ -507,7 +662,11 @@ def details_ap_by_activite_periodique(request, ap_uuid):
         ).prefetch_related('responsables_directions', 'responsables_sous_directions', 'responsables_services', 'suivis__mois', 'suivis__etat_mise_en_oeuvre')
         
         serializer = DetailsAPSerializer(details, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': details.count()
+        }, status=status.HTTP_200_OK)
     except ActivitePeriodique.DoesNotExist:
         return Response({
             'error': 'Activité Périodique non trouvée'
@@ -530,13 +689,33 @@ def details_ap_create(request):
         data = request.data.copy()
         ap_uuid = data.get('activite_periodique')
         
-        # Vérifier que l'AP existe et appartient à l'utilisateur
+        # Vérifier que l'AP existe
         try:
-            ap = ActivitePeriodique.objects.get(uuid=ap_uuid, cree_par=request.user)
+            ap = ActivitePeriodique.objects.get(uuid=ap_uuid)
         except ActivitePeriodique.DoesNotExist:
             return Response({
+                'success': False,
                 'error': 'Activité Périodique non trouvée'
             }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, ap.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=ap.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un détail AP."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP n'est pas validée
         if ap.is_validated:
@@ -576,9 +755,27 @@ def details_ap_update(request, uuid):
     """Mettre à jour un détail AP"""
     try:
         detail = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__type_tableau', 'activite_periodique__processus', 'activite_periodique__annee').get(
-            uuid=uuid,
-            activite_periodique__cree_par=request.user
+            uuid=uuid
         )
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail.activite_periodique.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce détail AP."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP n'est pas validée
         if detail.activite_periodique.is_validated:
@@ -619,9 +816,27 @@ def details_ap_delete(request, uuid):
     """Supprimer un détail AP"""
     try:
         detail = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__type_tableau', 'activite_periodique__processus', 'activite_periodique__annee').get(
-            uuid=uuid,
-            activite_periodique__cree_par=request.user
+            uuid=uuid
         )
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail.activite_periodique.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce détail AP."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP n'est pas validée
         if detail.activite_periodique.is_validated:
@@ -637,6 +852,7 @@ def details_ap_delete(request, uuid):
         
         detail.delete()
         return Response({
+            'success': True,
             'message': 'Détail AP supprimé avec succès'
         }, status=status.HTTP_200_OK)
     except DetailsAP.DoesNotExist:
@@ -660,12 +876,28 @@ def details_ap_delete(request, uuid):
 def suivis_ap_list(request):
     """Liste tous les suivis AP de l'utilisateur connecté"""
     try:
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucun suivi AP trouvé pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
         suivis = SuivisAP.objects.filter(
-            details_ap__activite_periodique__cree_par=request.user
+            details_ap__activite_periodique__processus__uuid__in=user_processus_uuids
         ).select_related('details_ap', 'mois', 'etat_mise_en_oeuvre')
+        # ========== FIN FILTRAGE ==========
         
         serializer = SuivisAPSerializer(suivis, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': suivis.count()
+        }, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f'Erreur dans suivis_ap_list: {str(e)}')
         import traceback
@@ -681,17 +913,27 @@ def suivis_ap_list(request):
 def suivis_ap_by_detail_ap(request, detail_ap_uuid):
     """Récupérer tous les suivis AP pour un détail AP spécifique"""
     try:
-        # Vérifier que le détail AP existe et appartient à l'utilisateur
-        detail_ap = DetailsAP.objects.select_related('activite_periodique').get(
-            uuid=detail_ap_uuid,
-            activite_periodique__cree_par=request.user
+        detail_ap = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__processus').get(
+            uuid=detail_ap_uuid
         )
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Récupérer les suivis
         suivis = SuivisAP.objects.filter(details_ap=detail_ap).select_related('mois', 'etat_mise_en_oeuvre')
         
         serializer = SuivisAPSerializer(suivis, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': suivis.count()
+        }, status=status.HTTP_200_OK)
     except DetailsAP.DoesNotExist:
         return Response({
             'error': 'Détail AP non trouvé'
@@ -714,16 +956,35 @@ def suivi_ap_create(request):
         data = request.data.copy()
         detail_ap_uuid = data.get('details_ap')
         
-        # Vérifier que le détail AP existe et appartient à l'utilisateur
+        # Vérifier que le détail AP existe
         try:
             detail_ap = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__type_tableau', 'activite_periodique__processus', 'activite_periodique__annee').get(
-                uuid=detail_ap_uuid,
-                activite_periodique__cree_par=request.user
+                uuid=detail_ap_uuid
             )
         except DetailsAP.DoesNotExist:
             return Response({
+                'success': False,
                 'error': 'Détail AP non trouvé'
             }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, detail_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=detail_ap.activite_periodique.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un suivi AP."
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP est validée (les suivis ne peuvent être renseignés que si l'AP est validée)
         # Exception : permettre la création lors de la copie d'amendement
@@ -766,10 +1027,26 @@ def suivi_ap_update(request, uuid):
             'details_ap__activite_periodique', 'details_ap__activite_periodique__type_tableau', 
             'details_ap__activite_periodique__processus', 'details_ap__activite_periodique__annee',
             'mois', 'etat_mise_en_oeuvre'
-        ).get(
-            uuid=uuid,
-            details_ap__activite_periodique__cree_par=request.user
+        ).get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=suivi.details_ap.activite_periodique.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce suivi AP."
         )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP est validée (les suivis ne peuvent être modifiés que si l'AP est validée)
         if not suivi.details_ap.activite_periodique.is_validated:
@@ -810,11 +1087,28 @@ def suivi_ap_delete(request, uuid):
     """Supprimer un suivi AP"""
     try:
         suivi = SuivisAP.objects.select_related(
-            'details_ap__activite_periodique', 'mois', 'etat_mise_en_oeuvre'
-        ).get(
-            uuid=uuid,
-            details_ap__activite_periodique__cree_par=request.user
+            'details_ap__activite_periodique', 'details_ap__activite_periodique__processus',
+            'mois', 'etat_mise_en_oeuvre'
+        ).get(uuid=uuid)
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        has_permission, error_response = check_permission_or_403(
+            user=request.user,
+            processus_uuid=suivi.details_ap.activite_periodique.processus.uuid,
+            role_code='ecrire',
+            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce suivi AP."
         )
+        if not has_permission:
+            return error_response
+        # ========== FIN VÉRIFICATION ==========
 
         # Vérifier que l'AP n'a pas d'amendements (verrouillée)
         ap = suivi.details_ap.activite_periodique
@@ -825,6 +1119,7 @@ def suivi_ap_delete(request, uuid):
 
         suivi.delete()
         return Response({
+            'success': True,
             'message': 'Suivi AP supprimé avec succès'
         }, status=status.HTTP_200_OK)
     except SuivisAP.DoesNotExist:
@@ -888,9 +1183,16 @@ def get_last_ap_previous_year(request):
         # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
         codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
 
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus_uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce processus. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
         for code in codes_order:
             ap = ActivitePeriodique.objects.filter(
-                cree_par=request.user,
                 annee=annee_precedente,
                 processus__uuid=processus_uuid,
                 type_tableau__code=code
@@ -927,9 +1229,23 @@ def activite_periodique_stats(request):
     try:
         logger.info(f"[activite_periodique_stats] Début pour l'utilisateur: {request.user.username}")
 
-        # Récupérer toutes les Activités Périodiques de l'utilisateur
-        aps_base = ActivitePeriodique.objects.filter(cree_par=request.user)
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        if not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': {
+                    'total_aps': 0, 'aps_valides': 0, 'aps_en_attente': 0,
+                    'total_details': 0, 'total_suivis': 0
+                },
+                'message': 'Aucune donnée d\'Activité Périodique trouvée pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+
+        # Récupérer toutes les Activités Périodiques des processus de l'utilisateur
+        aps_base = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids)
         logger.info(f"[activite_periodique_stats] Nombre total d'APs: {aps_base.count()}")
+        # ========== FIN FILTRAGE ==========
 
         # Filtrer uniquement les APs initiaux (exclure les amendements)
         aps_initiaux = aps_base.filter(

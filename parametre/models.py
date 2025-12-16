@@ -1228,3 +1228,202 @@ class MediaDocument(models.Model):
         return f"Média pour {self.document.name}"
 
 # MoisAP déplacé dans activite_periodique pour résoudre les dépendances circulaires
+
+
+# ==================== MODÈLES POUR LE SYSTÈME DE RÔLES ====================
+
+class Role(HasActiveStatus):
+    """
+    Modèle pour les rôles disponibles dans le système
+    Exemples : Écriture, Lecture, Validation, Suppression, etc.
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(
+        max_length=50,
+        unique=True,
+        help_text="Code unique du rôle (ex: LECTURE, ECRITURE, EDITION, VALIDATION, SUPPRESSION)"
+    )
+    nom = models.CharField(
+        max_length=100,
+        help_text="Nom du rôle (ex: Lecture, Écriture, Édition, Validation, Suppression)"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description du rôle et de ses permissions"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'role'
+        verbose_name = 'Rôle'
+        verbose_name_plural = 'Rôles'
+        ordering = ['nom']
+
+    def __str__(self):
+        return f"{self.code} - {self.nom}"
+
+
+class UserProcessus(models.Model):
+    """
+    Modèle pour l'attribution d'un processus à un utilisateur
+    Un utilisateur doit d'abord être lié à un processus avant de pouvoir avoir des rôles
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='user_processus',
+        help_text="Utilisateur concerné"
+    )
+    processus = models.ForeignKey(
+        Processus,
+        on_delete=models.CASCADE,
+        related_name='user_processus',
+        help_text="Processus attribué à l'utilisateur"
+    )
+    date_attribution = models.DateTimeField(
+        auto_now_add=True,
+        help_text="Date d'attribution du processus à l'utilisateur"
+    )
+    attribue_par = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='processus_attribues',
+        help_text="Utilisateur qui a effectué l'attribution"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Indique si cette attribution est active"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_processus'
+        verbose_name = 'Attribution Processus Utilisateur'
+        verbose_name_plural = 'Attributions Processus Utilisateurs'
+        ordering = ['-date_attribution']
+        unique_together = [('user', 'processus')]
+        indexes = [
+            models.Index(fields=['user', 'processus']),
+            models.Index(fields=['user', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.processus.nom}"
+
+    def clean(self):
+        """Validation : vérifier que l'utilisateur et le processus existent"""
+        from django.core.exceptions import ValidationError
+        if not self.user:
+            raise ValidationError("L'utilisateur est requis")
+        if not self.processus:
+            raise ValidationError("Le processus est requis")
+        
+        # Vérifier qu'un utilisateur n'a pas déjà ce processus attribué (même inactif)
+        if self.user and self.processus:
+            existing = UserProcessus.objects.filter(
+                user=self.user,
+                processus=self.processus
+            ).exclude(pk=self.pk if self.pk else None)
+            
+            if existing.exists():
+                raise ValidationError(
+                    f"Cet utilisateur a déjà le processus '{self.processus.nom}' attribué. "
+                    "Un utilisateur ne peut avoir qu'une seule attribution par processus."
+                )
+
+
+class UserProcessusRole(models.Model):
+    """
+    Modèle pour l'attribution d'un rôle à un utilisateur pour un processus spécifique
+    Un utilisateur doit d'abord être lié à un processus (UserProcessus) avant d'avoir des rôles
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='user_processus_roles',
+        help_text="Utilisateur concerné"
+    )
+    processus = models.ForeignKey(
+        Processus,
+        on_delete=models.CASCADE,
+        related_name='user_processus_roles',
+        help_text="Processus concerné"
+    )
+    role = models.ForeignKey(
+        Role,
+        on_delete=models.CASCADE,
+        related_name='user_processus_roles',
+        help_text="Rôle attribué"
+    )
+    date_attribution = models.DateTimeField(
+        auto_now_add=True,
+        help_text="Date d'attribution du rôle"
+    )
+    attribue_par = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='roles_attribues',
+        help_text="Utilisateur qui a effectué l'attribution du rôle"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Indique si cette attribution de rôle est active"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_processus_role'
+        verbose_name = 'Rôle Utilisateur Processus'
+        verbose_name_plural = 'Rôles Utilisateurs Processus'
+        ordering = ['-date_attribution']
+        unique_together = [('user', 'processus', 'role')]
+        indexes = [
+            models.Index(fields=['user', 'processus']),
+            models.Index(fields=['user', 'processus', 'is_active']),
+        ]
+
+    def __str__(self):
+        """Représentation string du UserProcessusRole avec gestion des valeurs None"""
+        user_str = self.user.username if self.user else "Utilisateur inconnu"
+        processus_str = self.processus.nom if hasattr(self, 'processus') and self.processus else "Processus non défini"
+        role_str = self.role.nom if hasattr(self, 'role') and self.role else "Rôle non défini"
+        return f"{user_str} - {processus_str} - {role_str}"
+
+    def clean(self):
+        """Validation : vérifier que l'utilisateur est bien attribué au processus"""
+        from django.core.exceptions import ValidationError
+        
+        # Vérifier que l'utilisateur et le processus sont définis
+        if not hasattr(self, 'user') or self.user is None:
+            return
+        
+        if not hasattr(self, 'processus') or self.processus is None:
+            return
+        
+        # Vérifier que l'utilisateur est bien attribué au processus
+        user_processus_exists = UserProcessus.objects.filter(
+            user=self.user,
+            processus=self.processus,
+            is_active=True
+        ).exists()
+        
+        if not user_processus_exists:
+            raise ValidationError(
+                f"L'utilisateur {self.user.username} doit d'abord être attribué au processus {self.processus.nom} "
+                "avant de pouvoir avoir des rôles."
+            )
+
+    def save(self, *args, **kwargs):
+        """Valider avant de sauvegarder"""
+        self.full_clean()
+        super().save(*args, **kwargs)

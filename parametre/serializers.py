@@ -2,7 +2,8 @@ from rest_framework import serializers
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus,
-    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee, Risque, StatutActionCDR
+    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee, Risque, StatutActionCDR,
+    Role, UserProcessus, UserProcessusRole
 )
 
 
@@ -224,5 +225,78 @@ class RisqueSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
+
+
+# ==================== SERIALIZERS POUR LE SYSTÈME DE RÔLES ====================
+
+class RoleSerializer(serializers.ModelSerializer):
+    """Serializer pour les rôles"""
+    
+    class Meta:
+        model = Role
+        fields = ['uuid', 'code', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class UserProcessusSerializer(serializers.ModelSerializer):
+    """Serializer pour les attributions processus-utilisateur"""
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    processus_nom = serializers.CharField(source='processus.nom', read_only=True)
+    processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
+    attribue_par_username = serializers.CharField(source='attribue_par.username', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = UserProcessus
+        fields = [
+            'uuid', 'user', 'user_username', 'user_email',
+            'processus', 'processus_nom', 'processus_numero',
+            'attribue_par', 'attribue_par_username',
+            'date_attribution', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['uuid', 'date_attribution', 'created_at', 'updated_at']
+
+
+class UserProcessusRoleSerializer(serializers.ModelSerializer):
+    """Serializer pour les rôles utilisateur-processus"""
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    processus_nom = serializers.CharField(source='processus.nom', read_only=True)
+    processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
+    role_code = serializers.CharField(source='role.code', read_only=True)
+    role_nom = serializers.CharField(source='role.nom', read_only=True)
+    attribue_par_username = serializers.CharField(source='attribue_par.username', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = UserProcessusRole
+        fields = [
+            'uuid', 'user', 'user_username', 'user_email',
+            'processus', 'processus_nom', 'processus_numero',
+            'role', 'role_code', 'role_nom',
+            'attribue_par', 'attribue_par_username',
+            'date_attribution', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['uuid', 'date_attribution', 'created_at', 'updated_at']
+    
+    def validate(self, data):
+        """Valider que l'utilisateur est bien attribué au processus"""
+        user = data.get('user')
+        processus = data.get('processus')
+        
+        if user and processus:
+            # Vérifier que l'utilisateur est bien attribué au processus
+            user_processus_exists = UserProcessus.objects.filter(
+                user=user,
+                processus=processus,
+                is_active=True
+            ).exists()
+            
+            if not user_processus_exists:
+                raise serializers.ValidationError(
+                    f"L'utilisateur {user.username} doit d'abord être attribué au processus {processus.nom} "
+                    "avant de pouvoir avoir des rôles."
+                )
+        
+        return data
 
 

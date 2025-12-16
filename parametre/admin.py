@@ -1,5 +1,9 @@
 from django.contrib import admin
 from django import forms
+from django.http import JsonResponse
+from django.urls import path
+from django.core.exceptions import ValidationError
+from django.utils.html import format_html
 from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Preuve, StatutActionCDR,
@@ -7,7 +11,8 @@ from .models import (
     ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
     DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
-    TypeDocument, EditionDocument, AmendementDocument, MediaDocument
+    TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
+    Role, UserProcessus, UserProcessusRole
 )
 
 
@@ -821,3 +826,575 @@ class MediaDocumentAdmin(admin.ModelAdmin):
         """Optimiser les requêtes avec select_related"""
         qs = super().get_queryset(request)
         return qs.select_related('document', 'media')
+
+
+# ==================== ADMIN POUR LE SYSTÈME DE RÔLES ====================
+
+@admin.register(Role)
+class RoleAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les rôles"""
+    
+    list_display = [
+        'code', 'nom', 'description', 'is_active', 'created_at', 'updated_at'
+    ]
+    list_filter = [
+        'is_active', 'created_at', 'updated_at'
+    ]
+    search_fields = [
+        'code', 'nom', 'description'
+    ]
+    readonly_fields = [
+        'uuid', 'created_at', 'updated_at'
+    ]
+    ordering = ['nom']
+    
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('uuid', 'code', 'nom', 'description')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+class ProcessusMultipleChoiceField(forms.ModelMultipleChoiceField):
+    """Champ personnalisé pour n'afficher que le nom du processus"""
+    def label_from_instance(self, obj):
+        """Retourner seulement le nom du processus, pas le numéro"""
+        return obj.nom
+
+
+class UserProcessusForm(forms.ModelForm):
+    """Formulaire personnalisé pour permettre la sélection multiple de processus"""
+    processus_multiple = ProcessusMultipleChoiceField(
+        queryset=Processus.objects.filter(is_active=True).order_by('nom'),
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'compact-checkboxes'}),
+        required=False,
+        label='Processus',
+        help_text='Sélectionnez un ou plusieurs processus à attribuer'
+    )
+    
+    class Meta:
+        model = UserProcessus
+        fields = ['user', 'attribue_par', 'is_active']
+        widgets = {
+            'user': forms.Select(attrs={'class': 'user-select'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Si on modifie un objet existant, pré-sélectionner tous les processus de l'utilisateur
+        if self.instance and self.instance.pk:
+            if hasattr(self.instance, 'user') and self.instance.user_id:
+                # Récupérer tous les processus actifs de cet utilisateur
+                existing_processus = UserProcessus.objects.filter(
+                    user=self.instance.user,
+                    is_active=True
+                ).values_list('processus', flat=True)
+                self.fields['processus_multiple'].initial = list(existing_processus)
+                # Pré-remplir aussi l'utilisateur et le rendre readonly
+                self.fields['user'].initial = self.instance.user
+                self.fields['user'].widget.attrs['readonly'] = True
+                self.fields['user'].widget.attrs['disabled'] = True
+    
+    def clean(self):
+        # Définir un processus temporaire AVANT la validation du modèle
+        # pour éviter l'erreur RelatedObjectDoesNotExist
+        if hasattr(self.data, 'getlist'):
+            processus_ids = self.data.getlist('processus_multiple')
+        elif 'processus_multiple' in self.data:
+            processus_ids = [self.data['processus_multiple']] if isinstance(self.data['processus_multiple'], str) else self.data['processus_multiple']
+        else:
+            processus_ids = []
+            
+        if processus_ids:
+            try:
+                processus_uuid = processus_ids[0] if isinstance(processus_ids[0], str) else str(processus_ids[0])
+                processus = Processus.objects.get(uuid=processus_uuid)
+                self.instance.processus = processus
+            except (Processus.DoesNotExist, ValueError, TypeError):
+                pass
+        
+        cleaned_data = super().clean()
+        processus_multiple = cleaned_data.get('processus_multiple')
+        
+        if not processus_multiple:
+            raise ValidationError('Vous devez sélectionner au moins un processus.')
+        
+        # Si le champ user est disabled, récupérer la valeur depuis l'instance
+        if 'user' not in cleaned_data or not cleaned_data['user']:
+            if self.instance and self.instance.pk and hasattr(self.instance, 'user'):
+                cleaned_data['user'] = self.instance.user
+        
+        return cleaned_data
+    
+    def _post_clean(self):
+        """Surcharger _post_clean pour exclure processus de la validation unique"""
+        # Exclure processus de la validation unique car nous créons plusieurs instances
+        # Le processus temporaire a déjà été défini dans clean()
+        exclude = set()
+        if hasattr(self, '_get_validation_exclusions'):
+            exclude = self._get_validation_exclusions()
+        
+        # Appeler la méthode parente qui validera le modèle
+        super()._post_clean()
+
+
+@admin.register(UserProcessus)
+class UserProcessusAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les attributions processus-utilisateur"""
+    
+    form = UserProcessusForm
+    
+    list_display = [
+        'user', 'processus', 'attribue_par', 'date_attribution', 'is_active', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'date_attribution', 'created_at', 'processus'
+    ]
+    search_fields = [
+        'user__username', 'user__email', 'processus__nom', 'processus__numero_processus'
+    ]
+    readonly_fields = [
+        'uuid', 'date_attribution', 'created_at', 'updated_at'
+    ]
+    ordering = ['-date_attribution']
+    
+    fieldsets = (
+        ('Attribution', {
+            'fields': ('uuid', 'user', 'processus_multiple', 'attribue_par')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('date_attribution', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def save_model(self, request, obj, form, change):
+        """Sauvegarder le modèle - créer plusieurs UserProcessus pour chaque processus sélectionné"""
+        processus_list = form.cleaned_data.get('processus_multiple', [])
+        user = form.cleaned_data['user']
+        attribue_par = form.cleaned_data.get('attribue_par') or request.user
+        is_active = form.cleaned_data.get('is_active', True)
+        
+        if not change:  # Création
+            # Créer un UserProcessus pour chaque processus sélectionné
+            for processus in processus_list:
+                # Vérifier si la relation existe déjà
+                user_processus, created = UserProcessus.objects.get_or_create(
+                    user=user,
+                    processus=processus,
+                    defaults={
+                        'attribue_par': attribue_par,
+                        'is_active': is_active
+                    }
+                )
+                if not created:
+                    # Mettre à jour si existe déjà
+                    user_processus.attribue_par = attribue_par
+                    user_processus.is_active = is_active
+                    user_processus.save()
+        else:  # Modification
+            # Récupérer l'utilisateur depuis l'objet existant ou le formulaire
+            user_to_update = obj.user if hasattr(obj, 'user') and obj.user else user
+            
+            # Supprimer les processus non sélectionnés pour cet utilisateur
+            UserProcessus.objects.filter(
+                user=user_to_update
+            ).exclude(processus__in=processus_list).delete()
+            
+            # Créer ou mettre à jour les processus sélectionnés
+            for processus in processus_list:
+                user_processus, created = UserProcessus.objects.get_or_create(
+                    user=user_to_update,
+                    processus=processus,
+                    defaults={
+                        'attribue_par': attribue_par,
+                        'is_active': is_active
+                    }
+                )
+                if not created:
+                    user_processus.attribue_par = attribue_par
+                    user_processus.is_active = is_active
+                    user_processus.save()
+    
+    def response_post_save_add(self, request, obj):
+        """Rediriger vers la liste après l'ajout"""
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+        return HttpResponseRedirect(reverse('admin:parametre_userprocessus_changelist'))
+    
+    def response_post_save_change(self, request, obj):
+        """Rediriger vers la liste après la modification"""
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+        return HttpResponseRedirect(reverse('admin:parametre_userprocessus_changelist'))
+    
+    def get_queryset(self, request):
+        """Optimiser les requêtes avec select_related"""
+        return super().get_queryset(request).select_related('user', 'processus', 'attribue_par')
+    
+    class Media:
+        css = {
+            'all': ('admin/css/userprocessusrole_admin.css',)
+        }
+
+
+class RoleMultipleChoiceField(forms.ModelMultipleChoiceField):
+    """Champ personnalisé pour n'afficher que le nom du rôle"""
+    def label_from_instance(self, obj):
+        """Retourner seulement le nom du rôle, pas le code"""
+        return obj.nom
+
+
+class ProcessusMultipleChoiceFieldForRole(forms.ModelMultipleChoiceField):
+    """Champ personnalisé pour n'afficher que le nom du processus"""
+    def label_from_instance(self, obj):
+        """Retourner seulement le nom du processus, pas le numéro"""
+        return obj.nom
+
+
+class UserProcessusRoleForm(forms.ModelForm):
+    """Formulaire personnalisé pour permettre la sélection multiple de processus et rôles"""
+    processus_multiple = ProcessusMultipleChoiceFieldForRole(
+        queryset=Processus.objects.filter(is_active=True).order_by('nom'),
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'compact-checkboxes'}),
+        required=False,
+        label='Processus',
+        help_text='Sélectionnez un ou plusieurs processus'
+    )
+    roles = RoleMultipleChoiceField(
+        queryset=Role.objects.filter(is_active=True),
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'compact-checkboxes'}),
+        required=False,
+        label='Rôles',
+        help_text='Sélectionnez un ou plusieurs rôles à attribuer'
+    )
+    
+    class Meta:
+        model = UserProcessusRole
+        fields = ['user', 'attribue_par', 'is_active']
+        widgets = {
+            'user': forms.Select(attrs={'class': 'user-select'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Filtrer les processus disponibles selon l'utilisateur sélectionné
+        user_id = None
+        if self.instance and self.instance.pk and hasattr(self.instance, 'user') and self.instance.user_id:
+            user_id = self.instance.user_id
+        elif self.data and 'user' in self.data:
+            user_id = self.data.get('user')
+        
+        if user_id:
+            # Filtrer pour ne montrer que les processus où l'utilisateur est attribué
+            processus_ids = UserProcessus.objects.filter(
+                user_id=user_id,
+                is_active=True
+            ).values_list('processus_id', flat=True)
+            self.fields['processus_multiple'].queryset = Processus.objects.filter(
+                uuid__in=processus_ids,
+                is_active=True
+            ).order_by('nom')
+        
+        # Si on modifie un objet existant, pré-sélectionner tous les processus et rôles de l'utilisateur
+        if self.instance and self.instance.pk:
+            try:
+                if hasattr(self.instance, 'user') and self.instance.user_id:
+                    # Récupérer tous les processus distincts où cet utilisateur a des rôles
+                    existing_processus = UserProcessusRole.objects.filter(
+                        user=self.instance.user,
+                        is_active=True
+                    ).values_list('processus', flat=True).distinct()
+                    self.fields['processus_multiple'].initial = list(existing_processus)
+                    
+                    # Récupérer tous les rôles distincts attribués à cet utilisateur
+                    existing_roles = UserProcessusRole.objects.filter(
+                        user=self.instance.user,
+                        is_active=True
+                    ).values_list('role', flat=True).distinct()
+                    self.fields['roles'].initial = list(existing_roles)
+                    
+                    # Pré-remplir l'utilisateur et le rendre readonly
+                    self.fields['user'].initial = self.instance.user
+                    self.fields['user'].widget.attrs['readonly'] = True
+                    self.fields['user'].widget.attrs['disabled'] = True
+            except Exception:
+                # Si une erreur survient, initialiser avec une liste vide
+                pass
+        
+        # Filtrer les rôles actifs et personnaliser les choix pour n'afficher que le nom
+        queryset = Role.objects.filter(is_active=True).order_by('code', 'nom')
+        self.fields['roles'].queryset = queryset
+        
+        # Personnaliser les choix pour n'afficher que le nom
+        choices = [(role.uuid, role.nom) for role in queryset]
+        self.fields['roles'].choices = choices
+    
+    def clean(self):
+        # Définir un processus temporaire AVANT la validation du modèle
+        # pour éviter l'erreur RelatedObjectDoesNotExist
+        if hasattr(self.data, 'getlist'):
+            processus_ids = self.data.getlist('processus_multiple')
+        elif 'processus_multiple' in self.data:
+            processus_ids = [self.data['processus_multiple']] if isinstance(self.data['processus_multiple'], str) else self.data['processus_multiple']
+        else:
+            processus_ids = []
+            
+        if processus_ids:
+            try:
+                processus_uuid = processus_ids[0] if isinstance(processus_ids[0], str) else str(processus_ids[0])
+                processus = Processus.objects.get(uuid=processus_uuid)
+                self.instance.processus = processus
+            except (Processus.DoesNotExist, ValueError, TypeError):
+                pass
+        
+        cleaned_data = super().clean()
+        processus_multiple = cleaned_data.get('processus_multiple')
+        roles = cleaned_data.get('roles')
+        
+        if not processus_multiple:
+            raise ValidationError('Vous devez sélectionner au moins un processus.')
+        
+        if not roles:
+            raise ValidationError('Vous devez sélectionner au moins un rôle.')
+        
+        # Si le champ user est disabled, récupérer la valeur depuis l'instance
+        if 'user' not in cleaned_data or not cleaned_data['user']:
+            if self.instance and self.instance.pk and hasattr(self.instance, 'user'):
+                cleaned_data['user'] = self.instance.user
+        
+        return cleaned_data
+    
+    def _post_clean(self):
+        """Surcharger _post_clean pour exclure processus de la validation unique"""
+        # Exclure processus de la validation unique car nous créons plusieurs instances
+        # Le processus temporaire a déjà été défini dans clean()
+        exclude = set()
+        if hasattr(self, '_get_validation_exclusions'):
+            exclude = self._get_validation_exclusions()
+        
+        # Appeler la méthode parente qui validera le modèle
+        super()._post_clean()
+
+
+@admin.register(UserProcessusRole)
+class UserProcessusRoleAdmin(admin.ModelAdmin):
+    """Configuration de l'interface d'administration pour les rôles utilisateur-processus"""
+    
+    form = UserProcessusRoleForm
+    
+    list_display = [
+        'user', 'processus', 'role', 'attribue_par', 'date_attribution', 'is_active', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'date_attribution', 'created_at', 'processus', 'role'
+    ]
+    search_fields = [
+        'user__username', 'user__email', 'processus__nom', 'processus__numero_processus', 'role__code', 'role__nom'
+    ]
+    readonly_fields = [
+        'uuid', 'date_attribution', 'created_at', 'updated_at'
+    ]
+    ordering = ['-date_attribution']
+    
+    fieldsets = (
+        ('Attribution de rôles', {
+            'fields': ('uuid', 'user', 'processus_multiple', 'roles', 'attribue_par')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+        ('Métadonnées', {
+            'fields': ('date_attribution', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    class Media:
+        js = ('admin/js/userprocessusrole_filter.js',)
+        css = {
+            'all': ('admin/css/userprocessusrole_admin.css',)
+        }
+    
+    def get_queryset(self, request):
+        """Optimiser les requêtes avec select_related"""
+        return super().get_queryset(request).select_related('user', 'processus', 'role', 'attribue_par')
+    
+    def get_urls(self):
+        """Ajouter des URLs personnalisées pour récupérer les processus et rôles d'un utilisateur"""
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                'get_processus/',
+                self.admin_site.admin_view(self.get_user_processus),
+                name='parametre_userprocessusrole_get_processus',
+            ),
+            path(
+                'get_user_roles/',
+                self.admin_site.admin_view(self.get_user_roles),
+                name='parametre_userprocessusrole_get_user_roles',
+            ),
+        ]
+        return custom_urls + urls
+    
+    def get_user_processus(self, request):
+        """Vue pour récupérer les processus d'un utilisateur via AJAX"""
+        from django.contrib.auth.models import User
+        
+        if request.method != 'GET':
+            return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+        
+        user_id = request.GET.get('user_id')
+        if not user_id:
+            return JsonResponse({'processus': []}, safe=False)
+        
+        try:
+            user = User.objects.get(id=user_id)
+            processus_list = UserProcessus.objects.filter(
+                user=user,
+                is_active=True
+            ).select_related('processus')
+            
+            processus_data = []
+            for up in processus_list:
+                processus_data.append({
+                    'uuid': str(up.processus.uuid),
+                    'nom': up.processus.nom,
+                    'numero_processus': up.processus.numero_processus
+                })
+            
+            return JsonResponse({'processus': processus_data}, safe=False)
+        except User.DoesNotExist:
+            return JsonResponse({'processus': []}, safe=False)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Erreur lors de la récupération des processus utilisateur: {e}", exc_info=True)
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    def get_user_roles(self, request):
+        """Vue pour récupérer les rôles déjà attribués à un utilisateur pour ses processus"""
+        from django.contrib.auth.models import User
+        
+        if request.method != 'GET':
+            return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+        
+        user_id = request.GET.get('user_id')
+        if not user_id:
+            return JsonResponse({'roles': []}, safe=False)
+        
+        try:
+            user = User.objects.get(id=user_id)
+            user_roles = UserProcessusRole.objects.filter(
+                user=user,
+                is_active=True
+            ).select_related('processus', 'role')
+            
+            roles_data = []
+            for ur in user_roles:
+                roles_data.append({
+                    'processus_uuid': str(ur.processus.uuid),
+                    'role_uuid': str(ur.role.uuid),
+                    'role_nom': ur.role.nom
+                })
+            
+            return JsonResponse({'roles': roles_data}, safe=False)
+        except User.DoesNotExist:
+            return JsonResponse({'roles': []}, safe=False)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Erreur lors de la récupération des rôles utilisateur: {e}", exc_info=True)
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    def save_model(self, request, obj, form, change):
+        """Sauvegarder le modèle - créer plusieurs instances pour chaque combinaison processus-rôle"""
+        processus_list = form.cleaned_data.get('processus_multiple', [])
+        roles = form.cleaned_data.get('roles', [])
+        
+        if not processus_list or not roles:
+            # Assigner des valeurs temporaires à obj pour éviter l'erreur dans __str__
+            # lors du logging par Django
+            if not hasattr(obj, 'processus') or not obj.processus:
+                # Assigner le premier processus temporairement
+                if processus_list:
+                    obj.processus = processus_list[0] if isinstance(processus_list, list) else processus_list
+            if not hasattr(obj, 'role') or not obj.role:
+                # Assigner le premier rôle temporairement
+                if roles:
+                    obj.role = roles[0] if isinstance(roles, list) else roles
+            return
+        
+        # Récupérer les valeurs du formulaire
+        user = form.cleaned_data.get('user')
+        attribue_par = form.cleaned_data.get('attribue_par') or request.user
+        is_active = form.cleaned_data.get('is_active', True)
+        
+        if not change:  # Création
+            # Créer un UserProcessusRole pour chaque combinaison processus-rôle
+            for processus in processus_list:
+                for role in roles:
+                    UserProcessusRole.objects.get_or_create(
+                        user=user,
+                        processus=processus,
+                        role=role,
+                        defaults={
+                            'attribue_par': attribue_par,
+                            'is_active': is_active
+                        }
+                    )
+        else:  # Modification
+            # Récupérer l'utilisateur depuis l'objet existant ou le formulaire
+            user_to_update = obj.user if hasattr(obj, 'user') and obj.user else user
+            
+            # Supprimer tous les UserProcessusRole existants pour cet utilisateur
+            # qui ne sont pas dans les nouvelles sélections
+            existing_combinations = UserProcessusRole.objects.filter(
+                user=user_to_update
+            )
+            
+            # Supprimer les combinaisons qui ne sont plus sélectionnées
+            for existing in existing_combinations:
+                if existing.processus not in processus_list or existing.role not in roles:
+                    existing.delete()
+            
+            # Créer ou mettre à jour les combinaisons sélectionnées
+            for processus in processus_list:
+                for role in roles:
+                    user_processus_role, created = UserProcessusRole.objects.get_or_create(
+                        user=user_to_update,
+                        processus=processus,
+                        role=role,
+                        defaults={
+                            'attribue_par': attribue_par,
+                            'is_active': is_active
+                        }
+                    )
+                    if not created:
+                        user_processus_role.attribue_par = attribue_par
+                        user_processus_role.is_active = is_active
+                        user_processus_role.save()
+    
+    def response_post_save_add(self, request, obj):
+        """Rediriger vers la liste après l'ajout"""
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+        return HttpResponseRedirect(reverse('admin:parametre_userprocessusrole_changelist'))
+    
+    def response_post_save_change(self, request, obj):
+        """Rediriger vers la liste après la modification"""
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+        return HttpResponseRedirect(reverse('admin:parametre_userprocessusrole_changelist'))
+    
