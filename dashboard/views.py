@@ -267,7 +267,9 @@ def tableau_bord_detail(request, uuid):
         return Response({'success': False, 'error': 'Tableau de bord non trouvé'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        return Response({'success': True, 'data': TableauBordSerializer(tb).data})
+        serializer_data = TableauBordSerializer(tb).data
+        logger.info(f"tableau_bord_detail GET - UUID: {uuid}, Type: {tb.type_tableau.code}, is_validated: {tb.is_validated}, serializer is_validated: {serializer_data.get('is_validated')}")
+        return Response({'success': True, 'data': serializer_data})
     elif request.method == 'PATCH':
         # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
         has_permission, error_response = check_permission_or_403(
@@ -330,15 +332,15 @@ def create_amendement(request, tableau_initial_uuid):
                 }, status=status.HTTP_403_FORBIDDEN)
             # ========== FIN VÉRIFICATION ==========
             
-            # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-            has_permission, error_response = check_permission_or_403(
-                user=request.user,
-                processus_uuid=initial_tableau.processus.uuid,
-                role_code='ecrire',
-                error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un amendement pour ce processus."
-            )
-            if not has_permission:
-                return error_response
+            # ========== VÉRIFICATION PERMISSION CRÉATION (Security by Design) ==========
+            # Les utilisateurs avec uniquement le rôle "ecrire" ne peuvent PAS créer d'amendements
+            # Ils peuvent seulement modifier les données existantes après validation
+            from parametre.permissions import user_can_create_objectives_amendements
+            if not user_can_create_objectives_amendements(request.user, initial_tableau.processus.uuid):
+                return Response({
+                    'success': False,
+                    'error': "Vous n'avez pas les permissions nécessaires pour créer un amendement. Seuls les administrateurs et les utilisateurs avec le rôle 'valider' peuvent créer des amendements. Les utilisateurs avec le rôle 'écrire' peuvent seulement modifier les données existantes après validation."
+                }, status=status.HTTP_403_FORBIDDEN)
             # ========== FIN VÉRIFICATION ==========
             
         except TableauBord.DoesNotExist:
@@ -351,40 +353,90 @@ def create_amendement(request, tableau_initial_uuid):
         clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
         
         # Déterminer le type d'amendement
-        from parametre.models import TypeTableau, Versions
+        from parametre.models import Versions
         
-        existing_amendements = TableauBord.objects.filter(
+        # Récupérer tous les amendements existants (validés et non validés)
+        existing_amendements_all = TableauBord.objects.filter(
             annee=initial_tableau.annee,
             processus=initial_tableau.processus,
             type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
-        ).count()
+        )
         
-        logger.info(f"Nombre d'amendements existants: {existing_amendements}")
-        
-        if existing_amendements == 0:
-            type_amendement = Versions.objects.get(code='AMENDEMENT_1')
-            data['type_tableau'] = type_amendement.uuid
-        elif existing_amendements == 1:
-            type_amendement = Versions.objects.get(code='AMENDEMENT_2')
-            data['type_tableau'] = type_amendement.uuid
-        else:
+        # Vérifier s'il y a des amendements non validés
+        amendements_non_valides = existing_amendements_all.filter(is_validated=False)
+        if amendements_non_valides.exists():
+            amendement_non_valide = amendements_non_valides.first()
             return Response({
-                'success': False, 
-                'error': 'Maximum 2 amendements autorisés par tableau initial'
+                'success': False,
+                'error': f'Impossible de créer un nouvel amendement : l\'amendement "{amendement_non_valide.type_tableau.nom}" n\'est pas encore validé. Vous devez valider l\'amendement précédent avant de pouvoir en créer un nouveau.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Compter les amendements validés
+        existing_amendements = existing_amendements_all.filter(is_validated=True).count()
+        
+        logger.info(f"Nombre d'amendements validés existants: {existing_amendements}")
+
+        try:
+            if existing_amendements == 0:
+                # Créer AMENDEMENT_1 si aucun amendement validé n'existe
+                # Essayer d'abord avec is_active=True, puis sans si non trouvé
+                try:
+                    type_amendement = Versions.objects.get(code='AMENDEMENT_1', is_active=True)
+                except Versions.DoesNotExist:
+                    # Si non trouvé avec is_active=True, essayer sans
+                    type_amendement = Versions.objects.get(code='AMENDEMENT_1')
+                data['type_tableau'] = type_amendement.uuid
+            elif existing_amendements == 1:
+                # Créer AMENDEMENT_2 si AMENDEMENT_1 est validé
+                # Vérifier que AMENDEMENT_1 existe et est validé
+                amendement_1 = existing_amendements_all.filter(
+                    type_tableau__code='AMENDEMENT_1',
+                    is_validated=True
+                ).first()
+                
+                if not amendement_1:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 doit être validé avant de pouvoir créer AMENDEMENT_2'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Essayer d'abord avec is_active=True, puis sans si non trouvé
+                try:
+                    type_amendement = Versions.objects.get(code='AMENDEMENT_2', is_active=True)
+                except Versions.DoesNotExist:
+                    # Si non trouvé avec is_active=True, essayer sans
+                    type_amendement = Versions.objects.get(code='AMENDEMENT_2')
+                data['type_tableau'] = type_amendement.uuid
+            else:
+                return Response({
+                    'success': False, 
+                    'error': 'Maximum 2 amendements autorisés par tableau initial'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Versions.DoesNotExist as e:
+            logger.error(f"Type d'amendement non trouvé: {str(e)}")
+            return Response({
+                'success': False,
+                'error': f'Type d\'amendement (AMENDEMENT_1 ou AMENDEMENT_2) non trouvé dans la base de données. Veuillez contacter l\'administrateur pour créer ces types de tableaux.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
         # Créer l'amendement
+        # Le champ 'annee' est un PositiveIntegerField, donc on passe directement la valeur
+        # Le champ 'processus' est un ForeignKey, donc on passe l'UUID
+        # Le champ 'initial_ref' est un ForeignKey vers 'self', donc on passe l'UUID
         data.update({
-            'annee': initial_tableau.annee,
+            'annee': initial_tableau.annee,  # C'est déjà un entier
             'processus': initial_tableau.processus.uuid,
             'initial_ref': initial_tableau.uuid,
             'is_validated': False  # Les amendements commencent toujours non validés
         })
         
+        logger.info(f"Données pour création amendement: {data}")
+        
         serializer = TableauBordSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             try:
                 instance = serializer.save()
+                logger.info(f"Amendement créé avec succès: {instance.uuid}")
                 
                 # Si clone demandé, copier les objectifs et éléments associés
                 if clone:
@@ -402,6 +454,19 @@ def create_amendement(request, tableau_initial_uuid):
                             type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
                         ).exclude(uuid=instance.uuid).order_by('-created_at').first()
                         source_tableau = last_amendement
+                        
+                        # Si aucun amendement trouvé, utiliser l'initial comme source
+                        if source_tableau is None:
+                            logger.warning(f"Aucun amendement trouvé pour le clonage, utilisation du tableau initial")
+                            source_tableau = initial_tableau
+                    
+                    # Vérifier que source_tableau n'est pas None avant de cloner
+                    if source_tableau is None:
+                        logger.error(f"Impossible de déterminer le tableau source pour le clonage")
+                        return Response({
+                            'success': False,
+                            'error': 'Impossible de déterminer le tableau source pour le clonage'
+                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     
                     # Log pour déboguer
                     logger.info(f"Clonage depuis {source_tableau.uuid} ({source_tableau.type_tableau.code})")
@@ -446,9 +511,16 @@ def create_amendement(request, tableau_initial_uuid):
                                 # Continue même en cas d'erreur
                                 pass
                 
+                # Récupérer le nom du type d'amendement de manière sécurisée
+                try:
+                    type_display = instance.get_type_display()
+                except Exception as e:
+                    logger.warning(f"Erreur lors de la récupération du type d'affichage: {str(e)}")
+                    type_display = instance.type_tableau.nom if instance.type_tableau else "Amendement"
+                
                 return Response({
                     'success': True,
-                    'message': f'Amendement {instance.get_type_display()} créé avec succès',
+                    'message': f'Amendement {type_display} créé avec succès',
                     'data': TableauBordSerializer(instance).data
                 }, status=status.HTTP_201_CREATED)
                 
@@ -459,16 +531,24 @@ def create_amendement(request, tableau_initial_uuid):
                     'error': f'Erreur lors de la création: {str(e)}'
                 }, status=status.HTTP_400_BAD_REQUEST)
                 
+        logger.error(f"Erreur de validation du serializer: {serializer.errors}")
+        logger.error(f"Données envoyées au serializer: {data}")
         return Response({
             'success': False, 
-            'errors': serializer.errors
+            'errors': serializer.errors,
+            'error': 'Erreur de validation des données',
+            'data_sent': data
         }, status=status.HTTP_400_BAD_REQUEST)
         
     except Exception as e:
-        logger.error(f"Erreur create_amendement: {str(e)}")
+        import traceback
+        from django.conf import settings
+        error_traceback = traceback.format_exc()
+        logger.error(f"Erreur create_amendement: {str(e)}\n{error_traceback}")
         return Response({
             'success': False, 
-            'error': 'Erreur lors de la création de l\'amendement'
+            'error': f'Erreur lors de la création de l\'amendement: {str(e)}',
+            'traceback': error_traceback if settings.DEBUG else None
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -537,12 +617,12 @@ def validate_tableau_bord(request, uuid):
             }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION ==========
         
-        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        # ========== VÉRIFICATION PERMISSION VALIDER (Security by Design) ==========
         has_permission, error_response = check_permission_or_403(
             user=request.user,
             processus_uuid=tableau.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour valider ce tableau de bord."
+            role_code='valider',
+            error_message="Vous n'avez pas les permissions nécessaires (valider) pour valider ce tableau de bord."
         )
         if not has_permission:
             return error_response
@@ -749,15 +829,15 @@ def objectives_create(request):
                     }, status=status.HTTP_403_FORBIDDEN)
                 # ========== FIN VÉRIFICATION ==========
                 
-                # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-                has_permission, error_response = check_permission_or_403(
-                    user=request.user,
-                    processus_uuid=tableau.processus.uuid,
-                    role_code='ecrire',
-                    error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un objectif."
-                )
-                if not has_permission:
-                    return error_response
+                # ========== VÉRIFICATION PERMISSION CRÉATION (Security by Design) ==========
+                # Les utilisateurs avec uniquement le rôle "ecrire" ne peuvent PAS créer d'objectifs
+                # Ils peuvent seulement modifier les données existantes après validation
+                from parametre.permissions import user_can_create_objectives_amendements
+                if not user_can_create_objectives_amendements(request.user, tableau.processus.uuid):
+                    return Response({
+                        'success': False,
+                        'error': "Vous n'avez pas les permissions nécessaires pour créer un objectif. Seuls les administrateurs et les utilisateurs avec le rôle 'valider' peuvent créer des objectifs. Les utilisateurs avec le rôle 'écrire' peuvent seulement modifier les données existantes après validation."
+                    }, status=status.HTTP_403_FORBIDDEN)
                 # ========== FIN VÉRIFICATION ==========
                 
                 if tableau.is_validated:
@@ -2033,13 +2113,44 @@ def observations_create(request):
         
         try:
             indicateur = Indicateur.objects.get(uuid=indicateur_id)
-            tableau = indicateur.objective.tableau_bord
+            # Sécuriser la chaîne de relations (peut être None selon les données)
+            objective = getattr(indicateur, 'objective_id', None) or getattr(indicateur, 'objective', None)
+            if objective is None:
+                return Response({
+                    'success': False,
+                    'error': "Impossible de créer l'observation : l'indicateur n'est rattaché à aucun objectif"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            tableau = getattr(objective, 'tableau_bord', None)
+            if tableau is None:
+                return Response({
+                    'success': False,
+                    'error': "Impossible de créer l'observation : l'objectif n'est rattaché à aucun tableau"
+                }, status=status.HTTP_400_BAD_REQUEST)
         except Indicateur.DoesNotExist:
             return Response({
                 'success': False,
                 'error': 'Indicateur non trouvé'
             }, status=status.HTTP_404_NOT_FOUND)
-        
+
+        # ========== ADMIN ONLY (Security by Design) ==========
+        # Seuls les admins (super admin) peuvent créer/modifier des observations
+        from parametre.permissions import is_super_admin
+        if not is_super_admin(request.user):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas les permissions nécessaires (admin) pour ajouter des observations."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN ADMIN ONLY ==========
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, tableau.processus.uuid):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas accès à ce tableau. Vous n'avez pas de rôle actif pour ce processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
         # Vérifier si le tableau est validé
         if not tableau.is_validated:
             return Response({
@@ -2066,10 +2177,16 @@ def observations_create(request):
             }, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'observation: {str(e)}")
+        import traceback
+        from django.conf import settings
+        logger.error(
+            f"Erreur lors de la création de l'observation: {str(e)}\n{traceback.format_exc()}",
+            exc_info=True
+        )
         return Response({
             'success': False,
-            'error': 'Erreur lors de la création de l\'observation'
+            'error': 'Erreur lors de la création de l\'observation',
+            'traceback': traceback.format_exc() if settings.DEBUG else None
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2110,6 +2227,23 @@ def observations_update(request, uuid):
         
         # Récupérer le tableau via l'indicateur
         tableau = observation.indicateur.objective.tableau_bord
+
+        # ========== ADMIN ONLY (Security by Design) ==========
+        from parametre.permissions import is_super_admin
+        if not is_super_admin(request.user):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas les permissions nécessaires (admin) pour modifier les observations."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN ADMIN ONLY ==========
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, tableau.processus.uuid):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas accès à ce tableau. Vous n'avez pas de rôle actif pour ce processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Vérifier si le tableau est validé
         if not tableau.is_validated:

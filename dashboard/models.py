@@ -180,6 +180,13 @@ class TableauBord(models.Model):
         null=True,
         blank=True
     )
+
+    # Raison de l'amendement (optionnelle pour INITIAL, utile pour AMENDEMENT_1 / AMENDEMENT_2)
+    raison_amendement = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Raison de création de l'amendement"
+    )
     cree_par = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
