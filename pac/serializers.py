@@ -437,6 +437,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
     preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     preuve_media_urls = serializers.SerializerMethodField()
+    preuve_medias = serializers.SerializerMethodField()
     createur_nom = serializers.SerializerMethodField()
     
     class Meta:
@@ -444,7 +445,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'traitement', 'traitement_uuid', 'traitement_action', 'etat_mise_en_oeuvre',
             'etat_nom', 'resultat', 'appreciation', 'appreciation_nom',
-            'preuve', 'preuve_description', 'preuve_media_url', 'preuve_media_urls',
+            'preuve', 'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
             'statut', 'statut_nom', 'date_mise_en_oeuvre_effective',
             'date_cloture', 'cree_par', 'createur_nom', 'created_at'
         ]
@@ -493,6 +494,29 @@ class PacSuiviSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return urls
+
+    def get_preuve_medias(self, obj):
+        """
+        Retourner la liste des médias avec uuid, url et description
+        (nécessaire côté frontend pour afficher la description et permettre la suppression d'un média).
+        """
+        medias = []
+        try:
+            if obj.preuve:
+                for media in obj.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    medias.append({
+                        'uuid': str(media.uuid),
+                        'url': url,
+                        'description': getattr(media, 'description', None),
+                    })
+        except Exception:
+            pass
+        return medias
 
 
 class PacSuiviCreateSerializer(serializers.ModelSerializer):
