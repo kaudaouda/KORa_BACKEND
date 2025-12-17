@@ -126,15 +126,54 @@ class TableauBordSerializer(serializers.ModelSerializer):
             'uuid', 'annee', 'processus', 'processus_nom',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 
             'type_label', 'initial_ref', 'cree_par', 'created_at', 'updated_at',
-            'is_validated', 'date_validation', 'valide_par', 'valide_par_nom', 'has_amendements'
+            'is_validated', 'date_validation', 'valide_par', 'valide_par_nom', 'has_amendements',
+            'raison_amendement'
         ]
-        read_only_fields = ['uuid', 'initial_ref', 'cree_par', 'created_at', 'updated_at', 'date_validation', 'valide_par']
+        read_only_fields = ['uuid', 'cree_par', 'created_at', 'updated_at', 'date_validation', 'valide_par']
+        # Note: initial_ref n'est pas en read_only_fields pour permettre sa définition lors de la création d'amendements
 
     def create(self, validated_data):
         request = self.context.get('request')
         if request and request.user and request.user.is_authenticated:
             validated_data['cree_par'] = request.user
-        return super().create(validated_data)
+        
+        # Gérer initial_ref si présent dans les données (pour les amendements)
+        # initial_ref peut être un UUID (string) ou un objet TableauBord
+        # On doit le retirer de validated_data car c'est un ForeignKey vers 'self' et Django peut avoir des problèmes
+        initial_ref_uuid = validated_data.pop('initial_ref', None)
+        
+        # Créer l'instance sans initial_ref
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Création TableauBord - validated_data keys: {list(validated_data.keys())}, initial_ref_uuid: {initial_ref_uuid}")
+        
+        try:
+            instance = super().create(validated_data)
+            logger.info(f"Instance TableauBord créée avec succès: {instance.uuid}")
+        except Exception as e:
+            logger.error(f"Erreur lors de la création de l'instance TableauBord: {str(e)}", exc_info=True)
+            raise
+        
+        # Définir initial_ref après la création si nécessaire
+        if initial_ref_uuid:
+            # Si c'est un UUID (string), récupérer l'objet
+            if isinstance(initial_ref_uuid, str):
+                try:
+                    initial_ref_obj = TableauBord.objects.get(uuid=initial_ref_uuid)
+                    instance.initial_ref = initial_ref_obj
+                    instance.save(update_fields=['initial_ref'])
+                    logger.info(f"initial_ref défini avec succès: {initial_ref_uuid}")
+                except TableauBord.DoesNotExist:
+                    logger.warning(f"Tableau initial non trouvé pour initial_ref: {initial_ref_uuid}")
+                except Exception as e:
+                    logger.error(f"Erreur lors de la définition de initial_ref: {str(e)}", exc_info=True)
+            else:
+                # Si c'est déjà un objet
+                instance.initial_ref = initial_ref_uuid
+                instance.save(update_fields=['initial_ref'])
+        
+        return instance
 
 
 # ==================== INDICATEURS ====================
