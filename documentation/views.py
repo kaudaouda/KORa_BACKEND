@@ -21,6 +21,7 @@ from parametre.views import (
     log_document_update,
     get_client_ip
 )
+from parametre.permissions import user_has_write_permission_anywhere
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,15 @@ def document_create(request):
     Si un fichier est fourni, il sera uploadé et associé au document
     """
     try:
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        # Les documents étant globaux (sans processus), vérifier si l'utilisateur a le rôle 'ecrire' pour au moins un processus
+        if not user_has_write_permission_anywhere(request.user):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas les permissions nécessaires (écrire) pour créer un document. Vous devez avoir le rôle 'écrire' pour au moins un processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
         # Récupérer le fichier s'il est présent
         fichier = request.FILES.get('document_file')
 
@@ -203,6 +213,15 @@ def document_update(request, uuid):
     """
     try:
         document = get_object_or_404(Document, uuid=uuid)
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        # Les documents étant globaux (sans processus), vérifier si l'utilisateur a le rôle 'ecrire' pour au moins un processus
+        if not user_has_write_permission_anywhere(request.user):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce document. Vous devez avoir le rôle 'écrire' pour au moins un processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         serializer = DocumentUpdateSerializer(
             document,
             data=request.data,
@@ -243,6 +262,15 @@ def document_delete(request, uuid):
     """
     try:
         document = get_object_or_404(Document, uuid=uuid)
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        # Les documents étant globaux (sans processus), vérifier si l'utilisateur a le rôle 'ecrire' pour au moins un processus
+        if not user_has_write_permission_anywhere(request.user):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce document. Vous devez avoir le rôle 'écrire' pour au moins un processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         document.delete()
         return Response(
             {'message': 'Document supprimé avec succès'},
@@ -265,6 +293,15 @@ def document_amend(request, uuid):
     try:
         # Récupérer le document parent
         parent_document = Document.objects.get(uuid=uuid)
+        
+        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
+        # Les documents étant globaux (sans processus), vérifier si l'utilisateur a le rôle 'ecrire' pour au moins un processus
+        if not user_has_write_permission_anywhere(request.user):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas les permissions nécessaires (écrire) pour créer un amendement. Vous devez avoir le rôle 'écrire' pour au moins un processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         
         # Préparer les données proprement (sans les fichiers)
         data = {}
