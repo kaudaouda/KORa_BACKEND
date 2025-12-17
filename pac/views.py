@@ -6,6 +6,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
@@ -15,7 +16,13 @@ from django.utils import timezone
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Versions
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
-from parametre.permissions import check_permission_or_403, user_can_create_for_processus, get_user_processus_list, user_has_access_to_processus
+from parametre.permissions import (
+    check_permission_or_403,
+    user_can_create_objectives_amendements,
+    user_can_create_for_processus,
+    get_user_processus_list,
+    user_has_access_to_processus,
+)
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
     PacSerializer, PacCreateSerializer, PacUpdateSerializer, PacCompletSerializer,
@@ -628,7 +635,15 @@ def processus_create(request):
 def processus_detail(request, uuid):
     """Détails d'un processus"""
     try:
-        processus = Processus.objects.get(uuid=uuid, cree_par=request.user)
+        processus = Processus.objects.get(uuid=uuid)
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus.uuid):
+            return Response({
+                'error': 'Vous n\'avez pas accès à ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
         serializer = ProcessusSerializer(processus)
         return Response(serializer.data)
     except Processus.DoesNotExist:
@@ -704,16 +719,15 @@ def pac_create(request):
         type_tableau_uuid = data.get('type_tableau')
 
         # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
-        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
-        if processus_uuid:
-            has_permission, error_response = check_permission_or_403(
-                user=request.user,
-                processus_uuid=processus_uuid,
-                role_code='ecrire',
-                error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer un PAC pour ce processus."
-            )
-            if not has_permission:
-                return error_response
+        # Règle alignée Tableau de Bord:
+        # - Super admin: peut créer
+        # - Rôle "valider" sur le processus: peut créer
+        # - Rôle "ecrire" seul: NE PEUT PAS créer
+        if processus_uuid and not user_can_create_objectives_amendements(request.user, processus_uuid):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas les permissions nécessaires (valider) pour créer un PAC pour ce processus."
+            }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
 
         # Si type_tableau manque mais annee + processus sont fournis, déterminer automatiquement le type
