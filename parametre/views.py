@@ -9,6 +9,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.db.models import Q
 import json
 import logging
 
@@ -25,7 +26,8 @@ from .serializers import (
     SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
     DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
     RisqueSerializer, StatutActionCDRSerializer,
-    RoleSerializer, UserProcessusSerializer, UserProcessusRoleSerializer
+    RoleSerializer, UserProcessusSerializer, UserProcessusRoleSerializer,
+    UserSerializer, UserCreateSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -2752,20 +2754,38 @@ def user_processus_delete(request, uuid):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_processus_role_list(request):
-    """Liste des rôles attribués aux utilisateurs pour les processus"""
+    """
+    Liste des rôles attribués aux utilisateurs pour les processus
+    - Super admins : voient tous les rôles
+    - Autres utilisateurs : voient uniquement leurs propres rôles
+    """
     try:
-        user_id = request.GET.get('user_id')
-        processus_id = request.GET.get('processus_id')
-        role_id = request.GET.get('role_id')
+        from parametre.permissions import is_super_admin
         
-        queryset = UserProcessusRole.objects.select_related('user', 'processus', 'role', 'attribue_par').filter(is_active=True)
+        # ========== FILTRAGE PAR UTILISATEUR (Security by Design) ==========
+        if is_super_admin(request.user):
+            # Super admin : voir tous les rôles
+            queryset = UserProcessusRole.objects.select_related('user', 'processus', 'role', 'attribue_par').filter(is_active=True)
+        else:
+            # Utilisateur normal : voir uniquement ses propres rôles
+            queryset = UserProcessusRole.objects.filter(
+                user=request.user,
+                is_active=True
+            ).select_related('user', 'processus', 'role', 'attribue_par')
+        # ========== FIN FILTRAGE ==========
         
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-        if processus_id:
-            queryset = queryset.filter(processus_id=processus_id)
-        if role_id:
-            queryset = queryset.filter(role_id=role_id)
+        # Filtres additionnels (seulement pour super admin)
+        if is_super_admin(request.user):
+            user_id = request.GET.get('user_id')
+            processus_id = request.GET.get('processus_id')
+            role_id = request.GET.get('role_id')
+            
+            if user_id:
+                queryset = queryset.filter(user_id=user_id)
+            if processus_id:
+                queryset = queryset.filter(processus_id=processus_id)
+            if role_id:
+                queryset = queryset.filter(role_id=role_id)
         
         serializer = UserProcessusRoleSerializer(queryset.order_by('-date_attribution'), many=True)
         return Response({
@@ -2784,8 +2804,17 @@ def user_processus_role_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def user_processus_role_create(request):
-    """Créer une nouvelle attribution de rôle utilisateur-processus"""
+    """Créer une nouvelle attribution de rôle utilisateur-processus (super admin uniquement)"""
     try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import is_super_admin
+        if not is_super_admin(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les super administrateurs peuvent attribuer des rôles.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
         data = request.data.copy()
         data['attribue_par'] = request.user.id
         
@@ -2812,8 +2841,17 @@ def user_processus_role_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def user_processus_role_update(request, uuid):
-    """Mettre à jour une attribution de rôle utilisateur-processus"""
+    """Mettre à jour une attribution de rôle utilisateur-processus (super admin uniquement)"""
     try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import is_super_admin
+        if not is_super_admin(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les super administrateurs peuvent modifier des rôles.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
         user_processus_role = UserProcessusRole.objects.get(uuid=uuid)
         serializer = UserProcessusRoleSerializer(user_processus_role, data=request.data, partial=True)
         if serializer.is_valid():
@@ -2840,8 +2878,17 @@ def user_processus_role_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def user_processus_role_delete(request, uuid):
-    """Supprimer une attribution de rôle utilisateur-processus"""
+    """Supprimer une attribution de rôle utilisateur-processus (super admin uniquement)"""
     try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import is_super_admin
+        if not is_super_admin(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les super administrateurs peuvent supprimer des rôles.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
         user_processus_role = UserProcessusRole.objects.get(uuid=uuid)
         user_processus_role.delete()
         log_activity(
@@ -2860,6 +2907,110 @@ def user_processus_role_delete(request, uuid):
     except Exception as e:
         logger.error(f"Erreur lors de la suppression de l'attribution de rôle: {str(e)}")
         return Response({'error': 'Impossible de supprimer l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== GESTION DES UTILISATEURS ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def users_list(request):
+    """
+    Liste tous les utilisateurs (super admin uniquement)
+    """
+    try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import is_super_admin
+        if not is_super_admin(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les super administrateurs peuvent voir la liste des utilisateurs.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        from django.contrib.auth.models import User
+        
+        # Filtres optionnels
+        search = request.GET.get('search', '')
+        is_active = request.GET.get('is_active')
+        
+        queryset = User.objects.all().order_by('-date_joined')
+        
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+        
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+        
+        serializer = UserSerializer(queryset, many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': queryset.count()
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des utilisateurs: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des utilisateurs'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def users_create(request):
+    """
+    Créer un nouvel utilisateur (super admin uniquement)
+    """
+    try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import is_super_admin
+        if not is_super_admin(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les super administrateurs peuvent créer des utilisateurs.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        serializer = UserCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            
+            # Log de l'activité
+            log_activity(
+                user=request.user,
+                action='create',
+                entity_type='user',
+                entity_id=str(user.id),
+                entity_name=f"{user.username} ({user.email})",
+                description=f"Création de l'utilisateur {user.username}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            
+            # Retourner l'utilisateur créé avec le serializer de lecture
+            response_serializer = UserSerializer(user)
+            return Response({
+                'success': True,
+                'data': response_serializer.data,
+                'message': 'Utilisateur créé avec succès'
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response({
+            'success': False,
+            'error': 'Données invalides',
+            'details': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de l'utilisateur: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la création de l\'utilisateur'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])

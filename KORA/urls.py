@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/cartographie-risque/', include('cartographie_risque.urls')),  # API cartographie de risque
     path('api/activite-periodique/', include('activite_periodique.urls')),  # API activité périodique
     path('api/documentation/', include('documentation.urls')),  # API documentation
+    path('api/permissions/', include('permissions.urls')),  # API permissions génériques
 ]
 
 # Servir les fichiers média en développement

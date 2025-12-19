@@ -113,7 +113,13 @@ class TableauBordSerializer(serializers.ModelSerializer):
     type_label = serializers.CharField(source='get_type_display', read_only=True)
     type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True)
     type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True)
-    valide_par_nom = serializers.CharField(source='valide_par.get_full_name', read_only=True)
+    valide_par_nom = serializers.SerializerMethodField()
+    
+    def get_valide_par_nom(self, obj):
+        """Retourne le nom complet de l'utilisateur qui a validé"""
+        if obj.valide_par:
+            return obj.valide_par.get_full_name() or obj.valide_par.username
+        return None
     has_amendements = serializers.SerializerMethodField()
     
     def get_has_amendements(self, obj):
