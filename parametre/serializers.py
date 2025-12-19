@@ -1,4 +1,7 @@
 from rest_framework import serializers
+from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus,
@@ -255,6 +258,77 @@ class UserProcessusSerializer(serializers.ModelSerializer):
             'date_attribution', 'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'date_attribution', 'created_at', 'updated_at']
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer pour les utilisateurs"""
+    full_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'is_active', 'date_joined', 'last_login', 'full_name'
+        ]
+        read_only_fields = ['id', 'date_joined', 'last_login']
+    
+    def get_full_name(self, obj):
+        """Retourner le nom complet"""
+        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour créer un utilisateur (super admin uniquement)"""
+    password = serializers.CharField(write_only=True, required=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True, required=True)
+    
+    class Meta:
+        model = User
+        fields = [
+            'username', 'email', 'first_name', 'last_name',
+            'password', 'password_confirm', 'is_active'
+        ]
+    
+    def validate_email(self, value):
+        """Valider l'unicité de l'email"""
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Cet email est déjà utilisé.")
+        return value
+    
+    def validate_username(self, value):
+        """Valider l'unicité du username"""
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Ce nom d'utilisateur est déjà utilisé.")
+        return value
+    
+    def validate(self, data):
+        """Valider que les mots de passe correspondent"""
+        if data.get('password') != data.get('password_confirm'):
+            raise serializers.ValidationError({
+                'password_confirm': 'Les mots de passe ne correspondent pas.'
+            })
+        
+        # Valider la force du mot de passe
+        password = data.get('password')
+        if password:
+            try:
+                validate_password(password)
+            except ValidationError as e:
+                raise serializers.ValidationError({
+                    'password': list(e.messages)
+                })
+        
+        return data
+    
+    def create(self, validated_data):
+        """Créer l'utilisateur avec le mot de passe hashé"""
+        validated_data.pop('password_confirm')
+        password = validated_data.pop('password')
+        user = User.objects.create_user(
+            password=password,
+            **validated_data
+        )
+        return user
 
 
 class UserProcessusRoleSerializer(serializers.ModelSerializer):

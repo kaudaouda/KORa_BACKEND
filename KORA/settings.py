@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'parametre',
     'dashboard',
     'cartographie_risque',
+    'permissions',
 ]
 
 MIDDLEWARE = [

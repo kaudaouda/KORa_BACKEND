@@ -138,4 +138,8 @@ urlpatterns = [
     path('user-processus-role/create/', views.user_processus_role_create, name='user_processus_role_create'),
     path('user-processus-role/<uuid:uuid>/update/', views.user_processus_role_update, name='user_processus_role_update'),
     path('user-processus-role/<uuid:uuid>/delete/', views.user_processus_role_delete, name='user_processus_role_delete'),
+    
+    # ==================== GESTION DES UTILISATEURS ====================
+    path('users/', views.users_list, name='users_list'),
+    path('users/create/', views.users_create, name='users_create'),
 ]
