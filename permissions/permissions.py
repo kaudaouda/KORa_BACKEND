@@ -514,12 +514,11 @@ class DashboardIndicateurUpdatePermission(AppActionPermission):
     action = 'update_indicateur'
     
     def _extract_processus_uuid(self, request, view, obj=None):
-        """Extrait le processus_uuid depuis l'indicateur -> objective -> tableau_bord"""
-        if obj:
-            if hasattr(obj, 'objective') and obj.objective:
-                if hasattr(obj.objective, 'tableau_bord') and obj.objective.tableau_bord:
-                    if hasattr(obj.objective.tableau_bord, 'processus'):
-                        return str(obj.objective.tableau_bord.processus.uuid)
+        """Extrait le processus_uuid depuis l'indicateur -> objective_id -> tableau_bord"""
+        if obj and hasattr(obj, 'objective_id') and obj.objective_id:
+            if hasattr(obj.objective_id, 'tableau_bord') and obj.objective_id.tableau_bord:
+                if hasattr(obj.objective_id.tableau_bord, 'processus'):
+                    return str(obj.objective_id.tableau_bord.processus.uuid)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -530,10 +529,11 @@ class DashboardIndicateurDeletePermission(AppActionPermission):
     action = 'delete_indicateur'
     
     def _extract_processus_uuid(self, request, view, obj=None):
-        """Extrait le processus_uuid depuis l'indicateur -> objective -> tableau_bord"""
-        if obj:
-            if hasattr(obj, 'objective') and obj.objective:
-                if hasattr(obj.objective, 'tableau_bord') and obj.objective.tableau_bord:
+        """Extrait le processus_uuid depuis l'indicateur -> objective_id -> tableau_bord"""
+        if obj and hasattr(obj, 'objective_id') and obj.objective_id:
+            if hasattr(obj.objective_id, 'tableau_bord') and obj.objective_id.tableau_bord:
+                if hasattr(obj.objective_id.tableau_bord, 'processus'):
+                    return str(obj.objective_id.tableau_bord.processus.uuid)
                     if hasattr(obj.objective.tableau_bord, 'processus'):
                         return str(obj.objective.tableau_bord.processus.uuid)
         
@@ -574,6 +574,32 @@ class DashboardPeriodiciteDeletePermission(AppActionPermission):
     """Permission pour supprimer une périodicité"""
     app_name = 'dashboard'
     action = 'delete_periodicite'
+
+
+class DashboardFrequenceUpdatePermission(AppActionPermission):
+    """Permission pour modifier la fréquence d'un indicateur"""
+    app_name = 'dashboard'
+    action = 'update_frequence'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'indicateur"""
+        # La fréquence est modifiée via l'indicateur
+        # Si on a l'UUID de l'indicateur dans request.data
+        if hasattr(request, 'data') and request.data:
+            indicateur_uuid = request.data.get('indicateur_uuid') or request.data.get('uuid')
+            if indicateur_uuid:
+                try:
+                    from dashboard.models import Indicateur
+                    indicateur = Indicateur.objects.select_related(
+                        'objective_id__tableau_bord__processus'
+                    ).get(uuid=indicateur_uuid)
+                    if indicateur.objective_id and indicateur.objective_id.tableau_bord:
+                        if indicateur.objective_id.tableau_bord.processus:
+                            return str(indicateur.objective_id.tableau_bord.processus.uuid)
+                except Exception as e:
+                    logger.warning(f"[DashboardFrequenceUpdatePermission] Erreur: {str(e)}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class DashboardObservationCreatePermission(AppActionPermission):
