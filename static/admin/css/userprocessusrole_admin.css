@@ -1,0 +1,112 @@
+/* Styles pour l'admin UserProcessusRole et UserProcessus - Affichage compact */
+.field-roles,
+.field-processus_multiple {
+    margin-top: 10px !important;
+}
+
+.field-roles ul.compact-checkboxes,
+.field-roles ul,
+#id_roles,
+.field-processus_multiple ul.compact-checkboxes,
+.field-processus_multiple ul,
+#id_processus_multiple {
+    list-style: none !important;
+    padding: 8px !important;
+    margin: 0 !important;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+    gap: 2px !important;
+    max-height: 300px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    border: 1px solid #ddd !important;
+    border-radius: 4px !important;
+    background-color: #fafafa !important;
+}
+
+.field-roles li,
+#id_roles li,
+.field-processus_multiple li,
+#id_processus_multiple li {
+    margin: 0 !important;
+    padding: 3px 5px !important;
+    border-radius: 2px !important;
+    transition: background-color 0.15s !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+}
+
+.field-roles li:hover,
+#id_roles li:hover,
+.field-processus_multiple li:hover,
+#id_processus_multiple li:hover {
+    background-color: #e8f4f8 !important;
+}
+
+.field-roles label,
+#id_roles label,
+.field-processus_multiple label,
+#id_processus_multiple label {
+    display: flex !important;
+    align-items: center !important;
+    cursor: pointer !important;
+    font-weight: normal !important;
+    margin: 0 !important;
+    padding: 1px 0 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: 12px !important;
+    color: #000 !important;
+}
+
+.field-roles input[type="checkbox"],
+#id_roles input[type="checkbox"],
+.field-processus_multiple input[type="checkbox"],
+#id_processus_multiple input[type="checkbox"] {
+    margin-right: 5px !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+    width: 14px !important;
+    height: 14px !important;
+    margin-top: 0 !important;
+}
+
+.field-roles .help,
+.field-processus_multiple .help {
+    margin-top: 6px !important;
+    color: #666 !important;
+    font-size: 11px !important;
+    font-style: italic !important;
+}
+
+/* Scrollbar personnalisée pour WebKit */
+.field-roles ul::-webkit-scrollbar {
+    width: 6px;
+}
+
+.field-roles ul::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.field-roles ul::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 3px;
+}
+
+.field-roles ul::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* Responsive : moins de colonnes sur petits écrans */
+@media (max-width: 768px) {
+    .field-roles ul,
+    #id_roles,
+    .field-processus_multiple ul,
+    #id_processus_multiple {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+        max-height: 250px !important;
+    }
+}
+
