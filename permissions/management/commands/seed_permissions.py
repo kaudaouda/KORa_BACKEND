@@ -601,6 +601,19 @@ class Command(BaseCommand):
                 }
             },
             {
+                'code': 'update_frequence',
+                'nom': 'Modifier la fréquence',
+                'description': 'Permet de modifier la fréquence d\'un indicateur',
+                'category': 'frequences',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'contributeur': {'granted': True, 'priority': 5},
+                    'lecteur': {'granted': False, 'priority': 0},
+                    'admin': {'granted': True, 'priority': 8},
+                    'responsable_processus': {'granted': True, 'priority': 12},
+                }
+            },
+            {
                 'code': 'create_observation',
                 'nom': 'Créer une observation',
                 'description': 'Permet de créer une observation pour un objectif',
