@@ -109,34 +109,60 @@ class AppActionPermission(BasePermission):
         """
         Vérifie la permission au niveau de la vue
         """
-        if not request.user or not request.user.is_authenticated:
-            return False
-        
-        # Extraire le processus_uuid
-        processus_uuid = self._extract_processus_uuid(request, view)
-        
-        if not processus_uuid:
-            # Si on ne peut pas extraire le processus, on refuse par sécurité
-            logger.warning(
-                f"[AppActionPermission] Impossible d'extraire processus_uuid pour "
-                f"app={self.app_name}, action={self.action}, user={request.user.username}"
+        try:
+            if not request.user or not request.user.is_authenticated:
+                return False
+            
+            # Extraire le processus_uuid
+            processus_uuid = self._extract_processus_uuid(request, view)
+            
+            logger.info(
+                f"[AppActionPermission.has_permission] 🔍 Vérification permission: "
+                f"app={self.app_name}, action={self.action}, user={request.user.username}, "
+                f"processus_uuid={processus_uuid}"
+            )
+            
+            if not processus_uuid:
+                # Si on ne peut pas extraire le processus, on refuse par sécurité
+                logger.warning(
+                    f"[AppActionPermission] Impossible d'extraire processus_uuid pour "
+                    f"app={self.app_name}, action={self.action}, user={request.user.username}"
+                )
+                raise PermissionDenied(
+                    f"Impossible de déterminer le processus pour vérifier la permission '{self.action}'"
+                )
+            
+            # Vérifier via PermissionService
+            can_perform, reason = PermissionService.can_perform_action(
+                user=request.user,
+                app_name=self.app_name,
+                processus_uuid=processus_uuid,
+                action=self.action
+            )
+            
+            logger.info(
+                f"[AppActionPermission.has_permission] ✅ Résultat vérification: "
+                f"can_perform={can_perform}, reason={reason}, "
+                f"app={self.app_name}, action={self.action}, user={request.user.username}, "
+                f"processus_uuid={processus_uuid}"
+            )
+            
+            if not can_perform:
+                raise PermissionDenied(reason or f"Action '{self.action}' non autorisée")
+            
+            return True
+        except PermissionDenied:
+            # Répercuter PermissionDenied tel quel
+            raise
+        except Exception as e:
+            # Logger toute autre exception et refuser par sécurité
+            logger.error(
+                f"[AppActionPermission.has_permission] Erreur lors de la vérification de permission: {e}",
+                exc_info=True
             )
             raise PermissionDenied(
-                f"Impossible de déterminer le processus pour vérifier la permission '{self.action}'"
+                f"Erreur lors de la vérification de la permission '{self.action}': {str(e)}"
             )
-        
-        # Vérifier via PermissionService
-        can_perform, reason = PermissionService.can_perform_action(
-            user=request.user,
-            app_name=self.app_name,
-            processus_uuid=processus_uuid,
-            action=self.action
-        )
-        
-        if not can_perform:
-            raise PermissionDenied(reason or f"Action '{self.action}' non autorisée")
-        
-        return True
     
     def has_object_permission(self, request, view, obj):
         """
@@ -299,12 +325,51 @@ class DashboardTableauDeletePermission(AppActionPermission):
     """Permission pour supprimer un tableau de bord"""
     app_name = 'dashboard'
     action = 'delete_tableau_bord'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis le TableauBord via l'UUID dans view.kwargs"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj and hasattr(obj, 'processus'):
+            return str(obj.processus.uuid) if obj.processus else None
+        
+        # Si obj n'est pas fourni (pour has_permission), récupérer depuis view.kwargs
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            tableau_uuid = view.kwargs['uuid']
+            try:
+                from dashboard.models import TableauBord
+                tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
+                return str(tableau.processus.uuid) if tableau.processus else None
+            except TableauBord.DoesNotExist:
+                return None
+        
+        return None
 
 
 class DashboardTableauValidatePermission(AppActionPermission):
     """Permission pour valider un tableau de bord"""
     app_name = 'dashboard'
     action = 'validate_tableau_bord'
+
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis le TableauBord via l'UUID dans view.kwargs"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj and hasattr(obj, 'processus'):
+            return str(obj.processus.uuid) if obj.processus else None
+        
+        # Si obj n'est pas fourni (pour has_permission), récupérer depuis view.kwargs
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            tableau_uuid = view.kwargs['uuid']
+            try:
+                from dashboard.models import TableauBord
+                tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
+                if tableau.processus:
+                    return str(tableau.processus.uuid)
+            except TableauBord.DoesNotExist:
+                logger.warning(f"[DashboardTableauValidatePermission] TableauBord {tableau_uuid} non trouvé.")
+            except Exception as e:
+                logger.error(f"[DashboardTableauValidatePermission] Erreur lors de l'extraction du processus pour TableauBord {tableau_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class DashboardTableauReadPermission(AppActionPermission):
@@ -454,15 +519,49 @@ class DashboardObjectiveUpdatePermission(AppActionPermission):
     action = 'update_objective'
     
     def _extract_processus_uuid(self, request, view, obj=None):
-        """Extrait le processus_uuid depuis l'objectif ou le tableau_bord"""
-        # Même logique que DashboardObjectiveCreatePermission
-        if obj:
-            if hasattr(obj, 'tableau_bord') and obj.tableau_bord:
-                if hasattr(obj.tableau_bord, 'processus'):
-                    return str(obj.tableau_bord.processus.uuid)
+        """Extrait le processus_uuid depuis l'objectif -> tableau_bord -> processus"""
+        try:
+            # Si obj est fourni (pour has_object_permission)
+            if obj:
+                if hasattr(obj, 'tableau_bord') and obj.tableau_bord:
+                    if hasattr(obj.tableau_bord, 'processus'):
+                        processus_uuid = str(obj.tableau_bord.processus.uuid)
+                        logger.info(
+                            f"[DashboardObjectiveUpdatePermission] ✅ Processus trouvé depuis obj: {processus_uuid}"
+                        )
+                        return processus_uuid
+            
+            # Si obj n'est pas fourni (ex: has_permission est appelé avant la récupération de l'objet)
+            if not obj and hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+                objective_uuid = view.kwargs['uuid']
+                logger.info(
+                    f"[DashboardObjectiveUpdatePermission] objective_uuid depuis view.kwargs: {objective_uuid}"
+                )
+                try:
+                    from dashboard.models import Objectives
+                    objective = Objectives.objects.select_related('tableau_bord__processus').get(uuid=objective_uuid)
+                    if objective.tableau_bord and objective.tableau_bord.processus:
+                        processus_uuid = str(objective.tableau_bord.processus.uuid)
+                        logger.info(
+                            f"[DashboardObjectiveUpdatePermission] ✅ Processus trouvé depuis view.kwargs: {processus_uuid}"
+                        )
+                        return processus_uuid
+                except Objectives.DoesNotExist:
+                    logger.warning(f"[DashboardObjectiveUpdatePermission] Objective {objective_uuid} non trouvé pour extraction processus.")
+                except Exception as e:
+                    logger.error(f"[DashboardObjectiveUpdatePermission] Erreur lors de l'extraction du processus pour Objective {objective_uuid}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[DashboardObjectiveUpdatePermission] Erreur critique dans _extract_processus_uuid: {e}", exc_info=True)
         
-        # Sinon utiliser la logique par défaut (via request.data ou query params)
-        return super()._extract_processus_uuid(request, view, obj)
+        # Si on arrive ici, essayer la méthode parente
+        try:
+            result = super()._extract_processus_uuid(request, view, obj)
+            if result:
+                logger.info(f"[DashboardObjectiveUpdatePermission] Processus trouvé via super(): {result}")
+            return result
+        except Exception as e:
+            logger.error(f"[DashboardObjectiveUpdatePermission] Erreur dans super()._extract_processus_uuid: {e}", exc_info=True)
+            return None
 
 
 class DashboardObjectiveDeletePermission(AppActionPermission):
@@ -471,13 +570,49 @@ class DashboardObjectiveDeletePermission(AppActionPermission):
     action = 'delete_objective'
     
     def _extract_processus_uuid(self, request, view, obj=None):
-        """Extrait le processus_uuid depuis l'objectif ou le tableau_bord"""
-        if obj:
-            if hasattr(obj, 'tableau_bord') and obj.tableau_bord:
-                if hasattr(obj.tableau_bord, 'processus'):
-                    return str(obj.tableau_bord.processus.uuid)
+        """Extrait le processus_uuid depuis l'objectif -> tableau_bord -> processus"""
+        try:
+            # Si obj est fourni (pour has_object_permission)
+            if obj:
+                if hasattr(obj, 'tableau_bord') and obj.tableau_bord:
+                    if hasattr(obj.tableau_bord, 'processus'):
+                        processus_uuid = str(obj.tableau_bord.processus.uuid)
+                        logger.info(
+                            f"[DashboardObjectiveDeletePermission] ✅ Processus trouvé depuis obj: {processus_uuid}"
+                        )
+                        return processus_uuid
+            
+            # Si obj n'est pas fourni (ex: has_permission est appelé avant la récupération de l'objet)
+            if not obj and hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+                objective_uuid = view.kwargs['uuid']
+                logger.info(
+                    f"[DashboardObjectiveDeletePermission] objective_uuid depuis view.kwargs: {objective_uuid}"
+                )
+                try:
+                    from dashboard.models import Objectives
+                    objective = Objectives.objects.select_related('tableau_bord__processus').get(uuid=objective_uuid)
+                    if objective.tableau_bord and objective.tableau_bord.processus:
+                        processus_uuid = str(objective.tableau_bord.processus.uuid)
+                        logger.info(
+                            f"[DashboardObjectiveDeletePermission] ✅ Processus trouvé depuis view.kwargs: {processus_uuid}"
+                        )
+                        return processus_uuid
+                except Objectives.DoesNotExist:
+                    logger.warning(f"[DashboardObjectiveDeletePermission] Objective {objective_uuid} non trouvé pour extraction processus.")
+                except Exception as e:
+                    logger.error(f"[DashboardObjectiveDeletePermission] Erreur lors de l'extraction du processus pour Objective {objective_uuid}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[DashboardObjectiveDeletePermission] Erreur critique dans _extract_processus_uuid: {e}", exc_info=True)
         
-        return super()._extract_processus_uuid(request, view, obj)
+        # Si on arrive ici, essayer la méthode parente
+        try:
+            result = super()._extract_processus_uuid(request, view, obj)
+            if result:
+                logger.info(f"[DashboardObjectiveDeletePermission] Processus trouvé via super(): {result}")
+            return result
+        except Exception as e:
+            logger.error(f"[DashboardObjectiveDeletePermission] Erreur dans super()._extract_processus_uuid: {e}", exc_info=True)
+            return None
 
 
 class DashboardIndicateurCreatePermission(AppActionPermission):
@@ -515,10 +650,28 @@ class DashboardIndicateurUpdatePermission(AppActionPermission):
     
     def _extract_processus_uuid(self, request, view, obj=None):
         """Extrait le processus_uuid depuis l'indicateur -> objective_id -> tableau_bord"""
+        # Si obj est fourni, utiliser directement
         if obj and hasattr(obj, 'objective_id') and obj.objective_id:
             if hasattr(obj.objective_id, 'tableau_bord') and obj.objective_id.tableau_bord:
                 if hasattr(obj.objective_id.tableau_bord, 'processus'):
                     return str(obj.objective_id.tableau_bord.processus.uuid)
+        
+        # Sinon, essayer de récupérer l'indicateur depuis view.kwargs (pour has_permission)
+        if hasattr(view, 'kwargs') and view.kwargs:
+            indicateur_uuid = view.kwargs.get('uuid')
+            if indicateur_uuid:
+                try:
+                    from dashboard.models import Indicateur
+                    indicateur = Indicateur.objects.select_related(
+                        'objective_id__tableau_bord__processus'
+                    ).get(uuid=indicateur_uuid)
+                    if indicateur.objective_id and indicateur.objective_id.tableau_bord:
+                        if indicateur.objective_id.tableau_bord.processus:
+                            return str(indicateur.objective_id.tableau_bord.processus.uuid)
+                except Indicateur.DoesNotExist:
+                    logger.warning(f"[DashboardIndicateurUpdatePermission] Indicateur {indicateur_uuid} non trouvé.")
+                except Exception as e:
+                    logger.error(f"[DashboardIndicateurUpdatePermission] Erreur lors de l'extraction du processus pour Indicateur {indicateur_uuid}: {e}")
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -530,26 +683,133 @@ class DashboardIndicateurDeletePermission(AppActionPermission):
     
     def _extract_processus_uuid(self, request, view, obj=None):
         """Extrait le processus_uuid depuis l'indicateur -> objective_id -> tableau_bord"""
-        if obj and hasattr(obj, 'objective_id') and obj.objective_id:
-            if hasattr(obj.objective_id, 'tableau_bord') and obj.objective_id.tableau_bord:
-                if hasattr(obj.objective_id.tableau_bord, 'processus'):
-                    return str(obj.objective_id.tableau_bord.processus.uuid)
-                    if hasattr(obj.objective.tableau_bord, 'processus'):
-                        return str(obj.objective.tableau_bord.processus.uuid)
+        try:
+            # Si obj est fourni (pour has_object_permission)
+            if obj:
+                if hasattr(obj, 'objective_id') and obj.objective_id:
+                    if hasattr(obj.objective_id, 'tableau_bord') and obj.objective_id.tableau_bord:
+                        if hasattr(obj.objective_id.tableau_bord, 'processus'):
+                            processus_uuid = str(obj.objective_id.tableau_bord.processus.uuid)
+                            logger.info(
+                                f"[DashboardIndicateurDeletePermission] ✅ Processus trouvé depuis obj: {processus_uuid}"
+                            )
+                            return processus_uuid
+            
+            # Si obj n'est pas fourni (ex: has_permission est appelé avant la récupération de l'objet)
+            if not obj and hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+                indicateur_uuid = view.kwargs['uuid']
+                logger.info(
+                    f"[DashboardIndicateurDeletePermission] indicateur_uuid depuis view.kwargs: {indicateur_uuid}"
+                )
+                try:
+                    from dashboard.models import Indicateur
+                    indicateur = Indicateur.objects.select_related('objective_id__tableau_bord__processus').get(uuid=indicateur_uuid)
+                    if indicateur.objective_id and indicateur.objective_id.tableau_bord and indicateur.objective_id.tableau_bord.processus:
+                        processus_uuid = str(indicateur.objective_id.tableau_bord.processus.uuid)
+                        logger.info(
+                            f"[DashboardIndicateurDeletePermission] ✅ Processus trouvé depuis view.kwargs: {processus_uuid}"
+                        )
+                        return processus_uuid
+                except Indicateur.DoesNotExist:
+                    logger.warning(f"[DashboardIndicateurDeletePermission] Indicateur {indicateur_uuid} non trouvé pour extraction processus.")
+                except Exception as e:
+                    logger.error(f"[DashboardIndicateurDeletePermission] Erreur lors de l'extraction du processus pour Indicateur {indicateur_uuid}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[DashboardIndicateurDeletePermission] Erreur critique dans _extract_processus_uuid: {e}", exc_info=True)
         
-        return super()._extract_processus_uuid(request, view, obj)
+        # Si on arrive ici, essayer la méthode parente
+        try:
+            result = super()._extract_processus_uuid(request, view, obj)
+            if result:
+                logger.info(f"[DashboardIndicateurDeletePermission] Processus trouvé via super(): {result}")
+            return result
+        except Exception as e:
+            logger.error(f"[DashboardIndicateurDeletePermission] Erreur dans super()._extract_processus_uuid: {e}", exc_info=True)
+            return None
 
 
 class DashboardCibleCreatePermission(AppActionPermission):
     """Permission pour créer une cible"""
     app_name = 'dashboard'
     action = 'create_cible'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'indicateur_id dans request.data"""
+        if hasattr(request, 'data') and request.data:
+            indicateur_uuid = request.data.get('indicateur_id')
+            if indicateur_uuid:
+                try:
+                    from dashboard.models import Indicateur
+                    indicateur = Indicateur.objects.select_related(
+                        'objective_id__tableau_bord__processus'
+                    ).get(uuid=indicateur_uuid)
+                    if indicateur.objective_id and indicateur.objective_id.tableau_bord:
+                        if indicateur.objective_id.tableau_bord.processus:
+                            return str(indicateur.objective_id.tableau_bord.processus.uuid)
+                except Indicateur.DoesNotExist:
+                    logger.warning(f"[DashboardCibleCreatePermission] Indicateur {indicateur_uuid} non trouvé.")
+                except Exception as e:
+                    logger.error(f"[DashboardCibleCreatePermission] Erreur lors de l'extraction du processus pour Indicateur {indicateur_uuid}: {e}")
+        
+        # Essayer aussi depuis request.body si request.data n'est pas encore parsé
+        if hasattr(request, 'body') and request.body and request.method == 'POST':
+            try:
+                import json
+                body_data = json.loads(request.body)
+                indicateur_uuid = body_data.get('indicateur_id')
+                if indicateur_uuid:
+                    from dashboard.models import Indicateur
+                    indicateur = Indicateur.objects.select_related(
+                        'objective_id__tableau_bord__processus'
+                    ).get(uuid=indicateur_uuid)
+                    if indicateur.objective_id and indicateur.objective_id.tableau_bord:
+                        if indicateur.objective_id.tableau_bord.processus:
+                            return str(indicateur.objective_id.tableau_bord.processus.uuid)
+            except (json.JSONDecodeError, Indicateur.DoesNotExist, Exception) as e:
+                logger.warning(f"[DashboardCibleCreatePermission] Erreur lors de l'extraction depuis body: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class DashboardCibleUpdatePermission(AppActionPermission):
     """Permission pour modifier une cible"""
     app_name = 'dashboard'
     action = 'update_cible'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis la cible -> indicateur -> objective_id -> tableau_bord"""
+        # Si obj est fourni, utiliser directement
+        if obj and hasattr(obj, 'indicateur_id') and obj.indicateur_id:
+            try:
+                from dashboard.models import Indicateur
+                indicateur = Indicateur.objects.select_related(
+                    'objective_id__tableau_bord__processus'
+                ).get(uuid=obj.indicateur_id.uuid)
+                if indicateur.objective_id and indicateur.objective_id.tableau_bord:
+                    if indicateur.objective_id.tableau_bord.processus:
+                        return str(indicateur.objective_id.tableau_bord.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[DashboardCibleUpdatePermission] Erreur avec obj: {e}")
+        
+        # Sinon, essayer de récupérer la cible depuis view.kwargs (pour has_permission)
+        if hasattr(view, 'kwargs') and view.kwargs:
+            cible_uuid = view.kwargs.get('uuid')
+            if cible_uuid:
+                try:
+                    from parametre.models import Cible
+                    from dashboard.models import Indicateur
+                    cible = Cible.objects.select_related('indicateur_id').get(uuid=cible_uuid)
+                    if cible.indicateur_id:
+                        indicateur = Indicateur.objects.select_related(
+                            'objective_id__tableau_bord__processus'
+                        ).get(uuid=cible.indicateur_id.uuid)
+                        if indicateur.objective_id and indicateur.objective_id.tableau_bord:
+                            if indicateur.objective_id.tableau_bord.processus:
+                                return str(indicateur.objective_id.tableau_bord.processus.uuid)
+                except Exception as e:
+                    logger.warning(f"[DashboardCibleUpdatePermission] Erreur lors de l'extraction du processus pour Cible {cible_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class DashboardCibleDeletePermission(AppActionPermission):
@@ -563,11 +823,66 @@ class DashboardPeriodiciteCreatePermission(AppActionPermission):
     app_name = 'dashboard'
     action = 'create_periodicite'
 
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'indicateur_id dans request.data"""
+        if hasattr(request, 'data') and request.data:
+            indicateur_uuid = request.data.get('indicateur_id')
+            if indicateur_uuid:
+                try:
+                    from dashboard.models import Indicateur
+                    indicateur = Indicateur.objects.select_related('objective_id__tableau_bord__processus').get(uuid=indicateur_uuid)
+                    if indicateur.objective_id and indicateur.objective_id.tableau_bord and indicateur.objective_id.tableau_bord.processus:
+                        return str(indicateur.objective_id.tableau_bord.processus.uuid)
+                except Indicateur.DoesNotExist:
+                    logger.warning(f"[DashboardPeriodiciteCreatePermission] Indicateur {indicateur_uuid} non trouvé.")
+                except Exception as e:
+                    logger.error(f"[DashboardPeriodiciteCreatePermission] Erreur lors de l'extraction du processus pour Indicateur {indicateur_uuid}: {e}")
+        
+        # Fallback pour request.body si request.data n'est pas encore parsé
+        if hasattr(request, 'body') and request.body and request.method in ['POST', 'PUT', 'PATCH']:
+            try:
+                import json
+                body_data = json.loads(request.body)
+                indicateur_uuid = body_data.get('indicateur_id')
+                if indicateur_uuid:
+                    from dashboard.models import Indicateur
+                    indicateur = Indicateur.objects.select_related('objective_id__tableau_bord__processus').get(uuid=indicateur_uuid)
+                    if indicateur.objective_id and indicateur.objective_id.tableau_bord and indicateur.objective_id.tableau_bord.processus:
+                        return str(indicateur.objective_id.tableau_bord.processus.uuid)
+            except (json.JSONDecodeError, Indicateur.DoesNotExist, Exception) as e:
+                logger.warning(f"[DashboardPeriodiciteCreatePermission] Erreur lors de l'extraction depuis body: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
 
 class DashboardPeriodiciteUpdatePermission(AppActionPermission):
     """Permission pour modifier une périodicité"""
     app_name = 'dashboard'
     action = 'update_periodicite'
+
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis la périodicité -> indicateur -> objective -> tableau_bord"""
+        if obj:
+            if hasattr(obj, 'indicateur_id') and obj.indicateur_id:
+                if hasattr(obj.indicateur_id, 'objective_id') and obj.indicateur_id.objective_id:
+                    if hasattr(obj.indicateur_id.objective_id, 'tableau_bord') and obj.indicateur_id.objective_id.tableau_bord:
+                        if hasattr(obj.indicateur_id.objective_id.tableau_bord, 'processus'):
+                            return str(obj.indicateur_id.objective_id.tableau_bord.processus.uuid)
+        
+        # Si obj n'est pas fourni (ex: has_permission est appelé avant la récupération de l'objet)
+        if not obj and hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            periodicite_uuid = view.kwargs['uuid']
+            try:
+                from parametre.models import Periodicite
+                periodicite = Periodicite.objects.select_related('indicateur_id__objective_id__tableau_bord__processus').get(uuid=periodicite_uuid)
+                if periodicite.indicateur_id and periodicite.indicateur_id.objective_id and periodicite.indicateur_id.objective_id.tableau_bord and periodicite.indicateur_id.objective_id.tableau_bord.processus:
+                    return str(periodicite.indicateur_id.objective_id.tableau_bord.processus.uuid)
+            except Periodicite.DoesNotExist:
+                logger.warning(f"[DashboardPeriodiciteUpdatePermission] Periodicite {periodicite_uuid} non trouvée pour extraction processus.")
+            except Exception as e:
+                logger.error(f"[DashboardPeriodiciteUpdatePermission] Erreur lors de l'extraction du processus pour Periodicite {periodicite_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class DashboardPeriodiciteDeletePermission(AppActionPermission):
@@ -607,17 +922,172 @@ class DashboardObservationCreatePermission(AppActionPermission):
     app_name = 'dashboard'
     action = 'create_observation'
 
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'indicateur_id dans request.data"""
+        try:
+            # Essayer depuis request.data (si déjà parsé par DRF)
+            if hasattr(request, 'data') and request.data:
+                indicateur_uuid = request.data.get('indicateur_id')
+                if indicateur_uuid:
+                    try:
+                        from dashboard.models import Indicateur
+                        indicateur = Indicateur.objects.select_related('objective_id__tableau_bord__processus').get(uuid=indicateur_uuid)
+                        if indicateur.objective_id and indicateur.objective_id.tableau_bord and indicateur.objective_id.tableau_bord.processus:
+                            processus_uuid = str(indicateur.objective_id.tableau_bord.processus.uuid)
+                            logger.info(
+                                f"[DashboardObservationCreatePermission] ✅ Processus trouvé depuis request.data: {processus_uuid}"
+                            )
+                            return processus_uuid
+                    except Indicateur.DoesNotExist:
+                        logger.warning(f"[DashboardObservationCreatePermission] Indicateur {indicateur_uuid} non trouvé.")
+                    except Exception as e:
+                        logger.error(f"[DashboardObservationCreatePermission] Erreur extraction depuis request.data: {e}", exc_info=True)
+            
+            # Fallback pour request.body si request.data n'est pas encore parsé
+            if hasattr(request, 'body') and request.body and request.method in ['POST', 'PUT', 'PATCH']:
+                try:
+                    import json
+                    # Vérifier si request.body est déjà un bytes ou string
+                    body_str = request.body.decode('utf-8') if isinstance(request.body, bytes) else request.body
+                    body_data = json.loads(body_str)
+                    indicateur_uuid = body_data.get('indicateur_id')
+                    if indicateur_uuid:
+                        from dashboard.models import Indicateur
+                        indicateur = Indicateur.objects.select_related('objective_id__tableau_bord__processus').get(uuid=indicateur_uuid)
+                        if indicateur.objective_id and indicateur.objective_id.tableau_bord and indicateur.objective_id.tableau_bord.processus:
+                            processus_uuid = str(indicateur.objective_id.tableau_bord.processus.uuid)
+                            logger.info(
+                                f"[DashboardObservationCreatePermission] ✅ Processus trouvé depuis request.body: {processus_uuid}"
+                            )
+                            return processus_uuid
+                except (json.JSONDecodeError, UnicodeDecodeError, Indicateur.DoesNotExist) as e:
+                    logger.warning(f"[DashboardObservationCreatePermission] Erreur extraction depuis body: {e}")
+                except Exception as e:
+                    logger.error(f"[DashboardObservationCreatePermission] Erreur inattendue extraction depuis body: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[DashboardObservationCreatePermission] Erreur critique dans _extract_processus_uuid: {e}", exc_info=True)
+        
+        # Si on arrive ici, essayer la méthode parente
+        try:
+            result = super()._extract_processus_uuid(request, view, obj)
+            if result:
+                logger.info(f"[DashboardObservationCreatePermission] Processus trouvé via super(): {result}")
+            return result
+        except Exception as e:
+            logger.error(f"[DashboardObservationCreatePermission] Erreur dans super()._extract_processus_uuid: {e}", exc_info=True)
+            return None
+
 
 class DashboardObservationUpdatePermission(AppActionPermission):
     """Permission pour modifier une observation"""
     app_name = 'dashboard'
     action = 'update_observation'
 
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'observation -> indicateur -> objective -> tableau_bord"""
+        logger.info(
+            f"[DashboardObservationUpdatePermission._extract_processus_uuid] 🔍 Début extraction: "
+            f"has_obj={obj is not None}, "
+            f"has_view_kwargs={hasattr(view, 'kwargs') and bool(view.kwargs)}"
+        )
+        
+        if obj:
+            if hasattr(obj, 'indicateur_id') and obj.indicateur_id:
+                if hasattr(obj.indicateur_id, 'objective_id') and obj.indicateur_id.objective_id:
+                    if hasattr(obj.indicateur_id.objective_id, 'tableau_bord') and obj.indicateur_id.objective_id.tableau_bord:
+                        if hasattr(obj.indicateur_id.objective_id.tableau_bord, 'processus'):
+                            processus_uuid = str(obj.indicateur_id.objective_id.tableau_bord.processus.uuid)
+                            logger.info(
+                                f"[DashboardObservationUpdatePermission._extract_processus_uuid] ✅ "
+                                f"Processus trouvé depuis obj: {processus_uuid}"
+                            )
+                            return processus_uuid
+        
+        # Si obj n'est pas fourni (ex: has_permission est appelé avant la récupération de l'objet)
+        if not obj and hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            observation_uuid = view.kwargs['uuid']
+            logger.info(
+                f"[DashboardObservationUpdatePermission._extract_processus_uuid] "
+                f"observation_uuid depuis view.kwargs: {observation_uuid}"
+            )
+            try:
+                from dashboard.models import Observation
+                observation = Observation.objects.select_related('indicateur_id__objective_id__tableau_bord__processus').get(uuid=observation_uuid)
+                if observation.indicateur_id and observation.indicateur_id.objective_id and observation.indicateur_id.objective_id.tableau_bord and observation.indicateur_id.objective_id.tableau_bord.processus:
+                    processus_uuid = str(observation.indicateur_id.objective_id.tableau_bord.processus.uuid)
+                    logger.info(
+                        f"[DashboardObservationUpdatePermission._extract_processus_uuid] ✅ "
+                        f"Processus trouvé depuis view.kwargs: {processus_uuid}"
+                    )
+                    return processus_uuid
+            except Observation.DoesNotExist:
+                logger.warning(f"[DashboardObservationUpdatePermission] Observation {observation_uuid} non trouvée pour extraction processus.")
+            except Exception as e:
+                logger.error(f"[DashboardObservationUpdatePermission] Erreur lors de l'extraction du processus pour Observation {observation_uuid}: {e}", exc_info=True)
+        
+        logger.info(
+            f"[DashboardObservationUpdatePermission._extract_processus_uuid] ⚠️ "
+            f"Aucun processus trouvé, appel de super()._extract_processus_uuid"
+        )
+        result = super()._extract_processus_uuid(request, view, obj)
+        logger.info(
+            f"[DashboardObservationUpdatePermission._extract_processus_uuid] "
+            f"Résultat super()._extract_processus_uuid: {result}"
+        )
+        return result
+
 
 class DashboardObservationDeletePermission(AppActionPermission):
     """Permission pour supprimer une observation"""
     app_name = 'dashboard'
     action = 'delete_observation'
+
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'observation -> indicateur -> objective -> tableau_bord"""
+        try:
+            # Si obj est fourni (pour has_object_permission)
+            if obj:
+                if hasattr(obj, 'indicateur_id') and obj.indicateur_id:
+                    if hasattr(obj.indicateur_id, 'objective_id') and obj.indicateur_id.objective_id:
+                        if hasattr(obj.indicateur_id.objective_id, 'tableau_bord') and obj.indicateur_id.objective_id.tableau_bord:
+                            if hasattr(obj.indicateur_id.objective_id.tableau_bord, 'processus'):
+                                processus_uuid = str(obj.indicateur_id.objective_id.tableau_bord.processus.uuid)
+                                logger.info(
+                                    f"[DashboardObservationDeletePermission] ✅ Processus trouvé depuis obj: {processus_uuid}"
+                                )
+                                return processus_uuid
+            
+            # Si obj n'est pas fourni (ex: has_permission est appelé avant la récupération de l'objet)
+            if not obj and hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+                observation_uuid = view.kwargs['uuid']
+                logger.info(
+                    f"[DashboardObservationDeletePermission] observation_uuid depuis view.kwargs: {observation_uuid}"
+                )
+                try:
+                    from dashboard.models import Observation
+                    observation = Observation.objects.select_related('indicateur_id__objective_id__tableau_bord__processus').get(uuid=observation_uuid)
+                    if observation.indicateur_id and observation.indicateur_id.objective_id and observation.indicateur_id.objective_id.tableau_bord and observation.indicateur_id.objective_id.tableau_bord.processus:
+                        processus_uuid = str(observation.indicateur_id.objective_id.tableau_bord.processus.uuid)
+                        logger.info(
+                            f"[DashboardObservationDeletePermission] ✅ Processus trouvé depuis view.kwargs: {processus_uuid}"
+                        )
+                        return processus_uuid
+                except Observation.DoesNotExist:
+                    logger.warning(f"[DashboardObservationDeletePermission] Observation {observation_uuid} non trouvée pour extraction processus.")
+                except Exception as e:
+                    logger.error(f"[DashboardObservationDeletePermission] Erreur lors de l'extraction du processus pour Observation {observation_uuid}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[DashboardObservationDeletePermission] Erreur critique dans _extract_processus_uuid: {e}", exc_info=True)
+        
+        # Si on arrive ici, essayer la méthode parente
+        try:
+            result = super()._extract_processus_uuid(request, view, obj)
+            if result:
+                logger.info(f"[DashboardObservationDeletePermission] Processus trouvé via super(): {result}")
+            return result
+        except Exception as e:
+            logger.error(f"[DashboardObservationDeletePermission] Erreur dans super()._extract_processus_uuid: {e}", exc_info=True)
+            return None
 
 
 # ==================== PERMISSIONS MULTI-MÉTHODES ====================

@@ -71,18 +71,63 @@ def invalidate_cache_on_role_mapping_change(sender, instance, **kwargs):
         role = instance.role
         app_name = instance.permission_action.app_name if hasattr(instance, 'permission_action') and instance.permission_action else None
         
-        # Récupérer tous les utilisateurs ayant ce rôle
-        user_ids = list(UserProcessusRole.objects.filter(
-            role=role,
-            is_active=True
-        ).values_list('user_id', flat=True).distinct())
+        action_code = instance.permission_action.code if hasattr(instance, 'permission_action') and instance.permission_action else 'N/A'
+        granted_value = instance.granted if hasattr(instance, 'granted') else 'N/A'
         
-        # Invalider le cache pour tous ces utilisateurs
-        for user_id in user_ids:
-            PermissionService.invalidate_user_cache(user_id, app_name=app_name)
+        # Log détaillé avec print pour être sûr que ça s'affiche
+        print(f"\n{'='*80}")
+        print(f"[PermissionCache] 🔄 SIGNAL DÉCLENCHÉ pour RolePermissionMapping")
+        print(f"  Rôle: {role.code}")
+        print(f"  Action: {action_code}")
+        print(f"  Granted: {granted_value}")
+        print(f"  App: {app_name}")
+        print(f"{'='*80}\n")
         
         logger.info(
-            f"[PermissionCache] Cache invalidé pour {len(user_ids)} utilisateurs "
+            f"[PermissionCache] 🔄 Signal déclenché pour RolePermissionMapping: "
+            f"role={role.code}, action={action_code}, "
+            f"granted={granted_value}, "
+            f"app_name={app_name}"
+        )
+        
+        # Récupérer tous les utilisateurs ayant ce rôle avec leurs processus
+        user_processus_roles = UserProcessusRole.objects.filter(
+            role=role,
+            is_active=True
+        ).select_related('processus').values('user_id', 'processus__uuid').distinct()
+        
+        user_ids = list(set([upr['user_id'] for upr in user_processus_roles]))
+        processus_uuids = list(set([str(upr['processus__uuid']) for upr in user_processus_roles if upr['processus__uuid']]))
+        
+        logger.info(
+            f"[PermissionCache] 🔍 {len(user_ids)} utilisateurs trouvés avec le rôle {role.code}, "
+            f"{len(processus_uuids)} processus distincts"
+        )
+        
+        # Récupérer le code de l'action
+        action_code = instance.permission_action.code if hasattr(instance, 'permission_action') and instance.permission_action else None
+        
+        # Invalider le cache pour tous ces utilisateurs
+        print(f"[PermissionCache] 🔍 Invalidation du cache pour {len(user_ids)} utilisateurs")
+        for user_id in user_ids:
+            if app_name and action_code and processus_uuids:
+                # Invalider pour chaque processus et action spécifique
+                print(f"[PermissionCache] 🔄 Invalidation ciblée pour user_id={user_id}, app={app_name}, action={action_code}, processus={len(processus_uuids)} processus")
+                for processus_uuid in processus_uuids:
+                    PermissionService.invalidate_user_cache(
+                        user_id, 
+                        app_name=app_name, 
+                        processus_uuid=processus_uuid, 
+                        action=action_code
+                    )
+                    print(f"[PermissionCache] ✅ Cache invalidé pour user_id={user_id}, processus={processus_uuid}, action={action_code}")
+            else:
+                # Invalidation générale si on n'a pas les détails
+                print(f"[PermissionCache] 🔄 Invalidation générale pour user_id={user_id}, app={app_name}")
+                PermissionService.invalidate_user_cache(user_id, app_name=app_name)
+        
+        logger.info(
+            f"[PermissionCache] ✅ Cache invalidé pour {len(user_ids)} utilisateurs "
             f"(RolePermissionMapping modifié pour rôle={role.code}, app={app_name})"
         )
     except Exception as e:

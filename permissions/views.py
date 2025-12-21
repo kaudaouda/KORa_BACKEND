@@ -186,6 +186,49 @@ def role_permission_mapping_create(request):
                 }
             )
             
+            logger.info(
+                f"✅ Mapping {'créé' if created else 'mis à jour'}: "
+                f"role={role_obj.code}, action={permission_action_obj.code}, "
+                f"granted={mapping.granted}, priority={mapping.priority}, "
+                f"is_active={mapping.is_active}"
+            )
+            
+            # Vérifier que le mapping est bien sauvegardé
+            mapping_refresh = RolePermissionMapping.objects.get(
+                role=role_obj,
+                permission_action=permission_action_obj
+            )
+            logger.info(
+                f"🔍 Vérification mapping en DB: granted={mapping_refresh.granted}, "
+                f"is_active={mapping_refresh.is_active}"
+            )
+            
+            # Le signal post_save dans middleware.py invalidera automatiquement le cache
+            # MAIS on force aussi l'invalidation immédiate pour garantir la synchronisation
+            from permissions.services.permission_service import PermissionService
+            from parametre.models import UserProcessusRole
+            
+            # Récupérer tous les utilisateurs ayant ce rôle
+            user_ids = list(UserProcessusRole.objects.filter(
+                role=role_obj,
+                is_active=True
+            ).values_list('user_id', flat=True).distinct())
+            
+            logger.info(
+                f"🔄 Invalidation du cache pour {len(user_ids)} utilisateurs ayant le rôle {role_obj.code}, "
+                f"app_name={permission_action_obj.app_name}, action={permission_action_obj.code}, "
+                f"granted={mapping.granted}"
+            )
+            
+            # Invalider le cache pour tous ces utilisateurs
+            for user_id in user_ids:
+                PermissionService.invalidate_user_cache(user_id, app_name=permission_action_obj.app_name)
+                logger.info(f"🔄 Cache invalidé pour user_id={user_id}")
+            
+            logger.info(
+                f"✅ Cache invalidé pour {len(user_ids)} utilisateurs ayant le rôle {role_obj.code}"
+            )
+            
             # Le signal post_save dans middleware.py invalidera automatiquement le cache
             # pour tous les utilisateurs ayant ce rôle. Pas besoin d'invalider ici.
             
@@ -246,10 +289,22 @@ def user_permissions(request, user_id=None):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Récupérer les permissions via PermissionService
+        logger.info(
+            f"[user_permissions] Récupération permissions pour user_id={target_user.id}, "
+            f"username={target_user.username}, app_name={app_name}, "
+            f"processus_uuid={processus_uuid}"
+        )
+        
         permissions = PermissionService.get_user_permissions(
             user=target_user,
             app_name=app_name,
             processus_uuid=processus_uuid
+        )
+        
+        logger.info(
+            f"[user_permissions] Permissions récupérées: {len(permissions)} processus, "
+            f"update_cible pour processus {processus_uuid}: "
+            f"{permissions.get(str(processus_uuid), {}).get('update_cible', 'NON TROUVÉ')}"
         )
         
         return Response({
