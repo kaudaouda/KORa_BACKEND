@@ -36,6 +36,24 @@ def is_super_admin(user):
     ).exists()
 
 
+def can_manage_users(user):
+    """
+    Vérifie si un utilisateur peut accéder à la gestion des utilisateurs
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
+    
+    Args:
+        user: L'utilisateur Django
+    
+    Returns:
+        bool: True si l'utilisateur peut gérer les utilisateurs, False sinon
+    """
+    if not user or not user.is_authenticated:
+        return False
+    
+    # Security by Design : Vérifier que l'utilisateur a is_staff ET is_superuser
+    return bool(user.is_staff and user.is_superuser)
+
+
 def user_can_create_objectives_amendements(user, processus_uuid):
     """
     Vérifie si un utilisateur peut créer des objectifs et des amendements pour un processus
