@@ -18,9 +18,9 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'first_name', 'last_name', 'email', 'username', 
-            'is_active', 'date_joined', 'full_name'
+            'is_active', 'is_staff', 'is_superuser', 'date_joined', 'full_name'
         ]
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ['id', 'date_joined', 'is_staff', 'is_superuser']
     
     def get_full_name(self, obj):
         """Retourner le nom complet"""

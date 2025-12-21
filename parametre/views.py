@@ -2569,8 +2569,19 @@ def roles_list(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def roles_all_list(request):
-    """Liste de tous les rôles (y compris les désactivés)"""
+    """
+    Liste de tous les rôles (y compris les désactivés)
+    Security by Design : Accessible uniquement aux utilisateurs avec is_staff ET is_superuser
+    """
     try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent voir tous les rôles.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         roles = Role.objects.all().order_by('nom')
         serializer = RoleSerializer(roles, many=True)
         return Response({
@@ -2589,8 +2600,19 @@ def roles_all_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def role_create(request):
-    """Créer un nouveau rôle"""
+    """
+    Créer un nouveau rôle (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
+    """
     try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent créer des rôles.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         serializer = RoleSerializer(data=request.data)
         if serializer.is_valid():
             role = serializer.save()
@@ -2614,8 +2636,19 @@ def role_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def role_update(request, uuid):
-    """Mettre à jour un rôle"""
+    """
+    Mettre à jour un rôle (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
+    """
     try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent modifier des rôles.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
         role = Role.objects.get(uuid=uuid)
         serializer = RoleSerializer(role, data=request.data, partial=True)
         if serializer.is_valid():
@@ -2637,6 +2670,100 @@ def role_update(request, uuid):
     except Exception as e:
         logger.error(f"Erreur lors de la mise à jour du rôle: {str(e)}")
         return Response({'error': 'Impossible de mettre à jour le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def role_delete(request, uuid):
+    """
+    Supprimer un rôle (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
+    """
+    try:
+        # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response({
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent supprimer des rôles.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        role = Role.objects.get(uuid=uuid)
+        role_nom = role.nom
+        role_code = role.code
+        
+        # Vérifier si le rôle est utilisé dans des attributions
+        from parametre.models import UserProcessusRole
+        user_roles_count = UserProcessusRole.objects.filter(role=role).count()
+        
+        if user_roles_count > 0:
+            return Response({
+                'error': f'Impossible de supprimer le rôle "{role_nom}". Il est actuellement attribué à {user_roles_count} utilisateur(s). Veuillez d\'abord retirer toutes les attributions de ce rôle.',
+                'code': 'ROLE_IN_USE',
+                'user_roles_count': user_roles_count
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Supprimer automatiquement les mappings de permissions associés au rôle
+        from permissions.models import RolePermissionMapping
+        from permissions.services.permission_service import PermissionService
+        permission_mappings = RolePermissionMapping.objects.filter(role=role)
+        permission_mappings_count = permission_mappings.count()
+        
+        if permission_mappings_count > 0:
+            # Supprimer les mappings de permissions
+            permission_mappings.delete()
+            
+            # Invalider le cache des permissions pour tous les utilisateurs qui avaient ce rôle
+            # Récupérer tous les utilisateurs qui ont ce rôle
+            user_processus_roles = UserProcessusRole.objects.filter(role=role).select_related('user', 'processus')
+            affected_users = set()
+            for upr in user_processus_roles:
+                affected_users.add((upr.user.id, str(upr.processus.uuid)))
+            
+            # Invalider le cache pour chaque utilisateur/processus
+            for user_id, processus_uuid in affected_users:
+                try:
+                    PermissionService.invalidate_user_cache(user_id, processus_uuid=processus_uuid)
+                except Exception as e:
+                    logger.warning(f"Erreur lors de l'invalidation du cache pour user_id={user_id}, processus={processus_uuid}: {e}")
+            
+            logger.info(f"Suppression de {permission_mappings_count} mapping(s) de permissions pour le rôle {role_nom}")
+        
+        # Supprimer le rôle (Django supprimera automatiquement les mappings restants via CASCADE)
+        role.delete()
+        
+        # Construire le message de succès
+        description_parts = [f"Suppression du rôle {role_nom} ({role_code})"]
+        if permission_mappings_count > 0:
+            description_parts.append(f"et de {permission_mappings_count} mapping(s) de permissions associé(s)")
+        
+        log_activity(
+            user=request.user,
+            action='delete',
+            entity_type='role',
+            entity_id=str(uuid),
+            entity_name=role_nom,
+            description=" ".join(description_parts),
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+        
+        # Construire le message de réponse
+        message = f'Rôle "{role_nom}" supprimé avec succès'
+        if permission_mappings_count > 0:
+            message += f' ({permission_mappings_count} mapping(s) de permissions supprimé(s) automatiquement)'
+        
+        return Response({
+            'success': True,
+            'message': message,
+            'permission_mappings_deleted': permission_mappings_count
+        }, status=status.HTTP_200_OK)
+    except Role.DoesNotExist:
+        return Response({'error': 'Rôle non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du rôle: {str(e)}")
+        return Response({'error': 'Impossible de supprimer le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # UserProcessus CRUD
@@ -2756,15 +2883,16 @@ def user_processus_delete(request, uuid):
 def user_processus_role_list(request):
     """
     Liste des rôles attribués aux utilisateurs pour les processus
-    - Super admins : voient tous les rôles
+    - Utilisateurs avec is_staff ET is_superuser : voient tous les rôles
     - Autres utilisateurs : voient uniquement leurs propres rôles
+    Security by Design : Vérifie can_manage_users pour voir tous les rôles
     """
     try:
-        from parametre.permissions import is_super_admin
+        from parametre.permissions import can_manage_users
         
         # ========== FILTRAGE PAR UTILISATEUR (Security by Design) ==========
-        if is_super_admin(request.user):
-            # Super admin : voir tous les rôles
+        if can_manage_users(request.user):
+            # Utilisateur avec is_staff ET is_superuser : voir tous les rôles
             queryset = UserProcessusRole.objects.select_related('user', 'processus', 'role', 'attribue_par').filter(is_active=True)
         else:
             # Utilisateur normal : voir uniquement ses propres rôles
@@ -2774,8 +2902,8 @@ def user_processus_role_list(request):
             ).select_related('user', 'processus', 'role', 'attribue_par')
         # ========== FIN FILTRAGE ==========
         
-        # Filtres additionnels (seulement pour super admin)
-        if is_super_admin(request.user):
+        # Filtres additionnels (seulement pour utilisateurs avec is_staff ET is_superuser)
+        if can_manage_users(request.user):
             user_id = request.GET.get('user_id')
             processus_id = request.GET.get('processus_id')
             role_id = request.GET.get('role_id')
@@ -2804,11 +2932,14 @@ def user_processus_role_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def user_processus_role_create(request):
-    """Créer une nouvelle attribution de rôle utilisateur-processus (super admin uniquement)"""
+    """
+    Créer une nouvelle attribution de rôle utilisateur-processus (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
+    """
     try:
         # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
-        from parametre.permissions import is_super_admin
-        if not is_super_admin(request.user):
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
             return Response({
                 'error': 'Accès refusé. Seuls les super administrateurs peuvent attribuer des rôles.',
                 'code': 'PERMISSION_DENIED'
@@ -2841,13 +2972,16 @@ def user_processus_role_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def user_processus_role_update(request, uuid):
-    """Mettre à jour une attribution de rôle utilisateur-processus (super admin uniquement)"""
+    """
+    Mettre à jour une attribution de rôle utilisateur-processus (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
+    """
     try:
         # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
-        from parametre.permissions import is_super_admin
-        if not is_super_admin(request.user):
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
             return Response({
-                'error': 'Accès refusé. Seuls les super administrateurs peuvent modifier des rôles.',
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent modifier des rôles.',
                 'code': 'PERMISSION_DENIED'
             }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION ==========
@@ -2878,13 +3012,16 @@ def user_processus_role_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def user_processus_role_delete(request, uuid):
-    """Supprimer une attribution de rôle utilisateur-processus (super admin uniquement)"""
+    """
+    Supprimer une attribution de rôle utilisateur-processus (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
+    """
     try:
         # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
-        from parametre.permissions import is_super_admin
-        if not is_super_admin(request.user):
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
             return Response({
-                'error': 'Accès refusé. Seuls les super administrateurs peuvent supprimer des rôles.',
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent supprimer des rôles.',
                 'code': 'PERMISSION_DENIED'
             }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION ==========
@@ -2915,14 +3052,15 @@ def user_processus_role_delete(request, uuid):
 @permission_classes([IsAuthenticated])
 def users_list(request):
     """
-    Liste tous les utilisateurs (super admin uniquement)
+    Liste tous les utilisateurs (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
     """
     try:
         # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
-        from parametre.permissions import is_super_admin
-        if not is_super_admin(request.user):
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
             return Response({
-                'error': 'Accès refusé. Seuls les super administrateurs peuvent voir la liste des utilisateurs.',
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent voir la liste des utilisateurs.',
                 'code': 'PERMISSION_DENIED'
             }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION ==========
@@ -2964,14 +3102,15 @@ def users_list(request):
 @permission_classes([IsAuthenticated])
 def users_create(request):
     """
-    Créer un nouvel utilisateur (super admin uniquement)
+    Créer un nouvel utilisateur (is_staff ET is_superuser uniquement)
+    Security by Design : Vérifie que l'utilisateur a is_staff ET is_superuser
     """
     try:
         # ========== VÉRIFICATION DE SÉCURITÉ (Security by Design) ==========
-        from parametre.permissions import is_super_admin
-        if not is_super_admin(request.user):
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
             return Response({
-                'error': 'Accès refusé. Seuls les super administrateurs peuvent créer des utilisateurs.',
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent créer des utilisateurs.',
                 'code': 'PERMISSION_DENIED'
             }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION ==========
