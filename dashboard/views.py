@@ -607,13 +607,10 @@ def get_amendements_by_initial(request, tableau_initial_uuid):
 def validate_tableau_bord(request, uuid):
     """Valider un tableau de bord pour permettre la saisie des trimestres"""
     try:
-        tableau = TableauBord.objects.get(uuid=uuid)
-        
-        # Security by Design : La vérification d'accès au processus est gérée par DashboardTableauValidatePermission
-        # via le décorateur @permission_classes
-        
-        # Note: La vérification des permissions est maintenant gérée par DashboardTableauValidatePermission
-        # via le décorateur @permission_classes
+        # Security by Design : La vérification des permissions est gérée par DashboardTableauValidatePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère le tableau depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        tableau = TableauBord.objects.select_related('processus').get(uuid=uuid)
         
         # Vérifier que le tableau n'est pas déjà validé
         if tableau.is_validated:
@@ -666,6 +663,9 @@ def validate_tableau_bord(request, uuid):
             'data': TableauBordSerializer(tableau).data
         }, status=status.HTTP_200_OK)
         
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except TableauBord.DoesNotExist:
         return Response({
             'success': False,
@@ -863,6 +863,9 @@ def objectives_create(request):
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
             
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except Exception as e:
         logger.error(f"Erreur lors de la création de l'objectif: {str(e)}", exc_info=True)
         return Response({
@@ -876,9 +879,13 @@ def objectives_create(request):
 def objectives_update(request, uuid):
     """Mettre à jour un objectif"""
     try:
-        objective = Objectives.objects.get(uuid=uuid)
+        # Security by Design : La vérification des permissions est gérée par DashboardObjectiveUpdatePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère l'objectif depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        objective = Objectives.objects.select_related(
+            'tableau_bord__processus'
+        ).get(uuid=uuid)
         
-        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         # Security by Design : La vérification d'accès au processus est gérée par DashboardObjectiveUpdatePermission
         # via le décorateur @permission_classes
         
@@ -919,6 +926,9 @@ def objectives_update(request, uuid):
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
             
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except Objectives.DoesNotExist:
         return Response({
             'success': False,
@@ -926,7 +936,7 @@ def objectives_update(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'objectif {uuid}: {str(e)}")
+        logger.error(f"Erreur lors de la mise à jour de l'objectif {uuid}: {str(e)}", exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de l\'objectif'
@@ -938,9 +948,13 @@ def objectives_update(request, uuid):
 def objectives_delete(request, uuid):
     """Supprimer un objectif"""
     try:
-        objective = Objectives.objects.get(uuid=uuid)
+        # Security by Design : La vérification des permissions est gérée par DashboardObjectiveDeletePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère l'objectif depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        objective = Objectives.objects.select_related(
+            'tableau_bord__processus'
+        ).get(uuid=uuid)
         
-        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         # Security by Design : La vérification d'accès au processus est gérée par DashboardObjectiveDeletePermission
         # via le décorateur @permission_classes
         
@@ -954,6 +968,9 @@ def objectives_delete(request, uuid):
             'message': 'Objectif supprimé avec succès'
         }, status=status.HTTP_200_OK)
         
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except Objectives.DoesNotExist:
         return Response({
             'success': False,
@@ -961,7 +978,7 @@ def objectives_delete(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'objectif {uuid}: {str(e)}")
+        logger.error(f"Erreur lors de la suppression de l'objectif {uuid}: {str(e)}", exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de l\'objectif'
@@ -1277,7 +1294,9 @@ def indicateurs_update(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'indicateur {uuid}: {str(e)}")
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Erreur lors de la mise à jour de l'indicateur {uuid}: {str(e)}\n{error_traceback}")
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de l\'indicateur'
@@ -1289,7 +1308,12 @@ def indicateurs_update(request, uuid):
 def indicateurs_delete(request, uuid):
     """Supprimer un indicateur"""
     try:
-        indicateur = Indicateur.objects.get(uuid=uuid)
+        # Security by Design : La vérification des permissions est gérée par DashboardIndicateurDeletePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère l'indicateur depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        indicateur = Indicateur.objects.select_related(
+            'objective_id__tableau_bord__processus'
+        ).get(uuid=uuid)
         
         # Security by Design : La vérification d'accès au processus est gérée par DashboardIndicateurDeletePermission
         # via le décorateur @permission_classes
@@ -1304,6 +1328,9 @@ def indicateurs_delete(request, uuid):
             'message': 'Indicateur supprimé avec succès'
         }, status=status.HTTP_200_OK)
         
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except Indicateur.DoesNotExist:
         return Response({
             'success': False,
@@ -1311,7 +1338,7 @@ def indicateurs_delete(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'indicateur {uuid}: {str(e)}")
+        logger.error(f"Erreur lors de la suppression de l'indicateur {uuid}: {str(e)}", exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de l\'indicateur'
@@ -1969,16 +1996,6 @@ def observations_create(request):
                 'error': 'Indicateur non trouvé'
             }, status=status.HTTP_404_NOT_FOUND)
 
-        # ========== ADMIN ONLY (Security by Design) ==========
-        # Seuls les admins (super admin) peuvent créer/modifier des observations
-        from parametre.permissions import is_super_admin
-        if not is_super_admin(request.user):
-            return Response({
-                'success': False,
-                'error': "Vous n'avez pas les permissions nécessaires (admin) pour ajouter des observations."
-            }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN ADMIN ONLY ==========
-
         # Security by Design : La vérification d'accès au processus est gérée par DashboardObservationCreatePermission
         # via le décorateur @permission_classes
 
@@ -2007,6 +2024,9 @@ def observations_create(request):
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
             
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except Exception as e:
         import traceback
         from django.conf import settings
@@ -2054,19 +2074,15 @@ def observations_detail(request, uuid):
 def observations_update(request, uuid):
     """Mettre à jour une observation"""
     try:
-        observation = Observation.objects.get(uuid=uuid)
+        # Security by Design : La vérification des permissions est gérée par DashboardObservationUpdatePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère l'observation depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        observation = Observation.objects.select_related(
+            'indicateur_id__objective_id__tableau_bord__processus'
+        ).get(uuid=uuid)
         
-        # Récupérer le tableau via l'indicateur
-        tableau = observation.indicateur.objective.tableau_bord
-
-        # ========== ADMIN ONLY (Security by Design) ==========
-        from parametre.permissions import is_super_admin
-        if not is_super_admin(request.user):
-            return Response({
-                'success': False,
-                'error': "Vous n'avez pas les permissions nécessaires (admin) pour modifier les observations."
-            }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN ADMIN ONLY ==========
+        # Récupérer le tableau via l'indicateur (correction : utiliser indicateur_id et objective_id)
+        tableau = observation.indicateur_id.objective_id.tableau_bord
 
         # Security by Design : La vérification d'accès au processus est gérée par DashboardObservationUpdatePermission
         # via le décorateur @permission_classes
@@ -2096,13 +2112,16 @@ def observations_update(request, uuid):
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
             
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except Observation.DoesNotExist:
         return Response({
             'success': False,
             'error': 'Observation non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'observation {uuid}: {str(e)}")
+        logger.error(f"Erreur lors de la mise à jour de l'observation {uuid}: {str(e)}", exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de l\'observation'
@@ -2114,21 +2133,35 @@ def observations_update(request, uuid):
 def observations_delete(request, uuid):
     """Supprimer une observation"""
     try:
-        observation = Observation.objects.get(uuid=uuid)
+        # Security by Design : La vérification des permissions est gérée par DashboardObservationDeletePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère l'observation depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        observation = Observation.objects.select_related(
+            'indicateur_id__objective_id__tableau_bord__processus'
+        ).get(uuid=uuid)
+        
+        # Security by Design : La vérification d'accès au processus est gérée par DashboardObservationDeletePermission
+        # via le décorateur @permission_classes
+        
         observation.delete()
+        
+        logger.info(f"Observation supprimée: {uuid} par {request.user.username}")
         
         return Response({
             'success': True,
             'message': 'Observation supprimée avec succès'
         }, status=status.HTTP_200_OK)
         
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
     except Observation.DoesNotExist:
         return Response({
             'success': False,
             'error': 'Observation non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'observation {uuid}: {str(e)}")
+        logger.error(f"Erreur lors de la suppression de l'observation {uuid}: {str(e)}", exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de l\'observation'
