@@ -1,16 +1,43 @@
 from django.http import HttpResponse
 from django.utils.deprecation import MiddlewareMixin
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from django.contrib.auth import get_user_model
 import logging
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
 
 
 class JWTCookieMiddleware(MiddlewareMixin):
     """
     Middleware pour gérer les tokens JWT dans les cookies
+    Lit le JWT depuis les cookies et authentifie l'utilisateur
     """
+    
+    def process_request(self, request):
+        """
+        Lire le JWT depuis les cookies et authentifier l'utilisateur
+        """
+        # Récupérer le token depuis les cookies
+        access_token = request.COOKIES.get('access_token')
+        
+        if access_token and not request.user.is_authenticated:
+            try:
+                # Valider et décoder le token
+                token = AccessToken(access_token)
+                user_id = token.get('user_id')
+                
+                # Récupérer l'utilisateur
+                user = User.objects.get(id=user_id)
+                
+                # Attacher l'utilisateur à la requête
+                request.user = user
+                logger.debug(f"Utilisateur authentifié depuis JWT cookie: {user.username}")
+                
+            except (InvalidToken, TokenError, User.DoesNotExist) as e:
+                logger.debug(f"Erreur authentification JWT cookie: {e}")
+                pass  # Laisser request.user tel quel (AnonymousUser)
     
     def process_response(self, request, response):
         # Si une nouvelle access token a été générée, l'ajouter au cookie

@@ -51,11 +51,20 @@ class ApplicationMaintenanceMiddleware(MiddlewareMixin):
         # Vérifier si la route correspond à une application
         for url_prefix, app_name in self.APP_ROUTES.items():
             if request.path.startswith(url_prefix):
+                # Debug: Logger les infos de l'utilisateur
+                logger.info(
+                    f"[ApplicationMaintenance] Vérification pour {app_name} - "
+                    f"User: {request.user}, "
+                    f"is_authenticated: {request.user.is_authenticated}, "
+                    f"is_staff: {getattr(request.user, 'is_staff', False)}, "
+                    f"is_superuser: {getattr(request.user, 'is_superuser', False)}"
+                )
+                
                 # Security by Design : Super admin bypass
                 # Seuls les utilisateurs avec is_staff ET is_superuser peuvent bypasser
                 if request.user.is_authenticated and request.user.is_staff and request.user.is_superuser:
-                    logger.debug(
-                        f"[ApplicationMaintenance] Super admin bypass pour {app_name} "
+                    logger.info(
+                        f"[ApplicationMaintenance] ✅ Super admin bypass pour {app_name} "
                         f"(user: {request.user.username})"
                     )
                     return None  # Laisser passer
