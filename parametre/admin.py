@@ -12,7 +12,7 @@ from .models import (
     DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
-    Role, UserProcessus, UserProcessusRole
+    Role, UserProcessus, UserProcessusRole, ApplicationConfig
 )
 
 
@@ -1397,4 +1397,82 @@ class UserProcessusRoleAdmin(admin.ModelAdmin):
         from django.http import HttpResponseRedirect
         from django.urls import reverse
         return HttpResponseRedirect(reverse('admin:parametre_userprocessusrole_changelist'))
+
+
+@admin.register(ApplicationConfig)
+class ApplicationConfigAdmin(admin.ModelAdmin):
+    """
+    Interface d'administration pour activer/désactiver les applications
+    """
+    list_display = [
+        'app_name_display',
+        'status_badge',
+        'maintenance_message_short',
+        'maintenance_period',
+        'updated_by',
+        'updated_at'
+    ]
+    list_filter = ['is_enabled', 'app_name']
+    search_fields = ['app_name', 'maintenance_message']
+    readonly_fields = ['updated_at', 'created_at']
+    
+    fieldsets = (
+        ('Application', {
+            'fields': ('app_name', 'is_enabled')
+        }),
+        ('Maintenance', {
+            'fields': ('maintenance_message', 'maintenance_start', 'maintenance_end'),
+            'classes': ('collapse',)
+        }),
+        ('Informations', {
+            'fields': ('updated_by', 'updated_at', 'created_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def app_name_display(self, obj):
+        """Affiche le nom complet de l'application"""
+        return obj.get_app_name_display()
+    app_name_display.short_description = 'Application'
+    
+    def status_badge(self, obj):
+        """Badge coloré pour le statut"""
+        if obj.is_enabled:
+            return format_html(
+                '<span style="background-color: #10b981; color: white; padding: 3px 10px; border-radius: 3px; font-weight: bold;">✅ ACTIVÉE</span>'
+            )
+        else:
+            return format_html(
+                '<span style="background-color: #ef4444; color: white; padding: 3px 10px; border-radius: 3px; font-weight: bold;">🔧 MAINTENANCE</span>'
+            )
+    status_badge.short_description = 'Statut'
+    
+    def maintenance_message_short(self, obj):
+        """Affiche un extrait du message de maintenance"""
+        if obj.maintenance_message:
+            return obj.maintenance_message[:50] + '...' if len(obj.maintenance_message) > 50 else obj.maintenance_message
+        return '-'
+    maintenance_message_short.short_description = 'Message'
+    
+    def maintenance_period(self, obj):
+        """Affiche la période de maintenance"""
+        if obj.maintenance_start or obj.maintenance_end:
+            start = obj.maintenance_start.strftime('%d/%m/%Y %H:%M') if obj.maintenance_start else '?'
+            end = obj.maintenance_end.strftime('%d/%m/%Y %H:%M') if obj.maintenance_end else '?'
+            return f"{start} → {end}"
+        return '-'
+    maintenance_period.short_description = 'Période'
+    
+    def save_model(self, request, obj, form, change):
+        """Enregistre l'utilisateur qui a fait la modification"""
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+        
+        # Log de l'action
+        action = "désactivée" if not obj.is_enabled else "activée"
+        self.message_user(
+            request,
+            f"Application '{obj.get_app_name_display()}' {action} avec succès.",
+            level='SUCCESS' if obj.is_enabled else 'WARNING'
+        )
     

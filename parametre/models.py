@@ -1427,3 +1427,74 @@ class UserProcessusRole(models.Model):
         """Valider avant de sauvegarder"""
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class ApplicationConfig(models.Model):
+    """
+    Configuration globale des applications
+    Permet d'activer/désactiver une application (mode maintenance)
+    """
+    APP_CHOICES = [
+        ('dashboard', 'Tableau de Bord'),
+        ('pac', 'PAC (Programme d\'Amélioration Continue)'),
+        ('cdr', 'Cartographie des Risques'),
+        ('activite_periodique', 'Activité Périodique'),
+        ('documentation', 'Documentation'),
+    ]
+    
+    app_name = models.CharField(
+        max_length=50,
+        unique=True,
+        choices=APP_CHOICES,
+        verbose_name="Application",
+        help_text="Nom de l'application"
+    )
+    is_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Application activée",
+        help_text="Décocher pour mettre l'application en maintenance"
+    )
+    maintenance_message = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Message de maintenance",
+        help_text="Message affiché aux utilisateurs pendant la maintenance"
+    )
+    maintenance_start = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Début de maintenance",
+        help_text="Date et heure de début de la maintenance (optionnel)"
+    )
+    maintenance_end = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fin de maintenance prévue",
+        help_text="Date et heure de fin prévue de la maintenance (optionnel)"
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Modifié par",
+        help_text="Dernier utilisateur ayant modifié cette configuration"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Dernière modification"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+
+    class Meta:
+        db_table = 'application_config'
+        verbose_name = 'Configuration Application'
+        verbose_name_plural = 'Configurations Applications'
+        ordering = ['app_name']
+
+    def __str__(self):
+        status = "✅ Activée" if self.is_enabled else "🔧 En maintenance"
+        return f"{self.get_app_name_display()} - {status}"
