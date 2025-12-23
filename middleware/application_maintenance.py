@@ -30,7 +30,7 @@ class ApplicationMaintenanceMiddleware(MiddlewareMixin):
         '/api/pac/': 'pac',
         '/api/cdr/': 'cdr',
         '/api/activite-periodique/': 'activite_periodique',
-        '/api/documents/': 'documentation',
+        '/api/documentation/': 'documentation',
     }
     
     def process_request(self, request):
