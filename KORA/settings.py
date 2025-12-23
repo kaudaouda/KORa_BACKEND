@@ -57,6 +57,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'middleware.application_maintenance.ApplicationMaintenanceMiddleware',  # Vérification mode maintenance
     'django.contrib.messages.middleware.MessageMiddleware',
     'shared.middleware.MediaFrameOptionsMiddleware',  # Notre middleware personnalisé (avant XFrameOptionsMiddleware)
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
