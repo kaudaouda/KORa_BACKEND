@@ -60,7 +60,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'shared.middleware.MediaFrameOptionsMiddleware',  # Notre middleware personnalisé (avant XFrameOptionsMiddleware)
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'shared.middleware.JWTCookieMiddleware',
+    'shared.middleware.JWTCookieMiddleware',  # Doit être AVANT ApplicationMaintenanceMiddleware
+    'middleware.application_maintenance.ApplicationMaintenanceMiddleware',  # Vérification mode maintenance (après JWT)
 ]
 
 ROOT_URLCONF = 'KORA.urls'
