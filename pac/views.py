@@ -669,17 +669,10 @@ def pac_list(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
-            logger.info(f"[pac_list] Aucun processus assigné pour l'utilisateur {request.user.username}")
-            return Response({
-                'success': True,
-                'data': [],
-                'count': 0,
-                'message': 'Aucun PAC trouvé pour vos processus attribués.'
-            }, status=status.HTTP_200_OK)
-
-        # Filtrer les PACs par les processus où l'utilisateur a un rôle actif
-        pacs = Pac.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les PACs sans filtre
+            pacs = Pac.objects.all().select_related(
             'processus', 'cree_par', 'annee', 'type_tableau', 'validated_by'
         ).prefetch_related(
             'details__dysfonctionnement_recommandation',
@@ -687,6 +680,24 @@ def pac_list(request):
             'details__categorie',
             'details__source'
         )
+        elif not user_processus_uuids:
+            logger.info(f"[pac_list] Aucun processus assigné pour l'utilisateur {request.user.username}")
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'Aucun PAC trouvé pour vos processus attribués.'
+            }, status=status.HTTP_200_OK)
+        else:
+            # Filtrer les PACs par les processus où l'utilisateur a un rôle actif
+            pacs = Pac.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
+                'processus', 'cree_par', 'annee', 'type_tableau', 'validated_by'
+            ).prefetch_related(
+                'details__dysfonctionnement_recommandation',
+                'details__nature',
+                'details__categorie',
+                'details__source'
+            )
         # ========== FIN FILTRAGE ==========
 
         logger.info(f"[pac_list] Nombre de PACs pour l'utilisateur {request.user.username}: {pacs.count()}")
@@ -1516,17 +1527,21 @@ def traitement_list(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les traitements sans filtre
+            traitements = TraitementPac.objects.all().order_by('-delai_realisation')
+        elif not user_processus_uuids:
             return Response({
                 'success': True,
                 'data': [],
                 'count': 0,
                 'message': 'Aucun traitement trouvé pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        traitements = TraitementPac.objects.filter(
-            details_pac__pac__processus__uuid__in=user_processus_uuids
-        ).order_by('-delai_realisation')
+        else:
+            traitements = TraitementPac.objects.filter(
+                details_pac__pac__processus__uuid__in=user_processus_uuids
+            ).order_by('-delai_realisation')
         # ========== FIN FILTRAGE ==========
         
         serializer = TraitementPacSerializer(traitements, many=True)
@@ -1762,17 +1777,21 @@ def suivi_list(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les suivis sans filtre
+            suivis = PacSuivi.objects.all().order_by('-created_at')
+        elif not user_processus_uuids:
             return Response({
                 'success': True,
                 'data': [],
                 'count': 0,
                 'message': 'Aucun suivi trouvé pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        suivis = PacSuivi.objects.filter(
-            traitement__details_pac__pac__processus__uuid__in=user_processus_uuids
-        ).order_by('-created_at')
+        else:
+            suivis = PacSuivi.objects.filter(
+                traitement__details_pac__pac__processus__uuid__in=user_processus_uuids
+            ).order_by('-created_at')
         # ========== FIN FILTRAGE ==========
         
         serializer = PacSuiviSerializer(suivis, many=True)
@@ -2221,18 +2240,34 @@ def pac_upcoming_notifications(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les notifications sans filtre
+            traitements = TraitementPac.objects.filter(
+                details_pac__isnull=False,
+                delai_realisation__isnull=False
+            ).select_related(
+                'details_pac', 
+                'details_pac__pac',
+                'details_pac__pac__processus',
+                'details_pac__nature',
+                'type_action'
+            ).prefetch_related(
+                'responsables_directions',
+                'responsables_sous_directions'
+            )
+        elif not user_processus_uuids:
             return Response({
                 'success': True,
                 'data': [],
                 'count': 0,
                 'message': 'Aucune notification trouvée pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        # Récupérer tous les traitements des processus de l'utilisateur avec leurs délais de réalisation
-        traitements = TraitementPac.objects.filter(
-            details_pac__isnull=False,
-            details_pac__pac__processus__uuid__in=user_processus_uuids,
+        else:
+            # Récupérer tous les traitements des processus de l'utilisateur avec leurs délais de réalisation
+            traitements = TraitementPac.objects.filter(
+                details_pac__isnull=False,
+                details_pac__pac__processus__uuid__in=user_processus_uuids,
             delai_realisation__isnull=False
         ).select_related(
             'details_pac', 
@@ -2356,7 +2391,11 @@ def pac_stats(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les PACs sans filtre
+            pacs_base = Pac.objects.all()
+        elif not user_processus_uuids:
             return Response({
                 'success': True,
                 'data': {
@@ -2367,9 +2406,9 @@ def pac_stats(request):
                 },
                 'message': 'Aucune donnée de PAC trouvée pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        # Récupérer tous les PACs des processus de l'utilisateur
-        pacs_base = Pac.objects.filter(processus__uuid__in=user_processus_uuids)
+        else:
+            # Récupérer tous les PACs des processus de l'utilisateur
+            pacs_base = Pac.objects.filter(processus__uuid__in=user_processus_uuids)
         logger.info(f"[pac_stats] Queryset créé")
         # ========== FIN FILTRAGE ==========
         

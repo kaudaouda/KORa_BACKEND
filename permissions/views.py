@@ -30,7 +30,7 @@ from permissions.serializers import (
 )
 from permissions.services.permission_service import PermissionService
 from parametre.models import Role, Processus, UserProcessusRole
-from parametre.permissions import is_super_admin
+from parametre.permissions import is_super_admin, can_manage_users
 
 logger = logging.getLogger(__name__)
 
@@ -105,13 +105,14 @@ def role_permission_mappings_list(request):
     """
     Liste les RolePermissionMapping
     Filtrable par role, app_name, granted
+    Security by Design : Accessible uniquement aux utilisateurs avec is_staff ET is_superuser
     """
     try:
-        # Seuls les super admins peuvent voir tous les mappings
-        if not is_super_admin(request.user):
+        # Seuls les utilisateurs avec is_staff ET is_superuser peuvent voir tous les mappings
+        if not can_manage_users(request.user):
             return Response({
                 'success': False,
-                'error': 'Accès refusé. Seuls les super administrateurs peuvent consulter les mappings.'
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent consulter les mappings.'
             }, status=status.HTTP_403_FORBIDDEN)
         
         role_id = request.query_params.get('role')
@@ -150,12 +151,15 @@ def role_permission_mappings_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def role_permission_mapping_create(request):
-    """Créer ou mettre à jour un RolePermissionMapping (super admin uniquement)"""
+    """
+    Créer ou mettre à jour un RolePermissionMapping
+    Security by Design : Accessible uniquement aux utilisateurs avec is_staff ET is_superuser
+    """
     try:
-        if not is_super_admin(request.user):
+        if not can_manage_users(request.user):
             return Response({
                 'success': False,
-                'error': 'Accès refusé. Seuls les super administrateurs peuvent créer des mappings.'
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent créer/modifier des mappings.'
             }, status=status.HTTP_403_FORBIDDEN)
         
         # Logger les données reçues pour debug
@@ -270,8 +274,8 @@ def user_permissions(request, user_id=None):
         if user_id:
             from django.contrib.auth.models import User
             target_user = User.objects.get(id=user_id)
-            # Seuls les super admins peuvent voir les permissions d'autres utilisateurs
-            if not is_super_admin(request.user) and request.user.id != user_id:
+            # Seuls les utilisateurs avec is_staff ET is_superuser peuvent voir les permissions d'autres utilisateurs
+            if not can_manage_users(request.user) and request.user.id != user_id:
                 return Response({
                     'success': False,
                     'error': 'Accès refusé. Vous ne pouvez voir que vos propres permissions.'
