@@ -5,7 +5,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from django.http import HttpResponse
-from .models import Objectives, Indicateur, Cible, Periodicite, Observation
+from .models import Objectives, Indicateur, Observation
+from parametre.models import Cible, Periodicite
 import logging
 
 logger = logging.getLogger(__name__)
