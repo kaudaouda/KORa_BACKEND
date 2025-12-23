@@ -55,11 +55,24 @@ class PermissionService:
     def _is_super_admin(cls, user: User) -> bool:
         """
         Vérifie si user est super admin
-        Un super admin est un utilisateur qui a le rôle "admin" ou "validateur" 
-        pour le processus "smi" ou "prs-smi"
+        Un super admin est :
+        1. Un utilisateur avec is_staff ET is_superuser (accès complet par défaut)
+        2. OU un utilisateur qui a le rôle "admin" ou "validateur" 
+           pour le processus "smi" ou "prs-smi"
+        
+        Security by Design : Les utilisateurs avec is_staff ET is_superuser 
+        ont automatiquement toutes les permissions
         """
         if not user or not user.is_authenticated:
             return False
+        
+        # Security by Design : is_staff ET is_superuser = toutes les permissions
+        if user.is_staff and user.is_superuser:
+            logger.info(
+                f"[PermissionService._is_super_admin] ✅ User {user.username} "
+                f"est super admin (is_staff={user.is_staff}, is_superuser={user.is_superuser})"
+            )
+            return True
         
         try:
             # Chercher les processus SMI (seulement par nom car Processus n'a pas de champ code)

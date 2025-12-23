@@ -72,21 +72,28 @@ def tableaux_bord_list_create(request):
             from parametre.permissions import get_user_processus_list
             user_processus_uuids = get_user_processus_list(request.user)
             
-            # Si l'utilisateur n'a aucun processus, retourner une liste vide
-            if not user_processus_uuids:
+            # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+            # Il peut voir tous les tableaux de bord sans filtre
+            if user_processus_uuids is None:
+                # Super admin : voir tous les tableaux de bord
+                qs = TableauBord.objects.all().select_related('processus', 'initial_ref', 'type_tableau').order_by(
+                    '-annee', 'processus__numero_processus', 'type_tableau__code'
+                )
+            elif not user_processus_uuids:
+                # Si l'utilisateur n'a aucun processus, retourner une liste vide
                 return Response({
                     'success': True,
                     'data': [],
                     'count': 0,
                     'message': 'Aucun processus assigné. Vous ne pouvez pas voir de tableaux de bord.'
                 }, status=status.HTTP_200_OK)
-            
-            # Filtrer les tableaux de bord pour ne montrer que ceux des processus de l'utilisateur
-            qs = TableauBord.objects.filter(
-                processus__uuid__in=user_processus_uuids
-            ).select_related('processus', 'initial_ref', 'type_tableau').order_by(
-                '-annee', 'processus__numero_processus', 'type_tableau__code'
-            )
+            else:
+                # Filtrer les tableaux de bord pour ne montrer que ceux des processus de l'utilisateur
+                qs = TableauBord.objects.filter(
+                    processus__uuid__in=user_processus_uuids
+                ).select_related('processus', 'initial_ref', 'type_tableau').order_by(
+                    '-annee', 'processus__numero_processus', 'type_tableau__code'
+                )
             # ========== FIN FILTRAGE ==========
             
             serializer = TableauBordSerializer(qs, many=True)
@@ -997,7 +1004,12 @@ def dashboard_stats(request):
         user_processus_uuids = get_user_processus_list(request.user)
         
         # Filtrer les données selon les processus accessibles
-        if user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les données sans filtre
+            objectives_filter = Objectives.objects.all()
+            indicateurs_filter = Indicateur.objects.all()
+        elif user_processus_uuids:
             objectives_filter = Objectives.objects.filter(
                 tableau_bord__processus__uuid__in=user_processus_uuids
             )
@@ -1038,7 +1050,11 @@ def dashboard_stats(request):
         import decimal
         
         # Récupérer toutes les cibles avec leurs indicateurs (filtrées par processus)
-        if user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les cibles sans filtre
+            cibles_with_periodicites = Cible.objects.all().select_related('indicateur_id')
+        elif user_processus_uuids:
             cibles_with_periodicites = Cible.objects.filter(
                 indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
             ).select_related('indicateur_id')
@@ -1112,7 +1128,11 @@ def indicateurs_list(request):
         user_processus_uuids = get_user_processus_list(request.user)
         
         # Filtrer les indicateurs pour ne montrer que ceux des tableaux de bord accessibles
-        if user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les indicateurs sans filtre
+            indicateurs = Indicateur.objects.all().order_by('objective_id', 'libelle')
+        elif user_processus_uuids:
             indicateurs = Indicateur.objects.filter(
                 objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
             ).order_by('objective_id', 'libelle')
@@ -1397,7 +1417,11 @@ def cibles_list(request):
         user_processus_uuids = get_user_processus_list(request.user)
         
         # Filtrer les cibles pour ne montrer que celles des tableaux de bord accessibles
-        if user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les cibles sans filtre
+            cibles = Cible.objects.all().order_by('indicateur_id', 'created_at')
+        elif user_processus_uuids:
             cibles = Cible.objects.filter(
                 indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
             ).order_by('indicateur_id', 'created_at')

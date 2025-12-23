@@ -125,6 +125,7 @@ urlpatterns = [
     path('roles/all/', views.roles_all_list, name='roles_all_list'),
     path('roles/create/', views.role_create, name='role_create'),
     path('roles/<uuid:uuid>/update/', views.role_update, name='role_update'),
+    path('roles/<uuid:uuid>/delete/', views.role_delete, name='role_delete'),
     
     # ==================== USER PROCESSUS ====================
     path('user-processus/', views.user_processus_list, name='user_processus_list'),
