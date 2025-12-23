@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 import logging
 from .models import Objectives, Indicateur, Observation, TableauBord
+from .excel_export import generate_excel_response
 
 logger = logging.getLogger(__name__)
 from .serializers import (
@@ -1848,5 +1849,37 @@ def get_last_tableau_bord_previous_year(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération du Tableau de Bord',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== EXPORT EXCEL ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_tableau_bord_excel(request, uuid):
+    """
+    Exporte un tableau de bord vers un fichier Excel
+    """
+    try:
+        # Récupérer le tableau de bord
+        tableau_bord = TableauBord.objects.select_related('processus', 'type_tableau').get(uuid=uuid)
+        
+        # Générer et retourner le fichier Excel
+        return generate_excel_response(tableau_bord)
+        
+    except TableauBord.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Tableau de bord introuvable'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        logger.error(f"Erreur lors de l'export Excel du tableau de bord {uuid}: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de l\'export Excel',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
