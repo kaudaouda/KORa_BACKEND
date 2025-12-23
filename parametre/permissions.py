@@ -200,18 +200,18 @@ def get_user_processus_list(user):
     
     Returns:
         list: Liste des UUIDs (strings) des processus accessibles par l'utilisateur
-        Si l'utilisateur est super admin, retourne tous les processus actifs
+        Si l'utilisateur est super admin (is_staff ET is_superuser) OU is_super_admin, 
+        retourne tous les processus actifs (None pour indiquer "tous")
     """
     if not user or not user.is_authenticated:
         return []
     
     # ========== SUPER ADMIN : Accès à tous les processus ==========
-    if is_super_admin(user):
-        # Retourner tous les processus actifs
-        processus_uuids = Processus.objects.filter(
-            is_active=True
-        ).values_list('uuid', flat=True).distinct()
-        return list(processus_uuids)
+    # Security by Design : Les utilisateurs avec is_staff ET is_superuser ont accès à tous les processus
+    if can_manage_users(user) or is_super_admin(user):
+        # Retourner None pour indiquer "tous les processus" (sera géré dans les vues)
+        # Cela permet de ne pas filtrer les données
+        return None
     # ========== FIN SUPER ADMIN ==========
     
     # Récupérer tous les processus où l'utilisateur a au moins un rôle actif
@@ -233,12 +233,14 @@ def user_has_access_to_processus(user, processus_uuid):
     
     Returns:
         bool: True si l'utilisateur a accès au processus, False sinon
+        Security by Design : Les utilisateurs avec is_staff ET is_superuser ont accès à tous les processus
     """
     if not user or not user.is_authenticated:
         return False
     
     # ========== SUPER ADMIN : Accès à tous les processus ==========
-    if is_super_admin(user):
+    # Security by Design : Les utilisateurs avec is_staff ET is_superuser ont accès à tous les processus
+    if can_manage_users(user) or is_super_admin(user):
         return True
     # ========== FIN SUPER ADMIN ==========
     
