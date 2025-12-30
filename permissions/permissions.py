@@ -1206,51 +1206,344 @@ class PACDetailCreatePermission(AppActionPermission):
     """Permission pour créer un détail PAC"""
     app_name = 'pac'
     action = 'create_detail_pac'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis request.data (pac) ou depuis obj.pac.processus"""
+        # Depuis obj si fourni
+        if obj:
+            if hasattr(obj, 'pac') and obj.pac:
+                if hasattr(obj.pac, 'processus') and obj.pac.processus:
+                    return str(obj.pac.processus.uuid)
+        
+        # Depuis request.data (pour POST)
+        if hasattr(request, 'data') and request.data:
+            pac_uuid = request.data.get('pac')
+            if pac_uuid:
+                try:
+                    from pac.models import Pac
+                    pac = Pac.objects.select_related('processus').get(uuid=pac_uuid)
+                    if pac.processus:
+                        return str(pac.processus.uuid)
+                except Exception as e:
+                    logger.warning(f"[PACDetailCreatePermission] Erreur extraction processus depuis pac {pac_uuid}: {e}")
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            detail_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import DetailsPac
+                detail = DetailsPac.objects.select_related('pac__processus').get(uuid=detail_uuid)
+                if detail.pac and detail.pac.processus:
+                    return str(detail.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACDetailCreatePermission] Erreur extraction processus depuis detail {detail_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACDetailUpdatePermission(AppActionPermission):
     """Permission pour modifier un détail PAC"""
     app_name = 'pac'
     action = 'update_detail_pac'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.pac.processus"""
+        if obj:
+            if hasattr(obj, 'pac') and obj.pac:
+                if hasattr(obj.pac, 'processus') and obj.pac.processus:
+                    return str(obj.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            detail_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import DetailsPac
+                detail = DetailsPac.objects.select_related('pac__processus').get(uuid=detail_uuid)
+                if detail.pac and detail.pac.processus:
+                    return str(detail.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACDetailUpdatePermission] Erreur extraction processus depuis detail {detail_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACDetailDeletePermission(AppActionPermission):
     """Permission pour supprimer un détail PAC"""
     app_name = 'pac'
     action = 'delete_detail_pac'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.pac.processus"""
+        if obj:
+            if hasattr(obj, 'pac') and obj.pac:
+                if hasattr(obj.pac, 'processus') and obj.pac.processus:
+                    return str(obj.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            detail_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import DetailsPac
+                detail = DetailsPac.objects.select_related('pac__processus').get(uuid=detail_uuid)
+                if detail.pac and detail.pac.processus:
+                    return str(detail.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACDetailDeletePermission] Erreur extraction processus depuis detail {detail_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACTraitementCreatePermission(AppActionPermission):
     """Permission pour créer un traitement"""
     app_name = 'pac'
     action = 'create_traitement'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis request.data (details_pac) ou depuis obj.details_pac.pac.processus"""
+        # Depuis obj si fourni
+        if obj:
+            if hasattr(obj, 'details_pac') and obj.details_pac:
+                if hasattr(obj.details_pac, 'pac') and obj.details_pac.pac:
+                    if hasattr(obj.details_pac.pac, 'processus') and obj.details_pac.pac.processus:
+                        return str(obj.details_pac.pac.processus.uuid)
+        
+        # Depuis request.data (pour POST)
+        if hasattr(request, 'data') and request.data:
+            details_pac_uuid = request.data.get('details_pac')
+            if details_pac_uuid:
+                try:
+                    from pac.models import DetailsPac
+                    detail = DetailsPac.objects.select_related('pac__processus').get(uuid=details_pac_uuid)
+                    if detail.pac and detail.pac.processus:
+                        return str(detail.pac.processus.uuid)
+                except Exception as e:
+                    logger.warning(f"[PACTraitementCreatePermission] Erreur extraction processus depuis details_pac {details_pac_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACTraitementUpdatePermission(AppActionPermission):
     """Permission pour modifier un traitement"""
     app_name = 'pac'
     action = 'update_traitement'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.details_pac.pac.processus"""
+        if obj:
+            if hasattr(obj, 'details_pac') and obj.details_pac:
+                if hasattr(obj.details_pac, 'pac') and obj.details_pac.pac:
+                    if hasattr(obj.details_pac.pac, 'processus') and obj.details_pac.pac.processus:
+                        return str(obj.details_pac.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            traitement_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import TraitementPac
+                traitement = TraitementPac.objects.select_related('details_pac__pac__processus').get(uuid=traitement_uuid)
+                if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
+                    return str(traitement.details_pac.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACTraitementUpdatePermission] Erreur extraction processus depuis traitement {traitement_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACTraitementDeletePermission(AppActionPermission):
     """Permission pour supprimer un traitement"""
     app_name = 'pac'
     action = 'delete_traitement'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.details_pac.pac.processus"""
+        if obj:
+            if hasattr(obj, 'details_pac') and obj.details_pac:
+                if hasattr(obj.details_pac, 'pac') and obj.details_pac.pac:
+                    if hasattr(obj.details_pac.pac, 'processus') and obj.details_pac.pac.processus:
+                        return str(obj.details_pac.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            traitement_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import TraitementPac
+                traitement = TraitementPac.objects.select_related('details_pac__pac__processus').get(uuid=traitement_uuid)
+                if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
+                    return str(traitement.details_pac.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACTraitementDeletePermission] Erreur extraction processus depuis traitement {traitement_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACSuiviCreatePermission(AppActionPermission):
     """Permission pour créer un suivi"""
     app_name = 'pac'
     action = 'create_suivi'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis request.data (traitement) ou depuis obj.traitement.details_pac.pac.processus"""
+        # Depuis obj si fourni
+        if obj:
+            if hasattr(obj, 'traitement') and obj.traitement:
+                if hasattr(obj.traitement, 'details_pac') and obj.traitement.details_pac:
+                    if hasattr(obj.traitement.details_pac, 'pac') and obj.traitement.details_pac.pac:
+                        if hasattr(obj.traitement.details_pac.pac, 'processus') and obj.traitement.details_pac.pac.processus:
+                            return str(obj.traitement.details_pac.pac.processus.uuid)
+        
+        # Depuis request.data (pour POST)
+        if hasattr(request, 'data') and request.data:
+            traitement_uuid = request.data.get('traitement')
+            if traitement_uuid:
+                try:
+                    from pac.models import TraitementPac
+                    traitement = TraitementPac.objects.select_related('details_pac__pac__processus').get(uuid=traitement_uuid)
+                    if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
+                        return str(traitement.details_pac.pac.processus.uuid)
+                except Exception as e:
+                    logger.warning(f"[PACSuiviCreatePermission] Erreur extraction processus depuis traitement {traitement_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACSuiviUpdatePermission(AppActionPermission):
     """Permission pour modifier un suivi"""
     app_name = 'pac'
     action = 'update_suivi'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.traitement.details_pac.pac.processus"""
+        if obj:
+            if hasattr(obj, 'traitement') and obj.traitement:
+                if hasattr(obj.traitement, 'details_pac') and obj.traitement.details_pac:
+                    if hasattr(obj.traitement.details_pac, 'pac') and obj.traitement.details_pac.pac:
+                        if hasattr(obj.traitement.details_pac.pac, 'processus') and obj.traitement.details_pac.pac.processus:
+                            return str(obj.traitement.details_pac.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            suivi_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import PacSuivi
+                suivi = PacSuivi.objects.select_related('traitement__details_pac__pac__processus').get(uuid=suivi_uuid)
+                if suivi.traitement and suivi.traitement.details_pac and suivi.traitement.details_pac.pac and suivi.traitement.details_pac.pac.processus:
+                    return str(suivi.traitement.details_pac.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACSuiviUpdatePermission] Erreur extraction processus depuis suivi {suivi_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class PACSuiviDeletePermission(AppActionPermission):
     """Permission pour supprimer un suivi"""
     app_name = 'pac'
     action = 'delete_suivi'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.traitement.details_pac.pac.processus"""
+        if obj:
+            if hasattr(obj, 'traitement') and obj.traitement:
+                if hasattr(obj.traitement, 'details_pac') and obj.traitement.details_pac:
+                    if hasattr(obj.traitement.details_pac, 'pac') and obj.traitement.details_pac.pac:
+                        if hasattr(obj.traitement.details_pac.pac, 'processus') and obj.traitement.details_pac.pac.processus:
+                            return str(obj.traitement.details_pac.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            suivi_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import PacSuivi
+                suivi = PacSuivi.objects.select_related('traitement__details_pac__pac__processus').get(uuid=suivi_uuid)
+                if suivi.traitement and suivi.traitement.details_pac and suivi.traitement.details_pac.pac and suivi.traitement.details_pac.pac.processus:
+                    return str(suivi.traitement.details_pac.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACSuiviDeletePermission] Erreur extraction processus depuis suivi {suivi_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class PACSuiviReadPermission(AppActionPermission):
+    """Permission pour lire un suivi"""
+    app_name = 'pac'
+    action = 'read_suivi'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.traitement.details_pac.pac.processus"""
+        if obj:
+            if hasattr(obj, 'traitement') and obj.traitement:
+                if hasattr(obj.traitement, 'details_pac') and obj.traitement.details_pac:
+                    if hasattr(obj.traitement.details_pac, 'pac') and obj.traitement.details_pac.pac:
+                        if hasattr(obj.traitement.details_pac.pac, 'processus') and obj.traitement.details_pac.pac.processus:
+                            return str(obj.traitement.details_pac.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            suivi_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import PacSuivi
+                suivi = PacSuivi.objects.select_related('traitement__details_pac__pac__processus').get(uuid=suivi_uuid)
+                if suivi.traitement and suivi.traitement.details_pac and suivi.traitement.details_pac.pac and suivi.traitement.details_pac.pac.processus:
+                    return str(suivi.traitement.details_pac.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACSuiviReadPermission] Erreur extraction processus depuis suivi {suivi_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class PACUnvalidatePermission(AppActionPermission):
+    """Permission pour dévalider un PAC"""
+    app_name = 'pac'
+    action = 'unvalidate_pac'
+
+
+class PACTraitementReadPermission(AppActionPermission):
+    """Permission pour lire un traitement"""
+    app_name = 'pac'
+    action = 'read_traitement'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.details_pac.pac.processus"""
+        if obj:
+            if hasattr(obj, 'details_pac') and obj.details_pac:
+                if hasattr(obj.details_pac, 'pac') and obj.details_pac.pac:
+                    if hasattr(obj.details_pac.pac, 'processus') and obj.details_pac.pac.processus:
+                        return str(obj.details_pac.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            traitement_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import TraitementPac
+                traitement = TraitementPac.objects.select_related('details_pac__pac__processus').get(uuid=traitement_uuid)
+                if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
+                    return str(traitement.details_pac.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACTraitementReadPermission] Erreur extraction processus depuis traitement {traitement_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class PACDetailReadPermission(AppActionPermission):
+    """Permission pour lire un détail PAC"""
+    app_name = 'pac'
+    action = 'read_detail_pac'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis obj.pac.processus"""
+        if obj:
+            if hasattr(obj, 'pac') and obj.pac:
+                if hasattr(obj.pac, 'processus') and obj.pac.processus:
+                    return str(obj.pac.processus.uuid)
+        
+        # Depuis view.kwargs si uuid fourni
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            detail_uuid = view.kwargs['uuid']
+            try:
+                from pac.models import DetailsPac
+                detail = DetailsPac.objects.select_related('pac__processus').get(uuid=detail_uuid)
+                if detail.pac and detail.pac.processus:
+                    return str(detail.pac.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[PACDetailReadPermission] Erreur extraction processus depuis detail {detail_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)

@@ -23,6 +23,27 @@ from parametre.permissions import (
     get_user_processus_list,
     user_has_access_to_processus,
 )
+# Import des classes de permissions génériques PAC
+from permissions.permissions import (
+    PACCreatePermission,
+    PACUpdatePermission,
+    PACDeletePermission,
+    PACValidatePermission,
+    PACUnvalidatePermission,
+    PACReadPermission,
+    PACDetailCreatePermission,
+    PACDetailUpdatePermission,
+    PACDetailDeletePermission,
+    PACDetailReadPermission,
+    PACTraitementCreatePermission,
+    PACTraitementUpdatePermission,
+    PACTraitementDeletePermission,
+    PACTraitementReadPermission,
+    PACSuiviCreatePermission,
+    PACSuiviUpdatePermission,
+    PACSuiviDeletePermission,
+    PACSuiviReadPermission,
+)
 from .serializers import (
     UserSerializer, ProcessusSerializer, ProcessusCreateSerializer,
     PacSerializer, PacCreateSerializer, PacUpdateSerializer, PacCompletSerializer,
@@ -660,7 +681,7 @@ def processus_detail(request, uuid):
 # ==================== API PAC ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACReadPermission])
 def pac_list(request):
     """Liste des PACs de l'utilisateur connecté avec leurs détails"""
     try:
@@ -718,7 +739,7 @@ def pac_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACCreatePermission])
 def pac_create(request):
     """Créer un nouveau PAC (nouvelle ligne)"""
     try:
@@ -781,7 +802,7 @@ def pac_create(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACReadPermission])
 def pac_detail(request, uuid):
     """Détails d'un PAC"""
     try:
@@ -814,7 +835,7 @@ def pac_detail(request, uuid):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACReadPermission])
 def pac_complet(request, uuid):
     """Récupérer un PAC complet avec tous ses traitements et suivis"""
     try:
@@ -863,7 +884,7 @@ def pac_complet(request, uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACCreatePermission])
 def pac_get_or_create(request):
     """
     Récupérer ou créer un PAC unique pour (processus, annee, type_tableau).
@@ -1135,7 +1156,7 @@ def pac_get_or_create(request):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACUpdatePermission])
 def pac_update(request, uuid):
     """Mettre à jour un PAC"""
     try:
@@ -1198,7 +1219,7 @@ def pac_update(request, uuid):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACDeletePermission])
 def pac_delete(request, uuid):
     """Supprimer un PAC"""
     try:
@@ -1259,7 +1280,7 @@ def pac_delete(request, uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACValidatePermission])
 def pac_validate(request, uuid):
     """Valider un PAC (verrouille les champs PAC et Traitement)"""
     try:
@@ -1339,7 +1360,7 @@ def pac_validate(request, uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACValidatePermission])
 def pac_validate_by_type(request):
     """Valider tous les PACs d'un même type_tableau (processus, année, type_tableau)"""
     try:
@@ -1449,7 +1470,7 @@ def pac_validate_by_type(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACUnvalidatePermission])
 def pac_unvalidate(request, uuid):
     """Dévalider un PAC (déverrouille les champs)"""
     try:
@@ -1520,7 +1541,7 @@ def pac_unvalidate(request, uuid):
 # ==================== API TRAITEMENTS ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACTraitementReadPermission])
 def traitement_list(request):
     """Liste des traitements"""
     try:
@@ -1559,7 +1580,7 @@ def traitement_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACTraitementCreatePermission])
 def traitement_create(request):
     """Créer un nouveau traitement"""
     try:
@@ -1653,7 +1674,7 @@ def traitement_create(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACTraitementReadPermission])
 def pac_traitements(request, uuid):
     """Récupérer les traitements d'un PAC spécifique"""
     try:
@@ -1689,7 +1710,7 @@ def pac_traitements(request, uuid):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACTraitementReadPermission])
 def traitement_detail(request, uuid):
     """Récupérer un traitement spécifique"""
     try:
@@ -1720,7 +1741,7 @@ def traitement_detail(request, uuid):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACTraitementUpdatePermission])
 def traitement_update(request, uuid):
     """Mettre à jour un traitement"""
     try:
@@ -1770,7 +1791,7 @@ def traitement_update(request, uuid):
 # ==================== API SUIVIS ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACSuiviReadPermission])
 def suivi_list(request):
     """Liste des suivis"""
     try:
@@ -1809,7 +1830,7 @@ def suivi_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACSuiviReadPermission])
 def traitement_suivis(request, uuid):
     """Récupérer les suivis d'un traitement PAC"""
     try:
@@ -1845,7 +1866,7 @@ def traitement_suivis(request, uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACSuiviCreatePermission])
 def suivi_create(request):
     """Créer un nouveau suivi"""
     try:
@@ -1912,7 +1933,7 @@ def suivi_create(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACSuiviReadPermission])
 def suivi_detail(request, uuid):
     """Récupérer le détail d'un suivi"""
     try:
@@ -1943,7 +1964,7 @@ def suivi_detail(request, uuid):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACSuiviUpdatePermission])
 def suivi_update(request, uuid):
     """Mettre à jour un suivi"""
     try:
@@ -1996,7 +2017,7 @@ def suivi_update(request, uuid):
 # ==================== API DETAILS PAC ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACReadPermission])
 def details_pac_list(request, uuid):
     """Liste des détails d'un PAC spécifique"""
     try:
@@ -2033,7 +2054,7 @@ def details_pac_list(request, uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACDetailCreatePermission])
 def details_pac_create(request):
     """Créer un nouveau détail de PAC"""
     try:
@@ -2090,7 +2111,7 @@ def details_pac_create(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACDetailReadPermission])
 def details_pac_detail(request, uuid):
     """Récupérer un détail spécifique"""
     try:
@@ -2123,7 +2144,7 @@ def details_pac_detail(request, uuid):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACDetailUpdatePermission])
 def details_pac_update(request, uuid):
     """Mettre à jour un détail de PAC"""
     try:
@@ -2171,7 +2192,7 @@ def details_pac_update(request, uuid):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, PACDetailDeletePermission])
 def details_pac_delete(request, uuid):
     """Supprimer un détail de PAC"""
     try:
