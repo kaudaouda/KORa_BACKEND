@@ -43,14 +43,14 @@ class Command(BaseCommand):
         clear_existing = options['clear']
 
         self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
-        self.stdout.write(self.style.SUCCESS('🌱 SEEDING PERMISSIONS - Phase 3'))
+        self.stdout.write(self.style.SUCCESS('[SEED] SEEDING PERMISSIONS - Phase 3'))
         self.stdout.write(self.style.SUCCESS(f'{"="*80}\n'))
 
         # Supprimer les actions existantes si demandé
         if clear_existing:
-            self.stdout.write(self.style.WARNING('⚠️  Suppression des PermissionAction existantes...'))
+            self.stdout.write(self.style.WARNING('[WARNING] Suppression des PermissionAction existantes...'))
             deleted_count = PermissionAction.objects.all().delete()[0]
-            self.stdout.write(self.style.SUCCESS(f'✓ {deleted_count} PermissionAction supprimées\n'))
+            self.stdout.write(self.style.SUCCESS(f'[OK] {deleted_count} PermissionAction supprimees\n'))
 
         # Définir les actions pour chaque application
         cdr_actions = self._get_cdr_actions()
@@ -77,7 +77,7 @@ class Command(BaseCommand):
         total_actions_updated = 0
 
         for app_name, actions in apps_actions.items():
-            self.stdout.write(self.style.SUCCESS(f'\n📦 Application: {app_name.upper()}'))
+            self.stdout.write(self.style.SUCCESS(f'\n[APP] Application: {app_name.upper()}'))
             self.stdout.write(self.style.SUCCESS(f'{"-"*80}'))
 
             for action_data in actions:
@@ -95,26 +95,26 @@ class Command(BaseCommand):
                 if created:
                     total_actions_created += 1
                     self.stdout.write(
-                        self.style.SUCCESS(f'  ✓ Créé: {action.code} - {action.nom}')
+                        self.style.SUCCESS(f'  [OK] Cree: {action.code} - {action.nom}')
                     )
                 else:
                     total_actions_updated += 1
                     self.stdout.write(
-                        self.style.WARNING(f'  ↻ Mis à jour: {action.code} - {action.nom}')
+                        self.style.WARNING(f'  [UPDATE] Mis a jour: {action.code} - {action.nom}')
                     )
 
         self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
         self.stdout.write(
             self.style.SUCCESS(
-                f'✅ Actions créées: {total_actions_created} | '
-                f'Mis à jour: {total_actions_updated} | '
+                f'[OK] Actions creees: {total_actions_created} | '
+                f'Mis a jour: {total_actions_updated} | '
                 f'Total: {total_actions_created + total_actions_updated}'
             )
         )
 
         # Step 3.4 : Créer les RolePermissionMapping
         self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
-        self.stdout.write(self.style.SUCCESS('🔗 CRÉATION DES MAPPINGS RÔLE → PERMISSION'))
+        self.stdout.write(self.style.SUCCESS('[LINK] CREATION DES MAPPINGS ROLE -> PERMISSION'))
         self.stdout.write(self.style.SUCCESS(f'{"="*80}\n'))
 
         total_mappings_created = 0
@@ -134,15 +134,15 @@ class Command(BaseCommand):
         if missing_roles:
             self.stdout.write(
                 self.style.ERROR(
-                    f'❌ Rôles manquants: {", ".join(missing_roles)}\n'
-                    f'   Exécutez d\'abord: python manage.py seed_roles'
+                    f'[ERROR] Roles manquants: {", ".join(missing_roles)}\n'
+                    f'   Executez d\'abord: python manage.py seed_roles'
                 )
             )
             return
 
         # Créer les mappings pour chaque app
         for app_name, actions in apps_actions.items():
-            self.stdout.write(self.style.SUCCESS(f'\n📦 Application: {app_name.upper()}'))
+            self.stdout.write(self.style.SUCCESS(f'\n[APP] Application: {app_name.upper()}'))
             self.stdout.write(self.style.SUCCESS(f'{"-"*80}'))
 
             for action_data in actions:
@@ -153,7 +153,7 @@ class Command(BaseCommand):
                     role = roles.get(role_code)
                     if not role:
                         self.stdout.write(
-                            self.style.WARNING(f'  ⚠️  Rôle "{role_code}" non trouvé, ignoré')
+                            self.style.WARNING(f'  [WARNING] Role "{role_code}" non trouve, ignore')
                         )
                         continue
 
@@ -170,26 +170,26 @@ class Command(BaseCommand):
 
                     if created:
                         total_mappings_created += 1
-                        status = "✓" if mapping.granted else "✗"
+                        status = "[OK]" if mapping.granted else "[X]"
                         self.stdout.write(
                             self.style.SUCCESS(
-                                f'  {status} [{role.code}] → {action.code} '
-                                f'({"Accordé" if mapping.granted else "Refusé"})'
+                                f'  {status} [{role.code}] -> {action.code} '
+                                f'({"Accorde" if mapping.granted else "Refuse"})'
                             )
                         )
                     else:
                         total_mappings_updated += 1
                         self.stdout.write(
                             self.style.WARNING(
-                                f'  ↻ [{role.code}] → {action.code} (mis à jour)'
+                                f'  [UPDATE] [{role.code}] -> {action.code} (mis a jour)'
                             )
                         )
 
         self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
         self.stdout.write(
             self.style.SUCCESS(
-                f'✅ Mappings créés: {total_mappings_created} | '
-                f'Mis à jour: {total_mappings_updated} | '
+                f'[OK] Mappings crees: {total_mappings_created} | '
+                f'Mis a jour: {total_mappings_updated} | '
                 f'Total: {total_mappings_created + total_mappings_updated}'
             )
         )
@@ -818,6 +818,53 @@ class Command(BaseCommand):
                     'admin': {'granted': True, 'priority': 8},
                     'contributeur': {'granted': False, 'priority': 0},
                     'lecteur': {'granted': False, 'priority': 0},
+                }
+            },
+            {
+                'code': 'read_suivi',
+                'nom': 'Lire un suivi',
+                'description': 'Permet de consulter un suivi',
+                'category': 'suivis',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'contributeur': {'granted': True, 'priority': 5},
+                    'lecteur': {'granted': True, 'priority': 5},
+                    'admin': {'granted': True, 'priority': 8},
+                }
+            },
+            {
+                'code': 'unvalidate_pac',
+                'nom': 'Dévalider un Plan d\'Action de Conformité',
+                'description': 'Permet de dévalider un PAC pour permettre les modifications',
+                'category': 'main',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'contributeur': {'granted': False, 'priority': 0},
+                    'lecteur': {'granted': False, 'priority': 0},
+                    'admin': {'granted': True, 'priority': 8},
+                }
+            },
+            {
+                'code': 'read_traitement',
+                'nom': 'Lire un traitement',
+                'description': 'Permet de consulter un traitement',
+                'category': 'traitements',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'contributeur': {'granted': True, 'priority': 5},
+                    'lecteur': {'granted': True, 'priority': 5},
+                    'admin': {'granted': True, 'priority': 8},
+                }
+            },
+            {
+                'code': 'read_detail_pac',
+                'nom': 'Lire un détail PAC',
+                'description': 'Permet de consulter un détail PAC',
+                'category': 'details',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'contributeur': {'granted': True, 'priority': 5},
+                    'lecteur': {'granted': True, 'priority': 5},
                     'admin': {'granted': True, 'priority': 8},
                 }
             },
