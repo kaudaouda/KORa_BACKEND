@@ -1,0 +1,7 @@
+Django==5.2.6
+djangorestframework
+django-cors-headers
+djangorestframework-simplejwt
+python-dotenv
+requests
+
