@@ -77,6 +77,18 @@ def get_pac_actions():
             }
         },
         {
+            'code': 'create_amendement_pac',
+            'nom': 'Créer un amendement PAC',
+            'description': 'Permet de créer un amendement pour un Plan d\'Action de Conformité',
+            'category': 'main',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'contributeur': {'granted': False, 'priority': 0},
+                'lecteur': {'granted': False, 'priority': 0},
+                'admin': {'granted': True, 'priority': 8},
+            }
+        },
+        {
             'code': 'create_detail_pac',
             'nom': 'Créer un détail PAC',
             'description': 'Permet de créer un détail dans un PAC',
@@ -110,18 +122,6 @@ def get_pac_actions():
                 'admin': {'granted': True, 'priority': 8},
                 'contributeur': {'granted': False, 'priority': 0},
                 'lecteur': {'granted': False, 'priority': 0},
-            }
-        },
-        {
-            'code': 'read_detail_pac',
-            'nom': 'Lire un détail PAC',
-            'description': 'Permet de consulter un détail PAC',
-            'category': 'details',
-            'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': True, 'priority': 5},
-                'admin': {'granted': True, 'priority': 8},
             }
         },
         {
@@ -161,18 +161,6 @@ def get_pac_actions():
             }
         },
         {
-            'code': 'read_traitement',
-            'nom': 'Lire un traitement',
-            'description': 'Permet de consulter un traitement',
-            'category': 'traitements',
-            'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': True, 'priority': 5},
-                'admin': {'granted': True, 'priority': 8},
-            }
-        },
-        {
             'code': 'create_suivi',
             'nom': 'Créer un suivi',
             'description': 'Permet de créer un suivi pour un traitement',
@@ -206,18 +194,6 @@ def get_pac_actions():
                 'admin': {'granted': True, 'priority': 8},
                 'contributeur': {'granted': False, 'priority': 0},
                 'lecteur': {'granted': False, 'priority': 0},
-            }
-        },
-        {
-            'code': 'read_suivi',
-            'nom': 'Lire un suivi',
-            'description': 'Permet de consulter un suivi',
-            'category': 'suivis',
-            'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': True, 'priority': 5},
-                'admin': {'granted': True, 'priority': 8},
             }
         },
     ]

@@ -434,6 +434,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
     traitement_action = serializers.CharField(source='traitement.action', read_only=True, allow_null=True)
     traitement_uuid = serializers.UUIDField(source='traitement.uuid', read_only=True, allow_null=True)
     statut_nom = serializers.CharField(source='statut.nom', read_only=True, allow_null=True)
+    preuve_uuid = serializers.UUIDField(source='preuve.uuid', read_only=True, allow_null=True)
     preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     preuve_media_urls = serializers.SerializerMethodField()
@@ -445,7 +446,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'traitement', 'traitement_uuid', 'traitement_action', 'etat_mise_en_oeuvre',
             'etat_nom', 'resultat', 'appreciation', 'appreciation_nom',
-            'preuve', 'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
+            'preuve', 'preuve_uuid', 'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
             'statut', 'statut_nom', 'date_mise_en_oeuvre_effective',
             'date_cloture', 'cree_par', 'createur_nom', 'created_at'
         ]

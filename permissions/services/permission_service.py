@@ -410,7 +410,7 @@ class PermissionService:
         cache_key = cls._get_cache_key(user.id, app_name, processus_uuid, action)
         cached_result = cache.get(cache_key)
         
-        logger.info(
+        logger.warning(
             f"[PermissionService.can_perform_action] 🔍 Cache check: "
             f"user={user.username}, app={app_name}, action={action}, "
             f"processus_uuid={processus_uuid}, cache_key={cache_key}, "
@@ -419,7 +419,7 @@ class PermissionService:
         
         if cached_result is not None:
             granted, reason = cached_result
-            logger.info(
+            logger.warning(
                 f"[PermissionService.can_perform_action] ✅ Cache HIT: "
                 f"granted={granted}, reason={reason}"
             )
@@ -429,7 +429,7 @@ class PermissionService:
             )
             return granted, reason
         
-        logger.info(
+        logger.warning(
             f"[PermissionService.can_perform_action] ❌ Cache MISS, "
             f"récupération des permissions depuis la DB"
         )
@@ -437,7 +437,7 @@ class PermissionService:
         # 3. Récupérer les permissions (utilise le cache bulk si disponible)
         permissions = cls.get_user_permissions(user, app_name, processus_uuid)
         
-        logger.info(
+        logger.warning(
             f"[PermissionService.can_perform_action] 📦 Permissions récupérées: "
             f"processus_uuid={processus_uuid}, permissions_keys={list(permissions.get(str(processus_uuid), {}).keys())}"
         )
@@ -446,7 +446,7 @@ class PermissionService:
         if processus_uuid_str not in permissions:
             reason = f"Aucune permission trouvée pour le processus {processus_uuid_str}"
             result = (False, reason)
-            logger.info(
+            logger.error(
                 f"[PermissionService.can_perform_action] ❌ {reason}"
             )
             cache.set(cache_key, result, cls.CACHE_TIMEOUT)
@@ -457,7 +457,7 @@ class PermissionService:
             return result
         
         action_permission = permissions[processus_uuid_str].get(action)
-        logger.info(
+        logger.warning(
             f"[PermissionService.can_perform_action] 🔍 Action permission: "
             f"action={action}, action_permission={action_permission}"
         )
@@ -465,7 +465,7 @@ class PermissionService:
         if not action_permission:
             reason = f"Action '{action}' non trouvée pour l'app '{app_name}'"
             result = (False, reason)
-            logger.info(
+            logger.error(
                 f"[PermissionService.can_perform_action] ❌ {reason}"
             )
             cache.set(cache_key, result, cls.CACHE_TIMEOUT)
@@ -477,9 +477,34 @@ class PermissionService:
         
         # 4. Vérifier la permission de base
         if not action_permission['granted']:
-            reason = f"Permission refusée par le rôle"
+            # Récupérer le nom de l'action pour un message plus explicite
+            try:
+                permission_action = PermissionAction.objects.filter(
+                    app_name=app_name,
+                    code=action,
+                    is_active=True
+                ).first()
+                action_nom = permission_action.nom if permission_action else action
+            except Exception as e:
+                logger.warning(f"[PermissionService] Erreur lors de la récupération du nom de l'action: {e}")
+                action_nom = action
+            
+            # Récupérer les rôles de l'utilisateur pour ce processus
+            try:
+                user_roles = UserProcessusRole.objects.filter(
+                    user=user,
+                    processus__uuid=processus_uuid,
+                    is_active=True
+                ).select_related('role', 'processus')
+                roles_noms = [ur.role.nom for ur in user_roles if ur.role]
+                roles_str = ", ".join(roles_noms) if roles_noms else "aucun rôle"
+            except Exception as e:
+                logger.warning(f"[PermissionService] Erreur lors de la récupération des rôles: {e}")
+                roles_str = "rôle inconnu"
+            
+            reason = f"Vous n'avez pas la permission '{action_nom}' pour ce processus. Rôles actuels: {roles_str}."
             result = (False, reason)
-            logger.info(
+            logger.error(
                 f"[PermissionService.can_perform_action] ❌ {reason}, "
                 f"action_permission={action_permission}"
             )
@@ -490,7 +515,7 @@ class PermissionService:
             )
             return result
         
-        logger.info(
+        logger.warning(
             f"[PermissionService.can_perform_action] ✅ Permission accordée: "
             f"granted={action_permission['granted']}, source={action_permission.get('source')}"
         )

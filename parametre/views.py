@@ -2103,7 +2103,7 @@ def preuve_add_medias(request, uuid):
     """Ajouter des médias à une preuve existante"""
     try:
         try:
-            preuve = Preuve.objects.get(uuid=uuid)
+            preuve = Preuve.objects.prefetch_related('medias').get(uuid=uuid)
         except Preuve.DoesNotExist:
             return Response({'error': 'Preuve non trouvée'}, status=status.HTTP_404_NOT_FOUND)
         
@@ -2118,6 +2118,10 @@ def preuve_add_medias(request, uuid):
         # Ajouter les médias à la preuve (ManyToMany.add ignore les doublons)
         preuve.medias.add(*medias)
         
+        # Recharger la preuve depuis la DB avec prefetch pour avoir les médias à jour
+        # IMPORTANT: refresh_from_db() ne rafraîchit pas les relations ManyToMany
+        preuve = Preuve.objects.prefetch_related('medias').get(uuid=uuid)
+        
         return Response({
             'uuid': str(preuve.uuid),
             'description': preuve.description,
@@ -2125,7 +2129,9 @@ def preuve_add_medias(request, uuid):
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de l'ajout de médias à la preuve: {str(e)}")
+        logger.error(f"[PREUVE_ADD_MEDIAS] Erreur lors de l'ajout de médias à la preuve: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({'error': 'Impossible d\'ajouter les médias à la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
