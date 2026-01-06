@@ -318,7 +318,10 @@ def check_permission_or_403(user, processus_uuid, role_code, error_message=None)
     from rest_framework import status
     
     # ========== SUPER ADMIN : Accès complet sans restriction ==========
-    if is_super_admin(user):
+    # Aligner avec le comportement global : 
+    # - is_super_admin (rôle admin sur SMI/PRS-SMI)
+    # - OU utilisateur technique avec is_staff ET is_superuser (can_manage_users)
+    if can_manage_users(user) or is_super_admin(user):
         return True, None
     # ========== FIN SUPER ADMIN ==========
     
