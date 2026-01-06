@@ -405,7 +405,11 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
         """Vérifier que le détail AP appartient à l'utilisateur connecté et que l'AP est validée"""
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
-            if value.activite_periodique.cree_par != request.user:
+            # Super admin : permettre la création même si ce n'est pas le créateur
+            from parametre.permissions import can_manage_users, is_super_admin
+            is_super = can_manage_users(request.user) or is_super_admin(request.user)
+            
+            if not is_super and value.activite_periodique.cree_par != request.user:
                 raise serializers.ValidationError(
                     "Vous n'avez pas les permissions pour ajouter un suivi à ce détail AP."
                 )
@@ -432,9 +436,15 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
             return value
 
         # Vérifier que l'AP est validée (les suivis ne peuvent être créés que si l'AP est validée)
-        # Exception : permettre la création lors de la copie d'amendement
+        # Exception : permettre la création lors de la copie d'amendement ou pour les super admins
         from_amendment_copy = self.initial_data.get('from_amendment_copy', False)
-        if not detail_ap.activite_periodique.is_validated and not from_amendment_copy:
+        request = self.context.get('request')
+        is_super = False
+        if request and hasattr(request, 'user'):
+            from parametre.permissions import can_manage_users, is_super_admin
+            is_super = can_manage_users(request.user) or is_super_admin(request.user)
+        
+        if not detail_ap.activite_periodique.is_validated and not from_amendment_copy and not is_super:
             raise serializers.ValidationError(
                 "L'Activité Périodique doit être validée avant de pouvoir renseigner les suivis. Veuillez remplir tous les champs requis des détails et valider le tableau."
             )

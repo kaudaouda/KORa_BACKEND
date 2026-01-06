@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import ActivitePeriodique, DetailsAP, SuivisAP
+from permissions.permissions_ap_detail import ActivitePeriodiqueDetailPermission
 from .serializers import (
     ActivitePeriodiqueSerializer,
     ActivitePeriodiqueCompletSerializer,
@@ -134,18 +135,26 @@ def activites_periodiques_list(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les Activités Périodiques sans filtre
+            aps = ActivitePeriodique.objects.all().select_related(
+                'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
+            ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
+        elif not user_processus_uuids:
+            # Aucun processus assigné
+            logger.info(f"[activites_periodiques_list] Aucun processus assigné pour l'utilisateur {request.user.username}")
             return Response({
                 'success': True,
                 'data': [],
                 'count': 0,
                 'message': 'Aucune Activité Périodique trouvée pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        # Filtrer les Activités Périodiques par les processus où l'utilisateur a un rôle actif
-        aps = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
-            'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
-        ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
+        else:
+            # Filtrer les Activités Périodiques par les processus où l'utilisateur a un rôle actif
+            aps = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
+                'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
+            ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
         # ========== FIN FILTRAGE ==========
         
         serializer = ActivitePeriodiqueSerializer(aps, many=True)
@@ -166,7 +175,7 @@ def activites_periodiques_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueDetailPermission])
 def activite_periodique_detail(request, uuid):
     """Détails d'une Activité Périodique spécifique"""
     try:
@@ -181,13 +190,8 @@ def activite_periodique_detail(request, uuid):
             'details__responsables_services'
         ).get(uuid=uuid)
         
-        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
-        if not user_has_access_to_processus(request.user, ap.processus.uuid):
-            return Response({
-                'success': False,
-                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
-            }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN VÉRIFICATION ==========
+        # Security by Design : La vérification d'accès au processus est gérée par ActivitePeriodiqueDetailPermission
+        # via le décorateur @permission_classes (gère automatiquement les super admins)
         
         serializer = ActivitePeriodiqueCompletSerializer(ap)
         return Response({
@@ -987,9 +991,12 @@ def suivi_ap_create(request):
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP est validée (les suivis ne peuvent être renseignés que si l'AP est validée)
-        # Exception : permettre la création lors de la copie d'amendement
+        # Exception : permettre la création lors de la copie d'amendement ou pour les super admins
         from_amendment_copy = data.get('from_amendment_copy', False)
-        if not detail_ap.activite_periodique.is_validated and not from_amendment_copy:
+        from parametre.permissions import can_manage_users, is_super_admin
+        is_super = can_manage_users(request.user) or is_super_admin(request.user)
+        
+        if not detail_ap.activite_periodique.is_validated and not from_amendment_copy and not is_super:
             return Response({
                 'error': 'Impossible d\'ajouter un suivi: l\'Activité Périodique doit être validée d\'abord. Veuillez remplir tous les champs requis des détails et valider le tableau.'
             }, status=status.HTTP_400_BAD_REQUEST)
@@ -1232,7 +1239,13 @@ def activite_periodique_stats(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les Activités Périodiques sans filtre
+            aps_base = ActivitePeriodique.objects.all()
+        elif not user_processus_uuids:
+            # Aucun processus assigné
+            logger.info(f"[activite_periodique_stats] Aucun processus assigné pour l'utilisateur {request.user.username}")
             return Response({
                 'success': True,
                 'data': {
@@ -1241,9 +1254,9 @@ def activite_periodique_stats(request):
                 },
                 'message': 'Aucune donnée d\'Activité Périodique trouvée pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        # Récupérer toutes les Activités Périodiques des processus de l'utilisateur
-        aps_base = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids)
+        else:
+            # Récupérer toutes les Activités Périodiques des processus de l'utilisateur
+            aps_base = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids)
         logger.info(f"[activite_periodique_stats] Nombre total d'APs: {aps_base.count()}")
         # ========== FIN FILTRAGE ==========
 
