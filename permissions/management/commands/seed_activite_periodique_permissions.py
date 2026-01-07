@@ -6,296 +6,180 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from permissions.models import PermissionAction, RolePermissionMapping
 from parametre.models import Role
+from .activite_periodique_permissions import get_activite_periodique_actions
 
 
 class Command(BaseCommand):
     help = 'Crée les actions de permissions et les mappings de rôles pour l\'application Activité Périodique'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--clear',
+            action='store_true',
+            help='Supprime les PermissionAction existantes avant de créer les nouvelles'
+        )
+
+    def _add_responsable_processus_to_mappings(self, actions_list):
+        """
+        Ajoute automatiquement le rôle responsable_processus à tous les mappings
+        Le responsable de processus a toutes les permissions avec une priorité élevée (12)
+        """
+        for action in actions_list:
+            role_mappings = action.get('role_mappings', {})
+            # Ajouter responsable_processus avec toutes les permissions accordées
+            # Priorité 12 (plus élevée que validateur=10 et admin=8)
+            role_mappings['responsable_processus'] = {'granted': True, 'priority': 12}
+            action['role_mappings'] = role_mappings
+        return actions_list
+
     def handle(self, *args, **options):
         app_name = 'activite_periodique'
-        
-        # Définir toutes les actions de permissions pour Activité Périodique
-        permission_actions = [
-            # Actions principales
-            {
-                'code': 'create_activite_periodique',
-                'nom': 'Créer une Activité Périodique',
-                'description': 'Permission de créer une nouvelle Activité Périodique',
-                'category': 'main'
-            },
-            {
-                'code': 'update_activite_periodique',
-                'nom': 'Modifier une Activité Périodique',
-                'description': 'Permission de modifier une Activité Périodique existante',
-                'category': 'main'
-            },
-            {
-                'code': 'delete_activite_periodique',
-                'nom': 'Supprimer une Activité Périodique',
-                'description': 'Permission de supprimer une Activité Périodique',
-                'category': 'main'
-            },
-            {
-                'code': 'validate_activite_periodique',
-                'nom': 'Valider une Activité Périodique',
-                'description': 'Permission de valider une Activité Périodique',
-                'category': 'main'
-            },
-            {
-                'code': 'read_activite_periodique',
-                'nom': 'Lire une Activité Périodique',
-                'description': 'Permission de lire et consulter une Activité Périodique',
-                'category': 'main'
-            },
-            {
-                'code': 'create_amendement_activite_periodique',
-                'nom': 'Créer un amendement d\'Activité Périodique',
-                'description': 'Permission de créer un amendement pour une Activité Périodique',
-                'category': 'main'
-            },
-            # Actions détails
-            {
-                'code': 'create_detail_activite_periodique',
-                'nom': 'Créer un détail d\'Activité Périodique',
-                'description': 'Permission de créer un détail pour une Activité Périodique',
-                'category': 'details'
-            },
-            {
-                'code': 'update_detail_activite_periodique',
-                'nom': 'Modifier un détail d\'Activité Périodique',
-                'description': 'Permission de modifier un détail d\'Activité Périodique',
-                'category': 'details'
-            },
-            {
-                'code': 'delete_detail_activite_periodique',
-                'nom': 'Supprimer un détail d\'Activité Périodique',
-                'description': 'Permission de supprimer un détail d\'Activité Périodique',
-                'category': 'details'
-            },
-            # Actions suivis
-            {
-                'code': 'create_suivi_activite_periodique',
-                'nom': 'Créer un suivi d\'Activité Périodique',
-                'description': 'Permission de créer un suivi pour une Activité Périodique',
-                'category': 'suivis'
-            },
-            {
-                'code': 'update_suivi_activite_periodique',
-                'nom': 'Modifier un suivi d\'Activité Périodique',
-                'description': 'Permission de modifier un suivi d\'Activité Périodique',
-                'category': 'suivis'
-            },
-            {
-                'code': 'delete_suivi_activite_periodique',
-                'nom': 'Supprimer un suivi d\'Activité Périodique',
-                'description': 'Permission de supprimer un suivi d\'Activité Périodique',
-                'category': 'suivis'
-            },
-        ]
+        clear_existing = options.get('clear', False)
 
-        # Définir les mappings de rôles (qui peut faire quoi)
-        # Structure: {role_code: [list of action codes]}
-        role_permissions = {
-            'admin': [
-                # Admin peut tout faire
-                'create_activite_periodique',
-                'update_activite_periodique',
-                'delete_activite_periodique',
-                'validate_activite_periodique',
-                'read_activite_periodique',
-                'create_amendement_activite_periodique',
-                'create_detail_activite_periodique',
-                'update_detail_activite_periodique',
-                'delete_detail_activite_periodique',
-                'create_suivi_activite_periodique',
-                'update_suivi_activite_periodique',
-                'delete_suivi_activite_periodique',
-            ],
-            'responsable_processus': [
-                # Responsable peut tout faire sur son processus
-                'create_activite_periodique',
-                'update_activite_periodique',
-                'delete_activite_periodique',
-                'validate_activite_periodique',
-                'read_activite_periodique',
-                'create_amendement_activite_periodique',
-                'create_detail_activite_periodique',
-                'update_detail_activite_periodique',
-                'delete_detail_activite_periodique',
-                'create_suivi_activite_periodique',
-                'update_suivi_activite_periodique',
-                'delete_suivi_activite_periodique',
-            ],
-            'validateur': [
-                # Validateur peut lire, créer, modifier et valider
-                'create_activite_periodique',
-                'update_activite_periodique',
-                'validate_activite_periodique',
-                'read_activite_periodique',
-                'create_amendement_activite_periodique',
-                'create_detail_activite_periodique',
-                'update_detail_activite_periodique',
-                'create_suivi_activite_periodique',
-                'update_suivi_activite_periodique',
-            ],
-            'contributeur': [
-                # Contributeur peut créer, modifier et lire (mais pas valider ni supprimer)
-                'create_activite_periodique',
-                'update_activite_periodique',
-                'read_activite_periodique',
-                'create_amendement_activite_periodique',
-                'create_detail_activite_periodique',
-                'update_detail_activite_periodique',
-                'create_suivi_activite_periodique',
-                'update_suivi_activite_periodique',
-            ],
-            'lecteur': [
-                # Lecteur peut seulement lire
-                'read_activite_periodique',
-            ],
-        }
+        self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
+        self.stdout.write(self.style.SUCCESS('[SEED] SEEDING PERMISSIONS - Activité Périodique'))
+        self.stdout.write(self.style.SUCCESS(f'{"="*80}\n'))
+
+        # Supprimer les actions existantes si demandé
+        if clear_existing:
+            self.stdout.write(self.style.WARNING('[WARNING] Suppression des PermissionAction existantes...'))
+            deleted_count = PermissionAction.objects.filter(app_name=app_name).delete()[0]
+            self.stdout.write(self.style.SUCCESS(f'[OK] {deleted_count} PermissionAction supprimées\n'))
+
+        # Récupérer les actions depuis le fichier de définitions
+        actions = get_activite_periodique_actions()
+        
+        # Ajouter automatiquement responsable_processus à tous les mappings
+        actions = self._add_responsable_processus_to_mappings(actions)
+
+        # Étape 1: Créer les actions de permissions
+        self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
+        self.stdout.write(self.style.SUCCESS('[ACTIONS] Création des actions de permissions...'))
+        self.stdout.write(self.style.SUCCESS(f'{"="*80}\n'))
+
+        total_actions_created = 0
+        total_actions_updated = 0
 
         with transaction.atomic():
-            # Étape 1: Créer les actions de permissions
-            self.stdout.write(self.style.SUCCESS(f'\n{"="*60}'))
-            self.stdout.write(self.style.SUCCESS('✨ Création des actions de permissions...'))
-            self.stdout.write(self.style.SUCCESS(f'{"="*60}\n'))
-
-            created_actions = 0
-            updated_actions = 0
-
-            for action_data in permission_actions:
-                action, created = PermissionAction.objects.get_or_create(
+            for action_data in actions:
+                action, created = PermissionAction.objects.update_or_create(
                     app_name=app_name,
                     code=action_data['code'],
                     defaults={
                         'nom': action_data['nom'],
                         'description': action_data.get('description', ''),
                         'category': action_data.get('category', 'main'),
-                        'is_active': True
+                        'is_active': True,
                     }
                 )
 
                 if created:
-                    created_actions += 1
+                    total_actions_created += 1
                     self.stdout.write(
-                        self.style.SUCCESS(f'  ✓ Créé: {action.code} - {action.nom}')
+                        self.style.SUCCESS(f'  [OK] Créé: {action.code} - {action.nom}')
                     )
                 else:
-                    # Mettre à jour si nécessaire
-                    updated = False
-                    if action.nom != action_data['nom']:
-                        action.nom = action_data['nom']
-                        updated = True
-                    if action.description != action_data.get('description', ''):
-                        action.description = action_data.get('description', '')
-                        updated = True
-                    if action.category != action_data.get('category', 'main'):
-                        action.category = action_data.get('category', 'main')
-                        updated = True
-                    if not action.is_active:
-                        action.is_active = True
-                        updated = True
+                    total_actions_updated += 1
+                    self.stdout.write(
+                        self.style.WARNING(f'  [UPDATE] Mis à jour: {action.code} - {action.nom}')
+                    )
 
-                    if updated:
-                        action.save()
-                        updated_actions += 1
+        self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f'[OK] Actions créées: {total_actions_created} | '
+                f'Mis à jour: {total_actions_updated} | '
+                f'Total: {total_actions_created + total_actions_updated}'
+            )
+        )
+
+        # Étape 2: Créer les mappings de rôles
+        self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
+        self.stdout.write(self.style.SUCCESS('[LINK] Création des mappings rôle -> permission'))
+        self.stdout.write(self.style.SUCCESS(f'{"="*80}\n'))
+
+        total_mappings_created = 0
+        total_mappings_updated = 0
+
+        # Récupérer les rôles
+        roles = {
+            'responsable_processus': Role.objects.filter(code='responsable_processus').first(),
+            'contributeur': Role.objects.filter(code='contributeur').first(),
+            'validateur': Role.objects.filter(code='validateur').first(),
+            'lecteur': Role.objects.filter(code='lecteur').first(),
+            'admin': Role.objects.filter(code='admin').first(),
+        }
+
+        # Vérifier que tous les rôles existent
+        missing_roles = [code for code, role in roles.items() if role is None]
+        if missing_roles:
+            self.stdout.write(
+                self.style.ERROR(
+                    f'[ERROR] Rôles manquants: {", ".join(missing_roles)}\n'
+                    f'   Exécutez d\'abord: python manage.py seed_roles'
+                )
+            )
+            return
+
+        with transaction.atomic():
+            for action_data in actions:
+                action = PermissionAction.objects.get(app_name=app_name, code=action_data['code'])
+                mappings = action_data.get('role_mappings', {})
+
+                for role_code, mapping_config in mappings.items():
+                    role = roles.get(role_code)
+                    if not role:
                         self.stdout.write(
-                            self.style.WARNING(f'  ↻ Mis à jour: {action.code} - {action.nom}')
+                            self.style.WARNING(f'  [WARNING] Rôle "{role_code}" non trouvé, ignoré')
+                        )
+                        continue
+
+                    mapping, created = RolePermissionMapping.objects.update_or_create(
+                        role=role,
+                        permission_action=action,
+                        defaults={
+                            'granted': mapping_config.get('granted', True),
+                            'conditions': mapping_config.get('conditions'),
+                            'priority': mapping_config.get('priority', 0),
+                            'is_active': True,
+                        }
+                    )
+
+                    if created:
+                        total_mappings_created += 1
+                        status = "[OK]" if mapping.granted else "[X]"
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f'  {status} [{role.code}] -> {action.code} '
+                                f'({"Accordé" if mapping.granted else "Refusé"})'
+                            )
                         )
                     else:
+                        total_mappings_updated += 1
                         self.stdout.write(
-                            self.style.SUCCESS(f'  → Déjà à jour: {action.code} - {action.nom}')
-                        )
-
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f'\n✅ Actions créées: {created_actions}, Actions mises à jour: {updated_actions}\n'
-                )
-            )
-
-            # Étape 2: Créer les mappings de rôles
-            self.stdout.write(self.style.SUCCESS(f'\n{"="*60}'))
-            self.stdout.write(self.style.SUCCESS('🔗 Création des mappings de rôles...'))
-            self.stdout.write(self.style.SUCCESS(f'{"="*60}\n'))
-
-            created_mappings = 0
-            updated_mappings = 0
-            skipped_mappings = 0
-
-            for role_code, allowed_actions in role_permissions.items():
-                try:
-                    role = Role.objects.get(code=role_code, is_active=True)
-                    self.stdout.write(f'\n📋 Rôle: {role.nom} ({role.code})')
-
-                    # Récupérer toutes les actions de permissions pour cette app
-                    all_actions = PermissionAction.objects.filter(
-                        app_name=app_name,
-                        is_active=True
-                    )
-
-                    for action in all_actions:
-                        should_grant = action.code in allowed_actions
-                        
-                        mapping, created = RolePermissionMapping.objects.get_or_create(
-                            role=role,
-                            permission_action=action,
-                            defaults={
-                                'granted': should_grant,
-                                'priority': 0,
-                                'is_active': True,
-                                'conditions': {}
-                            }
-                        )
-
-                        if created:
-                            created_mappings += 1
-                            status = '✓ Accordé' if should_grant else '✗ Refusé'
-                            self.stdout.write(
-                                self.style.SUCCESS(f'  {status}: {action.code}')
+                            self.style.WARNING(
+                                f'  [UPDATE] [{role.code}] -> {action.code} (mis à jour)'
                             )
-                        else:
-                            # Mettre à jour si nécessaire
-                            updated = False
-                            if mapping.granted != should_grant:
-                                mapping.granted = should_grant
-                                updated = True
-                            if not mapping.is_active:
-                                mapping.is_active = True
-                                updated = True
+                        )
 
-                            if updated:
-                                mapping.save()
-                                updated_mappings += 1
-                                status = '✓ Accordé' if should_grant else '✗ Refusé'
-                                self.stdout.write(
-                                    self.style.WARNING(f'  ↻ {status}: {action.code}')
-                                )
-                            else:
-                                skipped_mappings += 1
-
-                except Role.DoesNotExist:
-                    self.stdout.write(
-                        self.style.ERROR(f'  ⚠️  Rôle "{role_code}" non trouvé - ignoré')
-                    )
-
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f'\n✅ Mappings créés: {created_mappings}, '
-                    f'Mappings mis à jour: {updated_mappings}, '
-                    f'Mappings inchangés: {skipped_mappings}\n'
-                )
+        self.stdout.write(self.style.SUCCESS(f'\n{"="*80}'))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f'[OK] Mappings créés: {total_mappings_created} | '
+                f'Mis à jour: {total_mappings_updated} | '
+                f'Total: {total_mappings_created + total_mappings_updated}'
             )
+        )
 
         # Résumé final
         self.stdout.write(
             self.style.SUCCESS(
-                f'\n{"="*60}\n'
+                f'\n{"="*80}\n'
                 f'📊 Résumé final:\n'
                 f'  - Application: {app_name}\n'
-                f'  - Actions de permissions créées/mises à jour: {created_actions + updated_actions}\n'
-                f'  - Mappings de rôles créés/mis à jour: {created_mappings + updated_mappings}\n'
-                f'  - Rôles configurés: {len(role_permissions)}\n'
-                f'{"="*60}\n'
+                f'  - Actions de permissions créées/mises à jour: {total_actions_created + total_actions_updated}\n'
+                f'  - Mappings de rôles créés/mis à jour: {total_mappings_created + total_mappings_updated}\n'
+                f'  - Rôles configurés: {len([r for r in roles.values() if r is not None])}\n'
+                f'{"="*80}\n'
             )
         )

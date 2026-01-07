@@ -18,6 +18,7 @@ urlpatterns = [
     path('activites-periodiques/<uuid:uuid>/update/', views.activite_periodique_update, name='activite_periodique_update'),
     path('activites-periodiques/<uuid:uuid>/delete/', views.activite_periodique_delete, name='activite_periodique_delete'),
     path('activites-periodiques/<uuid:uuid>/validate/', views.activite_periodique_validate, name='activite_periodique_validate'),
+    path('activites-periodiques/<uuid:uuid>/unvalidate/', views.activite_periodique_unvalidate, name='activite_periodique_unvalidate'),
     
     # Details AP endpoints
     path('details-ap/', views.details_ap_list, name='details_ap_list'),
