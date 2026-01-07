@@ -207,13 +207,35 @@ class DetailsAPCreateSerializer(serializers.ModelSerializer):
         }
 
     def validate_activite_periodique(self, value):
-        """Vérifier que l'AP appartient à l'utilisateur connecté et n'est pas validée"""
+        """Vérifier que l'utilisateur a la permission de créer un détail et que l'AP n'est pas validée"""
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
-            if value.cree_par != request.user:
-                raise serializers.ValidationError(
-                    "Vous n'avez pas les permissions pour ajouter un détail à cette Activité Périodique."
-                )
+            # Super admin : permettre la création même si ce n'est pas le créateur
+            from parametre.permissions import can_manage_users, is_super_admin
+            is_super = can_manage_users(request.user) or is_super_admin(request.user)
+            
+            # Si ce n'est pas un super admin, vérifier la permission create_detail_activite_periodique
+            if not is_super:
+                # Vérifier si l'utilisateur a la permission create_detail_activite_periodique pour ce processus
+                from permissions.services.permission_service import PermissionService
+                processus_uuid = str(value.processus.uuid) if value.processus else None
+                if processus_uuid:
+                    has_permission = PermissionService.can_perform_action(
+                        user=request.user,
+                        app_name='activite_periodique',
+                        action='create_detail_activite_periodique',
+                        processus_uuid=processus_uuid
+                    )
+                    if not has_permission:
+                        raise serializers.ValidationError(
+                            "Vous n'avez pas les permissions pour ajouter un détail à cette Activité Périodique."
+                        )
+                else:
+                    # Si pas de processus UUID, vérifier si c'est le créateur (fallback)
+                    if value.cree_par != request.user:
+                        raise serializers.ValidationError(
+                            "Vous n'avez pas les permissions pour ajouter un détail à cette Activité Périodique."
+                        )
 
         # Protection : empêcher la création de détail si l'AP est validée
         if value.is_validated:
@@ -402,17 +424,46 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
         }
 
     def validate_details_ap(self, value):
-        """Vérifier que le détail AP appartient à l'utilisateur connecté et que l'AP est validée"""
+        """Vérifier que l'utilisateur a la permission de créer un suivi et que l'AP est validée"""
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             # Super admin : permettre la création même si ce n'est pas le créateur
             from parametre.permissions import can_manage_users, is_super_admin
             is_super = can_manage_users(request.user) or is_super_admin(request.user)
             
-            if not is_super and value.activite_periodique.cree_par != request.user:
-                raise serializers.ValidationError(
-                    "Vous n'avez pas les permissions pour ajouter un suivi à ce détail AP."
-                )
+            # Si ce n'est pas un super admin, vérifier la permission create_suivi_activite_periodique
+            # ou update_suivi_activite_periodique comme fallback (logique métier : si on peut modifier, on peut créer)
+            if not is_super:
+                # Vérifier si l'utilisateur a la permission create_suivi_activite_periodique pour ce processus
+                from permissions.services.permission_service import PermissionService
+                processus_uuid = str(value.activite_periodique.processus.uuid) if value.activite_periodique.processus else None
+                if processus_uuid:
+                    # Vérifier d'abord create_suivi_activite_periodique
+                    has_create_permission, _ = PermissionService.can_perform_action(
+                        user=request.user,
+                        app_name='activite_periodique',
+                        action='create_suivi_activite_periodique',
+                        processus_uuid=processus_uuid
+                    )
+                    
+                    # Si create n'est pas accordée, vérifier update comme fallback
+                    if not has_create_permission:
+                        has_update_permission, _ = PermissionService.can_perform_action(
+                            user=request.user,
+                            app_name='activite_periodique',
+                            action='update_suivi_activite_periodique',
+                            processus_uuid=processus_uuid
+                        )
+                        if not has_update_permission:
+                            raise serializers.ValidationError(
+                                "Vous n'avez pas les permissions pour ajouter un suivi à ce détail AP."
+                            )
+                else:
+                    # Si pas de processus UUID, vérifier si c'est le créateur (fallback)
+                    if value.activite_periodique.cree_par != request.user:
+                        raise serializers.ValidationError(
+                            "Vous n'avez pas les permissions pour ajouter un suivi à ce détail AP."
+                        )
 
         # Protection : empêcher la création de suivi si l'AP n'est pas validée
         # Exception : permettre la création lors de la copie d'amendement
