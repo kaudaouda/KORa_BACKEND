@@ -30,8 +30,16 @@ from .serializers import (
     DetailsAPSerializer,
     DetailsAPCreateSerializer,
     SuivisAPSerializer,
-    SuivisAPCreateSerializer
+    SuivisAPCreateSerializer,
+    MediaLivrableSerializer,
+    MediaLivrableCreateSerializer,
+    MediaLivrableUpdateSerializer
 )
+from parametre.models import Media
+try:
+    from parametre.models import MediaLivrable
+except (ImportError, AttributeError):
+    MediaLivrable = None
 from parametre.models import Processus, Annee, Versions
 from parametre.views import (
     log_activite_periodique_creation,
@@ -1310,4 +1318,214 @@ def activite_periodique_stats(request):
         return Response({
             'error': 'Erreur lors de la récupération des statistiques',
             'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== MEDIA LIVRABLE ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def media_livrables_by_suivi(request, suivi_uuid):
+    """Récupérer tous les MediaLivrable d'un suivi AP"""
+    try:
+        if MediaLivrable is None:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'MediaLivrable non disponible (migration non appliquée)'
+            }, status=status.HTTP_200_OK)
+        
+        suivi = SuivisAP.objects.select_related(
+            'details_ap__activite_periodique__processus'
+        ).get(uuid=suivi_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        media_livrables = MediaLivrable.objects.filter(suivi_ap=suivi).prefetch_related('medias').order_by('-created_at')
+        serializer = MediaLivrableSerializer(media_livrables, many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': media_livrables.count()
+        }, status=status.HTTP_200_OK)
+    except SuivisAP.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Suivi AP non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans media_livrables_by_suivi: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des MediaLivrable'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviUpdatePermission])
+def media_livrable_create(request):
+    """Créer un nouveau MediaLivrable"""
+    try:
+        suivi_uuid = request.data.get('suivi_ap')
+        if not suivi_uuid:
+            return Response({
+                'success': False,
+                'error': 'Le suivi AP est requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            suivi = SuivisAP.objects.select_related(
+                'details_ap__activite_periodique__processus'
+            ).get(uuid=suivi_uuid)
+        except SuivisAP.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Suivi AP non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Vérifier que l'AP n'a pas d'amendements (verrouillée)
+        ap = suivi.details_ap.activite_periodique
+        if _has_amendements_following(ap):
+            return Response({
+                'success': False,
+                'error': 'Ce tableau ne peut plus être modifié car un amendement a été créé. Veuillez modifier l\'amendement correspondant.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = MediaLivrableCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            media_livrable = serializer.save()
+            response_serializer = MediaLivrableSerializer(media_livrable)
+            return Response({
+                'success': True,
+                'data': response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f'Erreur lors de la création du MediaLivrable: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la création du MediaLivrable'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviUpdatePermission])
+def media_livrable_update(request, uuid):
+    """Mettre à jour un MediaLivrable"""
+    try:
+        try:
+            media_livrable = MediaLivrable.objects.select_related(
+                'suivi_ap__details_ap__activite_periodique__processus'
+            ).get(uuid=uuid)
+        except MediaLivrable.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'MediaLivrable non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        suivi = media_livrable.suivi_ap
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce MediaLivrable. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Vérifier que l'AP n'a pas d'amendements (verrouillée)
+        ap = suivi.details_ap.activite_periodique
+        if _has_amendements_following(ap):
+            return Response({
+                'success': False,
+                'error': 'Ce tableau ne peut plus être modifié car un amendement a été créé. Veuillez modifier l\'amendement correspondant.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = MediaLivrableUpdateSerializer(media_livrable, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            media_livrable = serializer.save()
+            response_serializer = MediaLivrableSerializer(media_livrable)
+            return Response({
+                'success': True,
+                'data': response_serializer.data
+            }, status=status.HTTP_200_OK)
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f'Erreur lors de la mise à jour du MediaLivrable: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la mise à jour du MediaLivrable'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviUpdatePermission])
+def media_livrable_delete(request, uuid):
+    """Supprimer un MediaLivrable"""
+    try:
+        try:
+            media_livrable = MediaLivrable.objects.select_related(
+                'suivi_ap__details_ap__activite_periodique__processus'
+            ).get(uuid=uuid)
+        except MediaLivrable.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'MediaLivrable non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        suivi = media_livrable.suivi_ap
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce MediaLivrable. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Vérifier que l'AP n'a pas d'amendements (verrouillée)
+        ap = suivi.details_ap.activite_periodique
+        if _has_amendements_following(ap):
+            return Response({
+                'success': False,
+                'error': 'Ce tableau ne peut plus être modifié car un amendement a été créé. Veuillez modifier l\'amendement correspondant.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        media_livrable.delete()
+        return Response({
+            'success': True,
+            'message': 'MediaLivrable supprimé avec succès'
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f'Erreur lors de la suppression du MediaLivrable: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la suppression du MediaLivrable'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
