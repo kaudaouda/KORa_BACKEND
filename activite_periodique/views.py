@@ -868,14 +868,18 @@ def details_ap_delete(request, uuid):
         # la permission delete_detail_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
         
-        # Vérifier que l'AP n'est pas validée
-        if detail.activite_periodique.is_validated:
+        # Vérifier si l'utilisateur est super admin
+        from parametre.permissions import is_super_admin, can_manage_users
+        is_super = can_manage_users(request.user) or is_super_admin(request.user)
+        
+        # Vérifier que l'AP n'est pas validée (sauf pour super admin)
+        if detail.activite_periodique.is_validated and not is_super:
             return Response({
                 'error': 'Impossible de supprimer un détail d\'une Activité Périodique validée'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Vérifier que l'AP n'a pas d'amendements suivants (les tableaux précédents ne peuvent plus être modifiés)
-        if _has_amendements_following(detail.activite_periodique):
+        # Vérifier que l'AP n'a pas d'amendements suivants (sauf pour super admin)
+        if _has_amendements_following(detail.activite_periodique) and not is_super:
             return Response({
                 'error': 'Impossible de modifier ce tableau : un amendement a déjà été créé. Veuillez modifier l\'amendement correspondant.'
             }, status=status.HTTP_400_BAD_REQUEST)
