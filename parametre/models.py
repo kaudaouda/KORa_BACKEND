@@ -427,6 +427,46 @@ class Preuve(models.Model):
         return f"Preuve {self.uuid} - {self.description[:50]}..."
 
 
+class MediaLivrable(models.Model):
+    """
+    Modèle pour les livrables avec médias des activités périodiques
+    Similaire à Preuve mais spécifique aux livrables des suivis AP
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    titre_document = models.CharField(
+        max_length=255,
+        help_text="Titre du document/livrable"
+    )
+    autre_livrable = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description ou autres informations sur le livrable"
+    )
+    medias = models.ManyToManyField(
+        Media,
+        related_name='media_livrables',
+        blank=True,
+        help_text="Médias associés à ce livrable"
+    )
+    suivi_ap = models.ForeignKey(
+        'activite_periodique.SuivisAP',
+        on_delete=models.CASCADE,
+        related_name='media_livrables',
+        help_text="Suivi AP associé à ce livrable"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'media_livrable'
+        verbose_name = 'Média Livrable'
+        verbose_name_plural = 'Médias Livrables'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Livrable {self.titre_document} - {self.suivi_ap}"
+
+
 class ActivityLog(models.Model):
     """
     Modèle pour tracer les activités des utilisateurs
@@ -1496,5 +1536,5 @@ class ApplicationConfig(models.Model):
         ordering = ['app_name']
 
     def __str__(self):
-        status = "✅ Activée" if self.is_enabled else "🔧 En maintenance"
+        status = "Activée" if self.is_enabled else "En maintenance"
         return f"{self.get_app_name_display()} - {status}"

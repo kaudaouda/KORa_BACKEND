@@ -2368,23 +2368,54 @@ class ActivitePeriodiqueSuiviUpdatePermission(AppActionPermission):
     action = 'update_suivi_activite_periodique'
     
     def _extract_processus_uuid(self, request, view, obj=None):
-        """Extrait le processus_uuid depuis obj.details_ap.activite_periodique.processus"""
+        """Extrait le processus_uuid depuis obj.details_ap.activite_periodique.processus ou request.data"""
+        # 1. Depuis obj (si fourni, pour update/delete)
         if obj:
             if hasattr(obj, 'details_ap') and obj.details_ap:
                 if hasattr(obj.details_ap, 'activite_periodique') and obj.details_ap.activite_periodique:
                     if hasattr(obj.details_ap.activite_periodique, 'processus') and obj.details_ap.activite_periodique.processus:
                         return str(obj.details_ap.activite_periodique.processus.uuid)
         
-        # Depuis view.kwargs si uuid fourni
+        # 2. Depuis request.data (pour create, quand suivi_ap est dans le body)
+        if hasattr(request, 'data') and request.data:
+            suivi_uuid = request.data.get('suivi_ap')
+            if suivi_uuid:
+                try:
+                    from activite_periodique.models import SuivisAP
+                    suivi = SuivisAP.objects.select_related('details_ap__activite_periodique__processus').get(uuid=suivi_uuid)
+                    if suivi.details_ap and suivi.details_ap.activite_periodique and suivi.details_ap.activite_periodique.processus:
+                        return str(suivi.details_ap.activite_periodique.processus.uuid)
+                except Exception as e:
+                    logger.warning(f"[ActivitePeriodiqueSuiviUpdatePermission] Erreur extraction processus depuis suivi_ap dans request.data {suivi_uuid}: {e}")
+        
+        # 3. Depuis view.kwargs si uuid fourni (pour update/delete avec UUID dans l'URL)
+        # Peut être un SuivisAP ou un MediaLivrable
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
-            suivi_uuid = view.kwargs['uuid']
+            uuid_value = view.kwargs['uuid']
+            
+            # Essayer d'abord avec SuivisAP
             try:
                 from activite_periodique.models import SuivisAP
-                suivi = SuivisAP.objects.select_related('details_ap__activite_periodique__processus').get(uuid=suivi_uuid)
+                suivi = SuivisAP.objects.select_related('details_ap__activite_periodique__processus').get(uuid=uuid_value)
                 if suivi.details_ap and suivi.details_ap.activite_periodique and suivi.details_ap.activite_periodique.processus:
                     return str(suivi.details_ap.activite_periodique.processus.uuid)
+            except SuivisAP.DoesNotExist:
+                # Si ce n'est pas un SuivisAP, essayer avec MediaLivrable
+                try:
+                    from parametre.models import MediaLivrable
+                    if MediaLivrable is not None:
+                        media_livrable = MediaLivrable.objects.select_related(
+                            'suivi_ap__details_ap__activite_periodique__processus'
+                        ).get(uuid=uuid_value)
+                        if (media_livrable.suivi_ap and 
+                            media_livrable.suivi_ap.details_ap and 
+                            media_livrable.suivi_ap.details_ap.activite_periodique and 
+                            media_livrable.suivi_ap.details_ap.activite_periodique.processus):
+                            return str(media_livrable.suivi_ap.details_ap.activite_periodique.processus.uuid)
+                except Exception as e:
+                    logger.warning(f"[ActivitePeriodiqueSuiviUpdatePermission] Erreur extraction processus depuis MediaLivrable {uuid_value}: {e}")
             except Exception as e:
-                logger.warning(f"[ActivitePeriodiqueSuiviUpdatePermission] Erreur extraction processus depuis suivi {suivi_uuid}: {e}")
+                logger.warning(f"[ActivitePeriodiqueSuiviUpdatePermission] Erreur extraction processus depuis suivi {uuid_value}: {e}")
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -2396,22 +2427,60 @@ class ActivitePeriodiqueSuiviDeletePermission(AppActionPermission):
     
     def _extract_processus_uuid(self, request, view, obj=None):
         """Extrait le processus_uuid depuis obj.details_ap.activite_periodique.processus"""
+        # Log immédiat pour confirmer que la méthode est appelée
+        import sys
+        print(f"[ActivitePeriodiqueSuiviDeletePermission._extract_processus_uuid] 🔍 MÉTHODE APPELÉE", file=sys.stderr, flush=True)
+        logger.error(
+            f"[ActivitePeriodiqueSuiviDeletePermission._extract_processus_uuid] 🔍 DÉBUT EXTRACTION: "
+            f"has_obj={obj is not None}, has_view={view is not None}, "
+            f"view_kwargs={view.kwargs if (view and hasattr(view, 'kwargs')) else 'N/A'}"
+        )
+        
+        # 1. Depuis obj (si fourni, pour delete)
         if obj:
+            logger.warning(f"[ActivitePeriodiqueSuiviDeletePermission] Tentative extraction depuis obj: {type(obj)}")
             if hasattr(obj, 'details_ap') and obj.details_ap:
                 if hasattr(obj.details_ap, 'activite_periodique') and obj.details_ap.activite_periodique:
                     if hasattr(obj.details_ap.activite_periodique, 'processus') and obj.details_ap.activite_periodique.processus:
-                        return str(obj.details_ap.activite_periodique.processus.uuid)
+                        processus_uuid = str(obj.details_ap.activite_periodique.processus.uuid)
+                        logger.info(f"[ActivitePeriodiqueSuiviDeletePermission] ✅ Processus UUID extrait depuis obj: {processus_uuid}")
+                        return processus_uuid
         
-        # Depuis view.kwargs si uuid fourni
+        # 2. Depuis view.kwargs si uuid fourni (pour delete avec UUID dans l'URL)
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
             suivi_uuid = view.kwargs['uuid']
+            logger.warning(f"[ActivitePeriodiqueSuiviDeletePermission] 🔍 Tentative extraction depuis view.kwargs: suivi_uuid={suivi_uuid}")
             try:
                 from activite_periodique.models import SuivisAP
-                suivi = SuivisAP.objects.select_related('details_ap__activite_periodique__processus').get(uuid=suivi_uuid)
-                if suivi.details_ap and suivi.details_ap.activite_periodique and suivi.details_ap.activite_periodique.processus:
-                    return str(suivi.details_ap.activite_periodique.processus.uuid)
+                
+                # Utiliser select_related pour optimiser et éviter les requêtes multiples
+                try:
+                    suivi = SuivisAP.objects.select_related(
+                        'details_ap__activite_periodique__processus'
+                    ).get(uuid=suivi_uuid)
+                    
+                    # Extraire le processus UUID depuis le suivi
+                    if (suivi.details_ap and 
+                        suivi.details_ap.activite_periodique and 
+                        suivi.details_ap.activite_periodique.processus):
+                        processus_uuid = str(suivi.details_ap.activite_periodique.processus.uuid)
+                        logger.warning(f"[ActivitePeriodiqueSuiviDeletePermission] ✅✅✅ Processus UUID extrait: {processus_uuid}")
+                        return processus_uuid
+                    else:
+                        logger.error(f"[ActivitePeriodiqueSuiviDeletePermission] ❌ Chaîne de relations incomplète pour suivi {suivi_uuid}")
+                except SuivisAP.DoesNotExist:
+                    logger.error(f"[ActivitePeriodiqueSuiviDeletePermission] ❌ SuivisAP {suivi_uuid} non trouvé (DoesNotExist)")
+                except Exception as e:
+                    logger.error(f"[ActivitePeriodiqueSuiviDeletePermission] ❌ Erreur lors de l'extraction: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
             except Exception as e:
-                logger.warning(f"[ActivitePeriodiqueSuiviDeletePermission] Erreur extraction processus depuis suivi {suivi_uuid}: {e}")
+                logger.error(f"[ActivitePeriodiqueSuiviDeletePermission] ❌ Erreur générale extraction processus depuis suivi {suivi_uuid}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
         
-        return super()._extract_processus_uuid(request, view, obj)
+        logger.warning(f"[ActivitePeriodiqueSuiviDeletePermission] ⚠️ Aucun processus UUID trouvé, appel de super()._extract_processus_uuid")
+        result = super()._extract_processus_uuid(request, view, obj)
+        logger.warning(f"[ActivitePeriodiqueSuiviDeletePermission] Résultat super()._extract_processus_uuid: {result}")
+        return result
 

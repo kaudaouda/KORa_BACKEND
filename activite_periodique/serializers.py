@@ -4,7 +4,11 @@ Serializers pour l'application Activité Périodique
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import ActivitePeriodique, DetailsAP, SuivisAP
-from parametre.models import Processus, Direction, SousDirection, Service, EtatMiseEnOeuvre, Frequence
+from parametre.models import Processus, Direction, SousDirection, Service, EtatMiseEnOeuvre, Frequence, Media
+try:
+    from parametre.models import MediaLivrable
+except ImportError:
+    MediaLivrable = None
 import logging
 
 logger = logging.getLogger(__name__)
@@ -293,16 +297,51 @@ class SuivisAPSerializer(serializers.ModelSerializer):
     etat_mise_en_oeuvre_nom = serializers.CharField(source='etat_mise_en_oeuvre.nom', read_only=True, allow_null=True)
     etat_mise_en_oeuvre_uuid = serializers.UUIDField(source='etat_mise_en_oeuvre.uuid', read_only=True, allow_null=True)
 
+    media_livrables = serializers.SerializerMethodField()
+    media_livrables_count = serializers.SerializerMethodField()
+
     class Meta:
         model = SuivisAP
         fields = [
             'uuid', 'details_ap', 'details_ap_uuid', 'details_ap_numero',
             'mois', 'mois_uuid', 'mois_numero', 'mois_nom', 'mois_abreviation',
             'etat_mise_en_oeuvre', 'etat_mise_en_oeuvre_nom', 'etat_mise_en_oeuvre_uuid',
-            'livrable', 'date_realisation',
+            'livrable', 'date_realisation', 'media_livrables', 'media_livrables_count',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
+    
+    def get_media_livrables(self, obj):
+        """Retourner les MediaLivrable associés"""
+        try:
+            # Vérifier si MediaLivrable est disponible et si la relation existe
+            if MediaLivrable is None:
+                return []
+            if not hasattr(obj, 'media_livrables'):
+                return []
+            # Vérifier si la table existe en essayant d'accéder à la relation
+            try:
+                media_livrables = obj.media_livrables.all().prefetch_related('medias')
+                return MediaLivrableSerializer(media_livrables, many=True).data
+            except Exception:
+                # La table n'existe probablement pas encore (migration non appliquée)
+                return []
+        except Exception as e:
+            logger.warning(f'Erreur lors de la récupération des MediaLivrable pour suivi {obj.uuid}: {str(e)}')
+            return []
+    
+    def get_media_livrables_count(self, obj):
+        """Retourner le nombre de MediaLivrable"""
+        try:
+            # Vérifier si MediaLivrable est disponible et si la relation existe
+            if MediaLivrable is None:
+                return 0
+            if not hasattr(obj, 'media_livrables'):
+                return 0
+            return obj.media_livrables.count()
+        except Exception as e:
+            logger.warning(f'Erreur lors du comptage des MediaLivrable pour suivi {obj.uuid}: {str(e)}')
+            return 0
 
     def validate_mois(self, value):
         """Valider que le mois est autorisé selon la fréquence et les mois déjà renseignés"""
@@ -326,73 +365,43 @@ class SuivisAPSerializer(serializers.ModelSerializer):
         frequence_nom = detail_ap.frequence.nom.lower()
         mois_numero = value.numero
 
-        # Récupérer les suivis existants pour ce détail AP (excluant l'instance actuelle si mise à jour)
-        suivis_existants = detail_ap.suivis.all()
-        if self.instance:
-            suivis_existants = suivis_existants.exclude(uuid=self.instance.uuid)
+        # Définir les mois autorisés selon la fréquence (logique fixe comme dans le tableau de bord)
+        # Utilise la même logique que Periodicite.get_periodes_for_frequence
+        from parametre.models import Periodicite
+        
+        # Mapping des trimestres aux mois
+        trimestres_mois = {
+            'T1': [1, 2, 3],      # 1er Trimestre
+            'T2': [4, 5, 6],      # 2ème Trimestre
+            'T3': [7, 8, 9],      # 3ème Trimestre
+            'T4': [10, 11, 12]    # 4ème Trimestre
+        }
 
-        # Extraire les numéros de mois déjà renseignés
-        mois_renseignes = list(suivis_existants.values_list('mois__numero', flat=True))
+        # Récupérer les périodes autorisées pour cette fréquence (même logique que le tableau de bord)
+        periodes_autorisees = Periodicite.get_periodes_for_frequence(detail_ap.frequence.nom)
+        periodes_codes = [p[0] for p in periodes_autorisees]  # Extraire les codes (T1, T2, etc.)
 
-        # Définir les mois autorisés selon la fréquence et les mois déjà renseignés
+        # Convertir les périodes en mois autorisés
         mois_autorises = []
-        if frequence_nom == 'trimestrielle':
-            # Trimestrielle : déterminer le trimestre en fonction du premier mois renseigné
-            # T1: 1,2,3 / T2: 4,5,6 / T3: 7,8,9 / T4: 10,11,12
-            if mois_renseignes:
-                # Déterminer le trimestre déjà commencé
-                premier_mois = min(mois_renseignes)
-                if premier_mois in [1, 2, 3]:
-                    mois_autorises = [1, 2, 3]
-                elif premier_mois in [4, 5, 6]:
-                    mois_autorises = [4, 5, 6]
-                elif premier_mois in [7, 8, 9]:
-                    mois_autorises = [7, 8, 9]
-                elif premier_mois in [10, 11, 12]:
-                    mois_autorises = [10, 11, 12]
-            else:
-                # Aucun mois renseigné, tous les trimestres sont possibles
-                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-
-        elif frequence_nom == 'semestrielle':
-            # Semestrielle : déterminer le semestre en fonction du premier mois renseigné
-            # S1: 1,2,3,4,5,6 / S2: 7,8,9,10,11,12
-            if mois_renseignes:
-                # Déterminer le semestre déjà commencé
-                premier_mois = min(mois_renseignes)
-                if premier_mois in [1, 2, 3, 4, 5, 6]:
-                    mois_autorises = [1, 2, 3, 4, 5, 6]
-                elif premier_mois in [7, 8, 9, 10, 11, 12]:
-                    mois_autorises = [7, 8, 9, 10, 11, 12]
-            else:
-                # Aucun mois renseigné, tous les semestres sont possibles
-                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-
-        elif frequence_nom == 'annuelle':
-            # Annuelle : tous les mois de l'année sont toujours autorisés
-            mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        else:
-            # Pour les autres fréquences (mensuelle, etc.), autoriser tous les mois
-            return value
+        for periode_code in periodes_codes:
+            if periode_code in trimestres_mois:
+                mois_autorises.extend(trimestres_mois[periode_code])
 
         if mois_numero not in mois_autorises:
             mois_nom = value.nom
-            if frequence_nom == 'trimestrielle' and mois_renseignes:
-                trimestre_actuel = (min(mois_renseignes) - 1) // 3 + 1
-                raise serializers.ValidationError(
-                    f"Pour la fréquence trimestrielle, vous avez déjà commencé à renseigner le trimestre {trimestre_actuel}. "
-                    f"Vous ne pouvez renseigner que les mois de ce trimestre."
-                )
-            elif frequence_nom == 'semestrielle' and mois_renseignes:
-                semestre_actuel = (min(mois_renseignes) - 1) // 6 + 1
-                raise serializers.ValidationError(
-                    f"Pour la fréquence semestrielle, vous avez déjà commencé à renseigner le semestre {semestre_actuel}. "
-                    f"Vous ne pouvez renseigner que les mois de ce semestre."
-                )
-            else:
-                raise serializers.ValidationError(
-                    f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'."
-                )
+            periode_labels = {
+                'T1': '1er Trimestre',
+                'T2': '2ème Trimestre',
+                'T3': '3ème Trimestre',
+                'T4': '4ème Trimestre'
+            }
+            allowed_periodes_labels = [
+                periode_labels.get(p[0], p[1]) for p in periodes_autorisees
+            ]
+            raise serializers.ValidationError(
+                f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'. "
+                f"Périodes autorisées: {', '.join(allowed_periodes_labels)}"
+            )
 
         return value
 
@@ -507,71 +516,43 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
         frequence_nom = detail_ap.frequence.nom.lower()
         mois_numero = value.numero
 
-        # Récupérer les suivis existants pour ce détail AP
-        suivis_existants = detail_ap.suivis.all()
+        # Définir les mois autorisés selon la fréquence (logique fixe comme dans le tableau de bord)
+        # Utilise la même logique que Periodicite.get_periodes_for_frequence
+        from parametre.models import Periodicite
+        
+        # Mapping des trimestres aux mois
+        trimestres_mois = {
+            'T1': [1, 2, 3],      # 1er Trimestre
+            'T2': [4, 5, 6],      # 2ème Trimestre
+            'T3': [7, 8, 9],      # 3ème Trimestre
+            'T4': [10, 11, 12]    # 4ème Trimestre
+        }
 
-        # Extraire les numéros de mois déjà renseignés
-        mois_renseignes = list(suivis_existants.values_list('mois__numero', flat=True))
+        # Récupérer les périodes autorisées pour cette fréquence (même logique que le tableau de bord)
+        periodes_autorisees = Periodicite.get_periodes_for_frequence(detail_ap.frequence.nom)
+        periodes_codes = [p[0] for p in periodes_autorisees]  # Extraire les codes (T1, T2, etc.)
 
-        # Définir les mois autorisés selon la fréquence et les mois déjà renseignés
+        # Convertir les périodes en mois autorisés
         mois_autorises = []
-        if frequence_nom == 'trimestrielle':
-            # Trimestrielle : déterminer le trimestre en fonction du premier mois renseigné
-            # T1: 1,2,3 / T2: 4,5,6 / T3: 7,8,9 / T4: 10,11,12
-            if mois_renseignes:
-                # Déterminer le trimestre déjà commencé
-                premier_mois = min(mois_renseignes)
-                if premier_mois in [1, 2, 3]:
-                    mois_autorises = [1, 2, 3]
-                elif premier_mois in [4, 5, 6]:
-                    mois_autorises = [4, 5, 6]
-                elif premier_mois in [7, 8, 9]:
-                    mois_autorises = [7, 8, 9]
-                elif premier_mois in [10, 11, 12]:
-                    mois_autorises = [10, 11, 12]
-            else:
-                # Aucun mois renseigné, tous les trimestres sont possibles
-                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-
-        elif frequence_nom == 'semestrielle':
-            # Semestrielle : déterminer le semestre en fonction du premier mois renseigné
-            # S1: 1,2,3,4,5,6 / S2: 7,8,9,10,11,12
-            if mois_renseignes:
-                # Déterminer le semestre déjà commencé
-                premier_mois = min(mois_renseignes)
-                if premier_mois in [1, 2, 3, 4, 5, 6]:
-                    mois_autorises = [1, 2, 3, 4, 5, 6]
-                elif premier_mois in [7, 8, 9, 10, 11, 12]:
-                    mois_autorises = [7, 8, 9, 10, 11, 12]
-            else:
-                # Aucun mois renseigné, tous les semestres sont possibles
-                mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-
-        elif frequence_nom == 'annuelle':
-            # Annuelle : tous les mois de l'année sont toujours autorisés
-            mois_autorises = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        else:
-            # Pour les autres fréquences (mensuelle, etc.), autoriser tous les mois
-            return value
+        for periode_code in periodes_codes:
+            if periode_code in trimestres_mois:
+                mois_autorises.extend(trimestres_mois[periode_code])
 
         if mois_numero not in mois_autorises:
             mois_nom = value.nom
-            if frequence_nom == 'trimestrielle' and mois_renseignes:
-                trimestre_actuel = (min(mois_renseignes) - 1) // 3 + 1
-                raise serializers.ValidationError(
-                    f"Pour la fréquence trimestrielle, vous avez déjà commencé à renseigner le trimestre {trimestre_actuel}. "
-                    f"Vous ne pouvez renseigner que les mois de ce trimestre."
-                )
-            elif frequence_nom == 'semestrielle' and mois_renseignes:
-                semestre_actuel = (min(mois_renseignes) - 1) // 6 + 1
-                raise serializers.ValidationError(
-                    f"Pour la fréquence semestrielle, vous avez déjà commencé à renseigner le semestre {semestre_actuel}. "
-                    f"Vous ne pouvez renseigner que les mois de ce semestre."
-                )
-            else:
-                raise serializers.ValidationError(
-                    f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'."
-                )
+            periode_labels = {
+                'T1': '1er Trimestre',
+                'T2': '2ème Trimestre',
+                'T3': '3ème Trimestre',
+                'T4': '4ème Trimestre'
+            }
+            allowed_periodes_labels = [
+                periode_labels.get(p[0], p[1]) for p in periodes_autorisees
+            ]
+            raise serializers.ValidationError(
+                f"Le mois '{mois_nom}' n'est pas autorisé pour la fréquence '{detail_ap.frequence.nom}'. "
+                f"Périodes autorisées: {', '.join(allowed_periodes_labels)}"
+            )
 
         return value
 
@@ -663,4 +644,86 @@ class ActivitePeriodiqueCompletSerializer(serializers.ModelSerializer):
             detail_data['suivis'] = [SuivisAPSerializer(s).data for s in suivis]
             result.append(detail_data)
         return result
+
+
+class MediaSerializer(serializers.ModelSerializer):
+    """Serializer pour les Media (utilisé dans MediaLivrable)"""
+    fichier_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Media
+        fields = ['uuid', 'fichier', 'url_fichier', 'fichier_url', 'description', 'created_at']
+        read_only_fields = ['uuid', 'created_at']
+    
+    def get_fichier_url(self, obj):
+        """Retourner l'URL du fichier"""
+        return obj.get_url()
+
+
+if MediaLivrable is not None:
+    class MediaLivrableSerializer(serializers.ModelSerializer):
+        """Serializer pour les MediaLivrable"""
+        medias_data = serializers.SerializerMethodField()
+        suivi_ap_uuid = serializers.UUIDField(source='suivi_ap.uuid', read_only=True)
+        medias_count = serializers.SerializerMethodField()
+        
+        class Meta:
+            model = MediaLivrable
+            fields = ['uuid', 'titre_document', 'autre_livrable', 'medias', 
+                      'medias_data', 'medias_count', 'suivi_ap', 'suivi_ap_uuid', 
+                      'created_at', 'updated_at']
+            read_only_fields = ['uuid', 'created_at', 'updated_at']
+        
+        def get_medias_data(self, obj):
+            """Retourner les données des médias"""
+            medias = obj.medias.all()
+            return MediaSerializer(medias, many=True).data
+        
+        def get_medias_count(self, obj):
+            """Retourner le nombre de médias"""
+            return obj.medias.count()
+
+
+    class MediaLivrableCreateSerializer(serializers.ModelSerializer):
+        """Serializer pour la création de MediaLivrable"""
+        
+        class Meta:
+            model = MediaLivrable
+            fields = ['titre_document', 'autre_livrable', 'medias', 'suivi_ap']
+        
+        def validate_suivi_ap(self, value):
+            """Valider que le suivi AP existe"""
+            if not value:
+                raise serializers.ValidationError("Le suivi AP est requis")
+            return value
+        
+        def validate_titre_document(self, value):
+            """Valider que le titre n'est pas vide"""
+            if not value or not value.strip():
+                raise serializers.ValidationError("Le titre du document est requis")
+            return value.strip()
+
+
+    class MediaLivrableUpdateSerializer(serializers.ModelSerializer):
+        """Serializer pour la mise à jour de MediaLivrable"""
+        
+        class Meta:
+            model = MediaLivrable
+            fields = ['titre_document', 'autre_livrable', 'medias']
+        
+        def validate_titre_document(self, value):
+            """Valider que le titre n'est pas vide"""
+            if not value or not value.strip():
+                raise serializers.ValidationError("Le titre du document est requis")
+            return value.strip()
+else:
+    # Créer des classes vides si MediaLivrable n'est pas disponible
+    class MediaLivrableSerializer(serializers.Serializer):
+        pass
+    
+    class MediaLivrableCreateSerializer(serializers.Serializer):
+        pass
+    
+    class MediaLivrableUpdateSerializer(serializers.Serializer):
+        pass
 
