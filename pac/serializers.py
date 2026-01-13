@@ -697,8 +697,10 @@ class PacCompletSerializer(serializers.ModelSerializer):
                     'responsables_sous_directions': responsables_sous_directions,
                     'delai_realisation': traitement.delai_realisation,
                     'preuve': traitement.preuve.uuid if traitement.preuve else None,
+                    'preuve_uuid': str(traitement.preuve.uuid) if traitement.preuve else None,
                     'preuve_description': traitement.preuve.description if traitement.preuve else None,
                     'preuve_media_url': self.get_preuve_media_url(traitement),
+                    'preuve_medias': self.get_preuve_medias(traitement),
                     'suivi': None
                 }
                 
@@ -721,9 +723,11 @@ class PacCompletSerializer(serializers.ModelSerializer):
                             'createur_nom': f"{suivi.cree_par.first_name} {suivi.cree_par.last_name}".strip() or suivi.cree_par.username,
                             'created_at': suivi.created_at,
                             'preuve': suivi.preuve.uuid if suivi.preuve else None,
+                            'preuve_uuid': str(suivi.preuve.uuid) if suivi.preuve else None,
                             'preuve_description': suivi.preuve.description if suivi.preuve else None,
                             'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
-                            'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi)
+                            'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi),
+                            'preuve_medias': self.get_preuve_medias_suivi(suivi)
                         }
                         traitement_data['suivi'] = suivi_data
                 except (AttributeError, PacSuivi.DoesNotExist):
@@ -778,6 +782,46 @@ class PacCompletSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return urls
+    
+    def get_preuve_medias(self, traitement):
+        """Retourner la liste des médias avec uuid, url et description pour le traitement"""
+        medias = []
+        try:
+            if traitement.preuve:
+                for media in traitement.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    medias.append({
+                        'uuid': str(media.uuid),
+                        'url': url,
+                        'description': getattr(media, 'description', None),
+                    })
+        except Exception:
+            pass
+        return medias
+    
+    def get_preuve_medias_suivi(self, suivi):
+        """Retourner la liste des médias avec uuid, url et description pour le suivi"""
+        medias = []
+        try:
+            if suivi.preuve:
+                for media in suivi.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    medias.append({
+                        'uuid': str(media.uuid),
+                        'url': url,
+                        'description': getattr(media, 'description', None),
+                    })
+        except Exception:
+            pass
+        return medias
 
 
 class PacSuiviUpdateSerializer(serializers.ModelSerializer):

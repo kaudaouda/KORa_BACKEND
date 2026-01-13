@@ -1646,15 +1646,48 @@ def email_settings_update(request):
 @permission_classes([IsAuthenticated])
 def test_email_configuration(request):
     """
-    Tester la configuration email
+    Tester la configuration email (version sécurisée)
+    Security by Design : Validation stricte, logging sécurisé
     """
     try:
         from django.core.mail import send_mail
         from django.conf import settings
+        from .utils.email_security import EmailValidator, EmailContentSanitizer, SecureEmailLogger
         
         email_settings = EmailSettings.get_solo()
         
-        # Configuration temporaire pour le test
+        # Récupérer et valider l'email de test
+        test_email = request.data.get('test_email', request.user.email)
+        if not test_email:
+            return Response({'error': 'Adresse email de test requise'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider l'email
+        if not EmailValidator.is_valid_email(test_email):
+            return Response({
+                'error': 'Adresse email invalide',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que la configuration est complète
+        if not email_settings.email_host_user or not email_settings.get_password():
+            return Response({
+                'error': 'Configuration email incomplète',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Test de connexion SMTP d'abord
+        connection_ok, connection_message = email_settings.test_smtp_connection()
+        if not connection_ok:
+            SecureEmailLogger.log_security_event('smtp_connection_failed', {
+                'user': request.user.username,
+                'error': connection_message
+            })
+            return Response({
+                'error': f'Échec de la connexion SMTP : {connection_message}',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Configuration temporaire
         original_config = {
             'EMAIL_HOST': getattr(settings, 'EMAIL_HOST', ''),
             'EMAIL_PORT': getattr(settings, 'EMAIL_PORT', 587),
@@ -1662,7 +1695,7 @@ def test_email_configuration(request):
             'EMAIL_HOST_PASSWORD': getattr(settings, 'EMAIL_HOST_PASSWORD', ''),
             'EMAIL_USE_TLS': getattr(settings, 'EMAIL_USE_TLS', True),
             'EMAIL_USE_SSL': getattr(settings, 'EMAIL_USE_SSL', False),
-            'EMAIL_TIMEOUT': getattr(settings, 'EMAIL_TIMEOUT', 30),
+            'EMAIL_TIMEOUT': getattr(settings, 'EMAIL_TIMEOUT', 10),
         }
         
         # Appliquer la configuration depuis la base de données
@@ -1670,34 +1703,60 @@ def test_email_configuration(request):
         for key, value in test_config.items():
             setattr(settings, key, value)
         
-        # Envoyer un email de test
-        test_email = request.data.get('test_email', request.user.email)
-        if not test_email:
-            return Response({'error': 'Adresse email de test requise'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # Préparer le contenu sécurisé
+            subject = EmailContentSanitizer.sanitize_subject('Test de configuration email - KORA')
+            message = EmailContentSanitizer.sanitize_html('Ceci est un email de test pour vérifier la configuration SMTP.')
+            
+            # Envoyer l'email
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=test_config['DEFAULT_FROM_EMAIL'],
+                recipient_list=[test_email],
+                fail_silently=False,
+            )
+            
+            # Logger le succès
+            SecureEmailLogger.log_email_sent(test_email, subject, True)
+            
+            # Créer un log d'activité
+            ActivityLog.objects.create(
+                user=request.user,
+                action='test',
+                entity_type='email_settings',
+                entity_id=str(email_settings.uuid),
+                entity_name='Configuration email',
+                description=f'Test email réussi vers {SecureEmailLogger.mask_email(test_email)}',
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            
+            return Response({
+                'message': f'Email de test envoyé avec succès à {test_email}',
+                'status': 'success'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as send_error:
+            # Logger l'échec
+            SecureEmailLogger.log_email_sent(test_email, 'Test email', False)
+            
+            return Response({
+                'error': f'Erreur lors de l\'envoi : {str(send_error)}',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        send_mail(
-            subject='Test de configuration email - KORA',
-            message='Ceci est un email de test pour vérifier la configuration SMTP.',
-            from_email=test_config['DEFAULT_FROM_EMAIL'],
-            recipient_list=[test_email],
-            fail_silently=False,
-        )
-        
-        # Restaurer la configuration originale
-        for key, value in original_config.items():
-            setattr(settings, key, value)
-        
-        return Response({
-            'message': f'Email de test envoyé avec succès à {test_email}',
-            'status': 'success'
-        }, status=status.HTTP_200_OK)
+        finally:
+            # Restaurer la configuration originale
+            for key, value in original_config.items():
+                setattr(settings, key, value)
         
     except Exception as e:
         logger.error(f"Erreur lors du test email: {str(e)}")
         return Response({
-            'error': f'Erreur lors de l\'envoi du test: {str(e)}',
+            'error': 'Erreur interne lors du test',
             'status': 'error'
-        }, status=status.HTTP_400_BAD_REQUEST)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== ENDPOINTS POUR AFFICHAGE COMPLET (AVEC ÉLÉMENTS DÉSACTIVÉS) ====================

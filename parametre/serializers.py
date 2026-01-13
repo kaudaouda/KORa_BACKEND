@@ -120,6 +120,27 @@ class DashboardNotificationSettingsSerializer(serializers.ModelSerializer):
 
 
 class EmailSettingsSerializer(serializers.ModelSerializer):
+    """
+    Serializer sécurisé pour EmailSettings
+    Security by Design : Validation stricte, password write-only, chiffrement automatique
+    """
+    # Le mot de passe n'est jamais renvoyé dans les réponses
+    email_host_password = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        style={'input_type': 'password'},
+        help_text='Mot de passe SMTP (chiffré automatiquement)'
+    )
+    
+    # Champs en lecture seule pour la sécurité
+    last_test_success = serializers.DateTimeField(read_only=True)
+    last_modified_by_username = serializers.CharField(
+        source='last_modified_by.username',
+        read_only=True,
+        allow_null=True
+    )
+    
     class Meta:
         model = EmailSettings
         fields = [
@@ -127,18 +148,93 @@ class EmailSettingsSerializer(serializers.ModelSerializer):
             'email_host',
             'email_port',
             'email_host_user',
-            'email_host_password',
+            'email_host_password',  # Write-only
             'email_use_tls',
             'email_use_ssl',
             'email_from_name',
             'email_timeout',
+            'max_emails_per_hour',
+            'max_recipients_per_email',
+            'enable_rate_limiting',
+            'last_test_success',
+            'last_modified_by_username',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['uuid', 'created_at', 'updated_at']
+        read_only_fields = [
+            'uuid',
+            'last_test_success',
+            'created_at',
+            'updated_at',
+        ]
         extra_kwargs = {
-            'email_host_password': {'write_only': True}  # Ne pas afficher le mot de passe dans les réponses
+            'email_host_password': {
+                'write_only': True,
+                'required': False
+            }
         }
+    
+    def validate_email_timeout(self, value):
+        """
+        Valide le timeout
+        Security by Design : Limite maximale pour éviter les blocages
+        """
+        if value > 15:
+            raise serializers.ValidationError(
+                "Le timeout ne doit pas dépasser 15 secondes pour la sécurité"
+            )
+        return value
+    
+    def validate(self, data):
+        """
+        Validation globale
+        Security by Design : Vérifications croisées
+        """
+        # Vérifier que TLS et SSL ne sont pas activés ensemble
+        email_use_tls = data.get('email_use_tls', getattr(self.instance, 'email_use_tls', False))
+        email_use_ssl = data.get('email_use_ssl', getattr(self.instance, 'email_use_ssl', False))
+        
+        if email_use_tls and email_use_ssl:
+            raise serializers.ValidationError(
+                "TLS et SSL ne peuvent pas être activés simultanément"
+            )
+        
+        return data
+    
+    def create(self, validated_data):
+        """
+        Création sécurisée
+        Security by Design : Chiffrement automatique du mot de passe
+        """
+        password = validated_data.pop('email_host_password', None)
+        
+        instance = super().create(validated_data)
+        
+        if password:
+            instance.set_password(password)
+            instance.save()
+        
+        return instance
+    
+    def update(self, instance, validated_data):
+        """
+        Mise à jour sécurisée
+        Security by Design : Chiffrement automatique du mot de passe
+        """
+        password = validated_data.pop('email_host_password', None)
+        
+        # Enregistrer qui a modifié
+        request = self.context.get('request')
+        if request and request.user:
+            instance.last_modified_by = request.user
+        
+        instance = super().update(instance, validated_data)
+        
+        if password:
+            instance.set_password(password)
+            instance.save()
+        
+        return instance
 
 
 class FrequenceSerializer(serializers.ModelSerializer):
