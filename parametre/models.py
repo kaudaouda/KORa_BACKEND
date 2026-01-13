@@ -690,6 +690,7 @@ class DashboardNotificationSettings(models.Model):
 class EmailSettings(models.Model):
     """
     Paramètres de configuration email pour l'envoi de notifications
+    Security by Design : Mot de passe chiffré, validation stricte
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
@@ -697,13 +698,28 @@ class EmailSettings(models.Model):
     email_host = models.CharField(max_length=255, default='smtp.gmail.com', help_text='Serveur SMTP (ex: smtp.gmail.com)')
     email_port = models.PositiveIntegerField(default=587, help_text='Port SMTP (587 pour TLS, 465 pour SSL)')
     email_host_user = models.EmailField(help_text='Adresse email pour l\'authentification SMTP')
-    email_host_password = models.CharField(max_length=255, help_text='Mot de passe pour l\'authentification SMTP')
+    
+    # Ancien champ (gardé pour compatibilité)
+    email_host_password = models.CharField(max_length=255, blank=True, default='', help_text='Mot de passe SMTP (sera chiffré automatiquement)')
+    
+    # ✅ NOUVEAU CHAMP SÉCURISÉ : Mot de passe chiffré
+    email_host_password_encrypted = models.TextField(blank=True, default='', help_text='Mot de passe chiffré pour l\'authentification SMTP')
+    
     email_use_tls = models.BooleanField(default=True, help_text='Utiliser TLS (recommandé)')
     email_use_ssl = models.BooleanField(default=False, help_text='Utiliser SSL')
     
     # Paramètres d'envoi
     email_from_name = models.CharField(max_length=100, default='KORA', help_text='Nom affiché dans l\'expéditeur')
-    email_timeout = models.PositiveIntegerField(default=30, help_text='Timeout en secondes pour l\'envoi')
+    email_timeout = models.PositiveIntegerField(default=10, help_text='Timeout en secondes pour l\'envoi (max 15 recommandé)')
+    
+    # Paramètres de sécurité
+    max_emails_per_hour = models.PositiveIntegerField(default=100, help_text='Nombre maximum d\'emails par heure')
+    max_recipients_per_email = models.PositiveIntegerField(default=50, help_text='Nombre maximum de destinataires par email')
+    enable_rate_limiting = models.BooleanField(default=True, help_text='Activer la limitation du taux d\'envoi')
+    
+    # Audit trail
+    last_test_success = models.DateTimeField(null=True, blank=True, help_text='Date du dernier test réussi')
+    last_modified_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='email_settings_modifications')
     
     # Enforce singleton
     singleton_enforcer = models.BooleanField(default=True, unique=True, editable=False)
@@ -727,46 +743,136 @@ class EmailSettings(models.Model):
             'email_port': 587,
             'email_host_user': '',
             'email_host_password': '',
+            'email_host_password_encrypted': '',
             'email_use_tls': True,
             'email_use_ssl': False,
             'email_from_name': 'KORA',
-            'email_timeout': 30
+            'email_timeout': 10,
+            'max_emails_per_hour': 100,
+            'max_recipients_per_email': 50,
+            'enable_rate_limiting': True
         })
         return instance
+
+    def set_password(self, password):
+        """
+        Définit le mot de passe SMTP (chiffré automatiquement)
+        Security by Design : Chiffrement automatique
+        """
+        if not password:
+            self.email_host_password_encrypted = ''
+            return
+        
+        try:
+            from .utils.email_security import EmailPasswordEncryption
+            self.email_host_password_encrypted = EmailPasswordEncryption.encrypt_password(password)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Erreur lors du chiffrement du mot de passe : {str(e)}")
+            raise
+
+    def get_password(self):
+        """
+        Récupère le mot de passe SMTP déchiffré
+        Security by Design : Déchiffrement sécurisé
+        """
+        # Si le nouveau champ chiffré existe, l'utiliser
+        if self.email_host_password_encrypted:
+            try:
+                from .utils.email_security import EmailPasswordEncryption
+                return EmailPasswordEncryption.decrypt_password(self.email_host_password_encrypted)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error("❌ Erreur lors du déchiffrement du mot de passe")
+                raise
+        
+        # Sinon, utiliser l'ancien champ (compatibilité)
+        return self.email_host_password
 
     def get_email_config(self):
         """
         Retourne la configuration email au format Django
+        Security by Design : Mot de passe déchiffré seulement pour l'envoi
         """
         return {
             'EMAIL_HOST': self.email_host,
             'EMAIL_PORT': self.email_port,
             'EMAIL_HOST_USER': self.email_host_user,
-            'EMAIL_HOST_PASSWORD': self.email_host_password,
+            'EMAIL_HOST_PASSWORD': self.get_password(),  # Déchiffré automatiquement
             'EMAIL_USE_TLS': self.email_use_tls,
             'EMAIL_USE_SSL': self.email_use_ssl,
             'EMAIL_TIMEOUT': self.email_timeout,
             'DEFAULT_FROM_EMAIL': f'{self.email_from_name} <{self.email_host_user}>',
         }
+    
+    def test_smtp_connection(self):
+        """
+        Test la connexion SMTP
+        Security by Design : Validation de la configuration
+        """
+        try:
+            from django.core.mail import get_connection
+            
+            config = self.get_email_config()
+            connection = get_connection(
+                host=config['EMAIL_HOST'],
+                port=config['EMAIL_PORT'],
+                username=config['EMAIL_HOST_USER'],
+                password=config['EMAIL_HOST_PASSWORD'],
+                use_tls=config['EMAIL_USE_TLS'],
+                use_ssl=config['EMAIL_USE_SSL'],
+                timeout=config['EMAIL_TIMEOUT']
+            )
+            
+            connection.open()
+            connection.close()
+            
+            # Enregistrer le succès
+            from django.utils import timezone
+            self.last_test_success = timezone.now()
+            self.save(update_fields=['last_test_success'])
+            
+            return True, "Connexion SMTP établie avec succès"
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Test de connexion SMTP échoué : {str(e)}")
+            return False, f"Échec de la connexion : {str(e)}"
 
 
 class ReminderEmailLog(models.Model):
+    """
+    Log des emails de relance
+    Security by Design : Audit trail complet
+    """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient = models.EmailField()
     subject = models.CharField(max_length=255)
     context_hash = models.CharField(max_length=64)
     sent_at = models.DateTimeField(auto_now_add=True)
+    
+    # Champs de sécurité ajoutés
+    success = models.BooleanField(default=True, help_text='Si l\'envoi a réussi')
+    error_message = models.TextField(blank=True, default='', help_text='Message d\'erreur si échec')
+    ip_address = models.GenericIPAddressField(null=True, blank=True, help_text='IP de l\'émetteur')
+    user = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL, help_text='Utilisateur qui a déclenché l\'envoi')
 
     class Meta:
         db_table = 'reminder_email_log'
         indexes = [
-            models.Index(fields=['recipient', 'context_hash', 'sent_at'])
+            models.Index(fields=['recipient', 'context_hash', 'sent_at']),
+            models.Index(fields=['success', 'sent_at']),
+            models.Index(fields=['user', 'sent_at']),
         ]
         verbose_name = 'Log email de relance'
         verbose_name_plural = 'Logs emails de relance'
 
     def __str__(self):
-        return f"Relance {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
+        status = "✅" if self.success else "❌"
+        return f"{status} {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
 
 
 class Mois(models.Model):
