@@ -260,6 +260,16 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'KORA Notifications <norepl
 # Frontend base URL for building links in emails
 FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:5173')
 
+# ==================== EMAIL ENCRYPTION ====================
+# Clé de chiffrement pour les mots de passe SMTP (Security by Design)
+EMAIL_ENCRYPTION_KEY = os.getenv('EMAIL_ENCRYPTION_KEY', None)
+
+if not EMAIL_ENCRYPTION_KEY:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ EMAIL_ENCRYPTION_KEY non définie ! Ajoutez-la dans votre fichier .env")
+    logger.warning("⚠️ Consultez ENCRYPTION_KEY.txt pour obtenir votre clé")
+
 # Configuration de logging pour le debug
 LOGGING = {
     'version': 1,

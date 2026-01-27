@@ -341,7 +341,7 @@ class PermissionService:
                 else:
                     logger.info(
                         f"[PermissionService] ⚠️ Permission {action_code} NON TROUVÉE "
-                        f"(refus par défaut)"
+                        f"(refus par défaut) - Aucun mapping trouvé pour les rôles: {[r.code for r in roles]}"
                     )
                 
                 result[processus_uuid_str][action_code] = {
