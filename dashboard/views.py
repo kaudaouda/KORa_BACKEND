@@ -1045,49 +1045,157 @@ def dashboard_stats(request):
         objectives_this_month = objectives_filter.filter(created_at__date__gte=month_ago).count()
         
         # Calculer les pourcentages de cibles atteintes et non atteintes
+        # et dériver les indicateurs / objectifs atteints selon la règle métier
         from parametre.models import Cible, Periodicite
-        from django.db.models import Q, Count, Case, When, DecimalField, F
         import decimal
+        from collections import defaultdict
         
         # Récupérer toutes les cibles avec leurs indicateurs (filtrées par processus)
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
         if user_processus_uuids is None:
             # Super admin : voir toutes les cibles sans filtre
-            cibles_with_periodicites = Cible.objects.all().select_related('indicateur_id')
+            cibles_qs = Cible.objects.all().select_related('indicateur_id', 'indicateur_id__frequence_id')
         elif user_processus_uuids:
-            cibles_with_periodicites = Cible.objects.filter(
+            cibles_qs = Cible.objects.filter(
                 indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
-            ).select_related('indicateur_id')
+            ).select_related('indicateur_id', 'indicateur_id__frequence_id')
         else:
-            cibles_with_periodicites = Cible.objects.none()
+            cibles_qs = Cible.objects.none()
         
-        total_cibles = cibles_with_periodicites.count()
+        total_cibles = cibles_qs.count()
         cibles_atteintes = 0
         cibles_non_atteintes = 0
         
-        # Pour chaque cible, vérifier si elle est atteinte en comparant avec les périodicités
-        for cible in cibles_with_periodicites:
-            # Récupérer la dernière périodicité pour cet indicateur
-            derniere_periodicite = Periodicite.objects.filter(
-                indicateur_id=cible.indicateur_id
-            ).order_by('-created_at').first()
-            
-            if derniere_periodicite and derniere_periodicite.taux is not None:
-                try:
-                    # Convertir le Decimal en float de manière sécurisée
-                    taux_value = float(derniere_periodicite.taux)
-                    # Utiliser la méthode is_objectif_atteint pour vérifier si la cible est atteinte
-                    if cible.is_objectif_atteint(taux_value):
-                        cibles_atteintes += 1
-                    else:
-                        cibles_non_atteintes += 1
-                except (ValueError, TypeError, decimal.InvalidOperation):
-                    # Si la conversion échoue, considérer comme non atteinte
-                    cibles_non_atteintes += 1
+        # Préparer les données pour les indicateurs / objectifs atteints
+        indicateurs_ids = list(indicateurs_filter.values_list('pk', flat=True))
         
-        # Calculer les pourcentages
+        # Dictionnaire des cibles par indicateur (OneToOne, mais plus simple à manipuler comme dict)
+        cibles_by_indicateur = {cible.indicateur_id_id: cible for cible in cibles_qs}
+        
+        # Récupérer toutes les périodicités des indicateurs concernés
+        periodicites_qs = Periodicite.objects.filter(indicateur_id__in=indicateurs_ids)
+        periodicites_by_indicateur = defaultdict(list)
+        for periodicite in periodicites_qs:
+            periodicites_by_indicateur[periodicite.indicateur_id_id].append(periodicite)
+        
+        # Statut atteinte par indicateur (True/False/None si non évaluable)
+        indicateur_status = {}
+        indicateurs_atteints = 0
+        indicateurs_non_atteints = 0
+        
+        logger.info(
+            "[DashboardStats] Totaux initiaux - objectifs=%s, indicateurs=%s, cibles=%s",
+            total_objectives, total_indicateurs, total_cibles
+        )
+
+        for indicateur in indicateurs_filter.select_related('frequence_id'):
+            cible = cibles_by_indicateur.get(indicateur.pk)
+            periodicites = periodicites_by_indicateur.get(indicateur.pk, [])
+            
+            # Si pas de cible ou pas de périodicité, on ne peut pas évaluer cet indicateur
+            if not cible or not periodicites:
+                indicateur_status[indicateur.pk] = None
+                logger.debug(
+                    "[DashboardStats] Indicateur %s ignoré (cible=%s, periodicites=%s)",
+                    indicateur.pk, bool(cible), len(periodicites)
+                )
+                continue
+            
+            # Filtrer les périodes autorisées en fonction de la fréquence de l'indicateur
+            frequence_nom = getattr(indicateur.frequence_id, 'nom', None)
+            periodicites_utilisables = periodicites
+            if frequence_nom:
+                allowed_periodes = [code for code, _ in Periodicite.get_periodes_for_frequence(frequence_nom)]
+                filtered = [p for p in periodicites if p.periode in allowed_periodes]
+                if filtered:
+                    periodicites_utilisables = filtered
+            
+            # Calculer la moyenne des taux sur les périodicités retenues
+            taux_values = []
+            for p in periodicites_utilisables:
+                if p.taux is not None:
+                    try:
+                        taux_values.append(float(p.taux))
+                    except (ValueError, TypeError, decimal.InvalidOperation):
+                        continue
+            
+            if not taux_values:
+                indicateur_status[indicateur.pk] = None
+                logger.debug(
+                    "[DashboardStats] Indicateur %s ignoré (aucun taux exploitable sur %s périodicités)",
+                    indicateur.pk, len(periodicites_utilisables)
+                )
+                continue
+            
+            moyenne_taux = sum(taux_values) / len(taux_values)
+            
+            # Vérifier si la cible de l'indicateur est atteinte avec cette moyenne
+            if cible.is_objectif_atteint(moyenne_taux):
+                indicateurs_atteints += 1
+                indicateurs_non_atteints += 0
+                indicateur_status[indicateur.pk] = True
+                cibles_atteintes += 1
+            else:
+                indicateurs_non_atteints += 1
+                indicateur_status[indicateur.pk] = False
+                cibles_non_atteintes += 1
+        
+        # Compléter les compteurs de cibles pour les cibles qui n'ont pas pu être évaluées
+        # (par ex. pas de périodicité ou taux invalide) en les comptant comme non atteintes
+        # pour garder une compatibilité avec l'ancienne logique si nécessaire.
+        if total_cibles > (cibles_atteintes + cibles_non_atteintes):
+            cibles_non_atteintes += total_cibles - (cibles_atteintes + cibles_non_atteintes)
+        
+        # Calculer les pourcentages de cibles atteintes / non atteintes
         pourcentage_atteintes = (cibles_atteintes / total_cibles * 100) if total_cibles > 0 else 0
         pourcentage_non_atteintes = (cibles_non_atteintes / total_cibles * 100) if total_cibles > 0 else 0
+        
+        # Calculer les objectifs atteints / non atteints
+        objectifs_atteints = 0
+        objectifs_non_atteints = 0
+        
+        # Préparer la liste des indicateurs par objectif
+        indicateurs_by_objective = defaultdict(list)
+        for indicateur in indicateurs_filter:
+            indicateurs_by_objective[indicateur.objective_id_id].append(indicateur)
+        
+        for objective in objectives_filter:
+            indicateurs_obj = indicateurs_by_objective.get(objective.pk, [])
+            
+            # Aucun indicateur associé : on ignore cet objectif pour le statut atteint/non atteint
+            if not indicateurs_obj:
+                continue
+            
+            has_evaluable_indicator = False
+            all_indicateurs_atteints = True
+            
+            for indicateur in indicateurs_obj:
+                indicateur_is_atteint = indicateur_status.get(indicateur.pk)
+                if indicateur_is_atteint is None:
+                    # Indicateur non évaluable (pas de cible ou pas de périodicité exploitable)
+                    continue
+                
+                has_evaluable_indicator = True
+                if indicateur_is_atteint is False:
+                    all_indicateurs_atteints = False
+                    break
+            
+            if not has_evaluable_indicator:
+                # Aucun indicateur avec données exploitables pour cet objectif
+                continue
+            
+            if all_indicateurs_atteints:
+                objectifs_atteints += 1
+            else:
+                objectifs_non_atteints += 1
+
+        logger.info(
+            "[DashboardStats] Résultats calculés - indicateurs_atteints=%s, indicateurs_non_atteints=%s, "
+            "objectifs_atteints=%s, objectifs_non_atteints=%s, cibles_atteintes=%s, cibles_non_atteintes=%s",
+            indicateurs_atteints, indicateurs_non_atteints,
+            objectifs_atteints, objectifs_non_atteints,
+            cibles_atteintes, cibles_non_atteintes
+        )
         
         stats = {
             'total_objectives': total_objectives,
@@ -1101,6 +1209,11 @@ def dashboard_stats(request):
             'cibles_non_atteintes': cibles_non_atteintes,
             'pourcentage_atteintes': round(pourcentage_atteintes, 2),
             'pourcentage_non_atteintes': round(pourcentage_non_atteintes, 2),
+            # Nouvelles statistiques basées sur la règle métier
+            'indicateurs_atteints': indicateurs_atteints,
+            'indicateurs_non_atteints': indicateurs_non_atteints,
+            'objectifs_atteints': objectifs_atteints,
+            'objectifs_non_atteints': objectifs_non_atteints,
         }
         
         return Response({
