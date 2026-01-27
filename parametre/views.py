@@ -1507,7 +1507,8 @@ def upcoming_notifications(request):
     try:
         from datetime import datetime, timedelta
         from django.utils import timezone
-        from pac.models import Traitement
+        from pac.models import TraitementPac
+        from .permissions import get_user_processus_list
         
         today = timezone.now().date()
         notifications = []
@@ -1519,27 +1520,62 @@ def upcoming_notifications(request):
         traitement_delai_days = global_settings.traitement_delai_notice_days
         traitement_cutoff_date = today + timedelta(days=traitement_delai_days)
         
-        upcoming_traitements = Traitement.objects.filter(
-            delai_realisation__lte=traitement_cutoff_date,
-            delai_realisation__gte=today
-        ).order_by('delai_realisation')
+        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        user_processus_uuids = get_user_processus_list(request.user)
+        
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les traitements sans filtre
+            upcoming_traitements = TraitementPac.objects.filter(
+                details_pac__isnull=False,
+                delai_realisation__lte=traitement_cutoff_date,
+                delai_realisation__gte=today
+            ).select_related(
+                'details_pac',
+                'details_pac__pac',
+                'details_pac__pac__processus',
+                'details_pac__nature',
+                'type_action'
+            ).order_by('delai_realisation')
+        elif not user_processus_uuids:
+            # Aucun processus assigné
+            upcoming_traitements = TraitementPac.objects.none()
+        else:
+            # Filtrer par les processus de l'utilisateur
+            upcoming_traitements = TraitementPac.objects.filter(
+                details_pac__isnull=False,
+                details_pac__pac__processus__uuid__in=user_processus_uuids,
+                delai_realisation__lte=traitement_cutoff_date,
+                delai_realisation__gte=today
+            ).select_related(
+                'details_pac',
+                'details_pac__pac',
+                'details_pac__pac__processus',
+                'details_pac__nature',
+                'type_action'
+            ).order_by('delai_realisation')
+        # ========== FIN FILTRAGE ==========
         
         for traitement in upcoming_traitements:
+            # Vérifier que le traitement a bien un details_pac et un pac
+            if not traitement.details_pac or not traitement.details_pac.pac:
+                continue
+                
             days_until_due = (traitement.delai_realisation - today).days
             priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
 
             # Déterminer la nature (dysfonctionnement ou recommandation) via le PAC
             nature_label = None
             try:
-                # Si une nature est liée sur PAC, utiliser son nom
-                if getattr(traitement.pac, 'nature', None):
-                    nature_name = (traitement.pac.nature.nom or '').strip().lower()
+                # Si une nature est liée sur details_pac, utiliser son nom
+                if getattr(traitement.details_pac, 'nature', None):
+                    nature_name = (traitement.details_pac.nature.nom or '').strip().lower()
                     if 'recommand' in nature_name:
                         nature_label = 'Recommandation'
                     elif 'non' in nature_name or 'dysfonction' in nature_name:
                         nature_label = 'Dysfonctionnement'
                     else:
-                        nature_label = traitement.pac.nature.nom
+                        nature_label = traitement.details_pac.nature.nom
             except Exception:
                 nature_label = None
 
@@ -1557,7 +1593,7 @@ def upcoming_notifications(request):
             notifications.append({
                 'id': f'traitement_{traitement.uuid}',
                 'type': 'traitement',
-                'title': f"{traitement.pac.numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}",
+                'title': f"{traitement.details_pac.pac.numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}",
                 'message': f"Délai de réalisation dans {days_until_due} jour{'s' if days_until_due > 1 else ''}",
                 'due_date': traitement.delai_realisation.isoformat(),
                 'priority': priority,
@@ -1585,6 +1621,8 @@ def upcoming_notifications(request):
         
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des échéances: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({'error': 'Impossible de récupérer les échéances'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
