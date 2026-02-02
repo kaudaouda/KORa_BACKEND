@@ -285,14 +285,73 @@ class PeriodiciteSerializer(serializers.ModelSerializer):
     """Serializer pour les périodicités"""
     indicateur_libelle = serializers.CharField(source='indicateur_id.libelle', read_only=True)
     periode_display = serializers.CharField(source='get_periode_display', read_only=True)
+    preuve_uuid = serializers.UUIDField(source='preuve.uuid', read_only=True, allow_null=True)
+    preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
+    preuve_media_url = serializers.SerializerMethodField()
+    preuve_media_urls = serializers.SerializerMethodField()
+    preuve_medias = serializers.SerializerMethodField()
     
     class Meta:
         model = Periodicite
         fields = [
             'uuid', 'indicateur_id', 'indicateur_libelle', 'periode', 'periode_display',
-            'a_realiser', 'realiser', 'taux', 'created_at', 'updated_at'
+            'a_realiser', 'realiser', 'taux', 'preuve', 'preuve_uuid', 
+            'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'taux', 'created_at', 'updated_at']
+    
+    def get_preuve_media_url(self, obj):
+        """Retourner l'URL du premier média de la preuve"""
+        try:
+            if obj.preuve and obj.preuve.medias.exists():
+                media = obj.preuve.medias.first()
+                if media:
+                    if hasattr(media, 'get_url'):
+                        return media.get_url()
+                    url = getattr(media, 'url_fichier', None)
+                    return url
+        except Exception:
+            pass
+        return None
+    
+    def get_preuve_media_urls(self, obj):
+        """Retourner la liste de toutes les URLs des médias de la preuve"""
+        urls = []
+        try:
+            if obj.preuve:
+                for media in obj.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    if url:
+                        urls.append(url)
+        except Exception:
+            pass
+        return urls
+    
+    def get_preuve_medias(self, obj):
+        """Retourner la liste des médias avec uuid, url et description"""
+        medias = []
+        try:
+            if obj.preuve:
+                for media in obj.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    medias.append({
+                        'uuid': str(media.uuid),
+                        'url': url,
+                        'nom': getattr(media, 'nom', ''),
+                        'description': getattr(media, 'description', '')
+                    })
+        except Exception:
+            pass
+        return medias
 
 
 class PeriodiciteCreateSerializer(serializers.ModelSerializer):
@@ -300,7 +359,7 @@ class PeriodiciteCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Periodicite
-        fields = ['indicateur_id', 'periode', 'a_realiser', 'realiser']
+        fields = ['indicateur_id', 'periode', 'a_realiser', 'realiser', 'preuve']
     
     def validate(self, data):
         """Valider les données"""
@@ -362,22 +421,61 @@ class PeriodiciteCreateSerializer(serializers.ModelSerializer):
 
 class PeriodiciteUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour la mise à jour de périodicités"""
+    preuve = serializers.UUIDField(required=False, allow_null=True)
     
     class Meta:
         model = Periodicite
-        fields = ['a_realiser', 'realiser']
+        fields = ['a_realiser', 'realiser', 'preuve']
+        extra_kwargs = {
+            'a_realiser': {'required': False},
+            'realiser': {'required': False},
+            'preuve': {'required': False, 'allow_null': True}
+        }
     
     def validate_a_realiser(self, value):
         """Valider la valeur à réaliser"""
-        if value < 0:
+        if value is not None and value < 0:
             raise serializers.ValidationError("La valeur 'à réaliser' ne peut pas être négative")
         return value
     
     def validate_realiser(self, value):
         """Valider la valeur réalisée"""
-        if value < 0:
+        if value is not None and value < 0:
             raise serializers.ValidationError("La valeur 'réalisé' ne peut pas être négative")
         return value
+    
+    def validate_preuve(self, value):
+        """Valider que la preuve existe si fournie"""
+        if value is not None:
+            from parametre.models import Preuve
+            try:
+                Preuve.objects.get(uuid=value)
+            except Preuve.DoesNotExist:
+                raise serializers.ValidationError(f"La preuve avec l'UUID {value} n'existe pas")
+        return value
+    
+    def update(self, instance, validated_data):
+        """Mettre à jour l'instance avec les données validées"""
+        preuve_uuid = validated_data.pop('preuve', None)
+        
+        # Mettre à jour les autres champs
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        # Gérer la preuve séparément
+        if preuve_uuid is not None:
+            from parametre.models import Preuve
+            try:
+                preuve = Preuve.objects.get(uuid=preuve_uuid)
+                instance.preuve = preuve
+            except Preuve.DoesNotExist:
+                raise serializers.ValidationError(f"La preuve avec l'UUID {preuve_uuid} n'existe pas")
+        elif 'preuve' in self.initial_data and self.initial_data['preuve'] is None:
+            # Permettre de supprimer la preuve en envoyant null
+            instance.preuve = None
+        
+        instance.save()
+        return instance
 
 
 # ==================== CIBLES ====================

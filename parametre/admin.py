@@ -318,7 +318,7 @@ class PeriodiciteAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les périodicités"""
     
     list_display = [
-        'indicateur_id', 'periode', 'a_realiser', 'realiser', 'taux', 'created_at', 'updated_at'
+        'indicateur_id', 'periode', 'a_realiser', 'realiser', 'taux', 'preuve', 'created_at', 'updated_at'
     ]
     list_filter = [
         'periode', 'indicateur_id__objective_id', 'created_at', 'updated_at'
@@ -338,6 +338,9 @@ class PeriodiciteAdmin(admin.ModelAdmin):
         ('Mesures', {
             'fields': ('a_realiser', 'realiser', 'taux')
         }),
+        ('Preuve', {
+            'fields': ('preuve',)
+        }),
         ('Métadonnées', {
             'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
@@ -346,7 +349,7 @@ class PeriodiciteAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('indicateur_id', 'indicateur_id__objective_id')
+        return super().get_queryset(request).select_related('indicateur_id', 'indicateur_id__objective_id', 'preuve').prefetch_related('preuve__medias')
 
 
 @admin.register(Cible)
