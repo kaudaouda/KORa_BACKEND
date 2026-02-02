@@ -976,6 +976,14 @@ class Periodicite(models.Model):
         default=0,
         help_text="Taux de réalisation en pourcentage"
     )
+    preuve = models.ForeignKey(
+        'parametre.Preuve',
+        on_delete=models.SET_NULL,
+        related_name='periodicites',
+        blank=True,
+        null=True,
+        help_text='Preuve justifiant la réalisation ou non de cette périodicité'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

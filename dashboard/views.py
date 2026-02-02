@@ -1115,8 +1115,8 @@ def dashboard_stats(request):
         # Dictionnaire des cibles par indicateur (OneToOne, mais plus simple à manipuler comme dict)
         cibles_by_indicateur = {cible.indicateur_id_id: cible for cible in cibles_qs}
         
-        # Récupérer toutes les périodicités des indicateurs concernés
-        periodicites_qs = Periodicite.objects.filter(indicateur_id__in=indicateurs_ids)
+        # Récupérer toutes les périodicités des indicateurs concernés avec optimisation pour les preuves
+        periodicites_qs = Periodicite.objects.filter(indicateur_id__in=indicateurs_ids).select_related('preuve').prefetch_related('preuve__medias')
         periodicites_by_indicateur = defaultdict(list)
         for periodicite in periodicites_qs:
             periodicites_by_indicateur[periodicite.indicateur_id_id].append(periodicite)
@@ -1848,40 +1848,55 @@ def periodicites_list(request):
         
         # Récupérer les périodicités avec gestion d'erreur pour les données corrompues
         periodicites_data = []
-        periodicites = Periodicite.objects.all().order_by('indicateur_id', 'periode')
+        periodicites = Periodicite.objects.all().select_related('preuve').prefetch_related('preuve__medias').order_by('indicateur_id', 'periode')
+        
+        # Utiliser le serializer pour inclure toutes les données de preuve
+        from .serializers import PeriodiciteSerializer
         
         for periodicite in periodicites:
             try:
-                # Créer un dictionnaire avec les données sérialisées manuellement
-                periodicite_data = {
-                    'uuid': str(periodicite.uuid),
-                    'indicateur_id': str(periodicite.indicateur_id.uuid),
-                    'indicateur_libelle': periodicite.indicateur_id.libelle,
-                    'periode': periodicite.periode,
-                    'periode_display': periodicite.get_periode_display(),
-                    'a_realiser': float(periodicite.a_realiser),
-                    'realiser': float(periodicite.realiser),
-                    'taux': float(periodicite.taux) if periodicite.taux is not None else 0.0,
-                    'created_at': periodicite.created_at,
-                    'updated_at': periodicite.updated_at
-                }
+                # Utiliser le serializer pour avoir toutes les données de preuve
+                serializer = PeriodiciteSerializer(periodicite)
+                periodicite_data = serializer.data
+                # Convertir l'indicateur_id en string si c'est un objet
+                if 'indicateur_id' in periodicite_data and not isinstance(periodicite_data['indicateur_id'], str):
+                    periodicite_data['indicateur_id'] = str(periodicite_data['indicateur_id'])
                 periodicites_data.append(periodicite_data)
             except (ValueError, TypeError, decimal.InvalidOperation) as e:
                 logger.warning(f"Périodicité {periodicite.uuid} ignorée à cause de données corrompues: {str(e)}")
-                # Ajouter une entrée avec des valeurs par défaut pour les données corrompues
-                periodicite_data = {
-                    'uuid': str(periodicite.uuid),
-                    'indicateur_id': str(periodicite.indicateur_id.uuid) if periodicite.indicateur_id else None,
-                    'indicateur_libelle': periodicite.indicateur_id.libelle if periodicite.indicateur_id else 'Indicateur supprimé',
-                    'periode': periodicite.periode,
-                    'periode_display': periodicite.get_periode_display(),
-                    'a_realiser': 0.0,
-                    'realiser': 0.0,
-                    'taux': 0.0,
-                    'created_at': periodicite.created_at,
-                    'updated_at': periodicite.updated_at
-                }
-                periodicites_data.append(periodicite_data)
+                # Utiliser le serializer même pour les données corrompues pour avoir les preuves
+                try:
+                    serializer = PeriodiciteSerializer(periodicite)
+                    periodicite_data = serializer.data
+                    # Forcer les valeurs par défaut pour les champs corrompus
+                    periodicite_data['a_realiser'] = 0.0
+                    periodicite_data['realiser'] = 0.0
+                    periodicite_data['taux'] = 0.0
+                    if 'indicateur_id' in periodicite_data and not isinstance(periodicite_data['indicateur_id'], str):
+                        periodicite_data['indicateur_id'] = str(periodicite_data['indicateur_id'])
+                    periodicites_data.append(periodicite_data)
+                except Exception as serializer_error:
+                    logger.error(f"Erreur lors de la sérialisation de la périodicité {periodicite.uuid}: {str(serializer_error)}")
+                    # Fallback : créer un dictionnaire minimal avec les champs de preuve
+                    periodicite_data = {
+                        'uuid': str(periodicite.uuid),
+                        'indicateur_id': str(periodicite.indicateur_id.uuid) if periodicite.indicateur_id else None,
+                        'indicateur_libelle': periodicite.indicateur_id.libelle if periodicite.indicateur_id else 'Indicateur supprimé',
+                        'periode': periodicite.periode,
+                        'periode_display': periodicite.get_periode_display(),
+                        'a_realiser': 0.0,
+                        'realiser': 0.0,
+                        'taux': 0.0,
+                        'preuve': str(periodicite.preuve.uuid) if periodicite.preuve else None,
+                        'preuve_uuid': str(periodicite.preuve.uuid) if periodicite.preuve else None,
+                        'preuve_description': periodicite.preuve.description if periodicite.preuve else None,
+                        'preuve_media_url': None,
+                        'preuve_media_urls': [],
+                        'preuve_medias': [],
+                        'created_at': periodicite.created_at,
+                        'updated_at': periodicite.updated_at
+                    }
+                    periodicites_data.append(periodicite_data)
 
         return Response({
             'success': True,
@@ -1929,6 +1944,7 @@ def periodicites_detail(request, uuid):
 def periodicites_create(request):
     """Créer une nouvelle périodicité"""
     try:
+        from parametre.models import Periodicite
         # Vérifier que le tableau est validé et n'a pas d'amendements avant de permettre la création de périodicités
         indicateur_uuid = request.data.get('indicateur_id')
         if indicateur_uuid:
@@ -1959,6 +1975,8 @@ def periodicites_create(request):
         
         if serializer.is_valid():
             periodicite = serializer.save()
+            # Optimiser la requête pour inclure la preuve et ses médias
+            periodicite = Periodicite.objects.select_related('preuve').prefetch_related('preuve__medias').get(uuid=periodicite.uuid)
             response_serializer = PeriodiciteSerializer(periodicite)
             
             return Response({
@@ -1987,7 +2005,8 @@ def periodicites_update(request, uuid):
     """Mettre à jour une périodicité"""
     try:
         from parametre.models import Periodicite
-        periodicite = Periodicite.objects.get(uuid=uuid)
+        # Optimiser la requête pour inclure la preuve et ses médias
+        periodicite = Periodicite.objects.select_related('preuve').prefetch_related('preuve__medias').get(uuid=uuid)
         
         # Vérifier que le tableau est validé et n'a pas d'amendements avant de permettre la modification de périodicités
         try:
@@ -2010,7 +2029,7 @@ def periodicites_update(request, uuid):
         except Exception:
             pass  # En cas d'erreur, continuer avec la validation normale
         
-        serializer = PeriodiciteUpdateSerializer(periodicite, data=request.data)
+        serializer = PeriodiciteUpdateSerializer(periodicite, data=request.data, partial=True)
         
         if serializer.is_valid():
             periodicite = serializer.save()
@@ -2083,8 +2102,8 @@ def periodicites_by_indicateur(request, indicateur_uuid):
         # Récupérer l'indicateur
         indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
 
-        # Récupérer les périodicités liées à l'indicateur
-        periodicites = Periodicite.objects.filter(indicateur_id=indicateur).order_by('periode')
+        # Récupérer les périodicités liées à l'indicateur avec optimisation pour les preuves
+        periodicites = Periodicite.objects.filter(indicateur_id=indicateur).select_related('preuve').prefetch_related('preuve__medias').order_by('periode')
         serializer = PeriodiciteSerializer(periodicites, many=True)
 
         return Response({
