@@ -118,7 +118,7 @@ class TableauBordSerializer(serializers.ModelSerializer):
     def get_valide_par_nom(self, obj):
         """Retourne le nom complet de l'utilisateur qui a validé"""
         if obj.valide_par:
-            return obj.valide_par.get_full_name() or obj.valide_par.username
+            return f"{obj.valide_par.first_name} {obj.valide_par.last_name}".strip() or obj.valide_par.username
         return None
     has_amendements = serializers.SerializerMethodField()
     
