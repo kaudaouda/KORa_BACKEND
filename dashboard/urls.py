@@ -52,6 +52,7 @@ urlpatterns = [
     path('tableaux-bord/<uuid:uuid>/', views.tableau_bord_detail, name='tableau_bord_detail'),
     path('tableaux-bord/<uuid:uuid>/objectives/', views.tableau_bord_objectives, name='tableau_bord_objectives'),
     path('tableaux-bord/<uuid:uuid>/validate/', views.validate_tableau_bord, name='validate_tableau_bord'),
+    path('tableaux-bord/<uuid:uuid>/devalidate/', views.devalidate_tableau_bord, name='devalidate_tableau_bord'),
     path('tableaux-bord/<uuid:tableau_initial_uuid>/amendements/', views.create_amendement, name='create_amendement'),
     path('tableaux-bord/<uuid:tableau_initial_uuid>/amendements/list/', views.get_amendements_by_initial, name='get_amendements_by_initial'),
     path('tableaux-bord/last-previous-year/', views.get_last_tableau_bord_previous_year, name='get_last_tableau_bord_previous_year'),

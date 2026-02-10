@@ -113,6 +113,15 @@ class AppActionPermission(BasePermission):
             if not request.user or not request.user.is_authenticated:
                 return False
             
+            # Security by Design : Vérifier le super admin AVANT d'extraire le processus_uuid
+            # Les super admins (is_staff ET is_superuser) ont toutes les permissions
+            if PermissionService._is_super_admin(request.user):
+                logger.info(
+                    f"[AppActionPermission.has_permission] ✅ Super admin bypass: "
+                    f"user={request.user.username}, app={self.app_name}, action={self.action}"
+                )
+                return True
+            
             # Log pour déboguer
             logger.warning(
                 f"[AppActionPermission.has_permission] 🔍 DÉBUT Vérification permission: "
@@ -202,6 +211,15 @@ class AppActionPermission(BasePermission):
         if not request.user or not request.user.is_authenticated:
             logger.warning(f"[AppActionPermission.has_object_permission] ❌ User non authentifié")
             return False
+        
+        # Security by Design : Vérifier le super admin AVANT d'extraire le processus_uuid
+        # Les super admins (is_staff ET is_superuser) ont toutes les permissions
+        if PermissionService._is_super_admin(request.user):
+            logger.info(
+                f"[AppActionPermission.has_object_permission] ✅ Super admin bypass: "
+                f"user={request.user.username}, app={self.app_name}, action={self.action}"
+            )
+            return True
         
         # Extraire le processus_uuid depuis l'objet
         processus_uuid = self._extract_processus_uuid(request, view, obj)
@@ -414,10 +432,61 @@ class DashboardTableauValidatePermission(AppActionPermission):
         return super()._extract_processus_uuid(request, view, obj)
 
 
+class DashboardTableauDevalidatePermission(AppActionPermission):
+    """Permission pour dévalider un tableau de bord"""
+    app_name = 'dashboard'
+    action = 'devalidate_tableau_bord'
+
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis le TableauBord via l'UUID dans view.kwargs"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj and hasattr(obj, 'processus'):
+            return str(obj.processus.uuid) if obj.processus else None
+        
+        # Si obj n'est pas fourni (pour has_permission), récupérer depuis view.kwargs
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            tableau_uuid = view.kwargs['uuid']
+            try:
+                from dashboard.models import TableauBord
+                tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
+                if tableau.processus:
+                    return str(tableau.processus.uuid)
+            except TableauBord.DoesNotExist:
+                logger.warning(f"[DashboardTableauDevalidatePermission] TableauBord {tableau_uuid} non trouvé.")
+            except Exception as e:
+                logger.error(f"[DashboardTableauDevalidatePermission] Erreur lors de l'extraction du processus pour TableauBord {tableau_uuid}: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
 class DashboardTableauReadPermission(AppActionPermission):
     """Permission pour lire un tableau de bord"""
     app_name = 'dashboard'
     action = 'read_tableau_bord'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis le TableauBord"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj:
+            if hasattr(obj, 'processus') and obj.processus:
+                if hasattr(obj.processus, 'uuid'):
+                    return str(obj.processus.uuid)
+            if hasattr(obj, 'processus_uuid'):
+                return str(obj.processus_uuid)
+        
+        # Si obj n'est pas fourni (pour has_permission), récupérer depuis view.kwargs
+        if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
+            tableau_uuid = view.kwargs['uuid']
+            try:
+                from dashboard.models import TableauBord
+                tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
+                if tableau.processus:
+                    return str(tableau.processus.uuid)
+            except Exception as e:
+                logger.warning(f"[DashboardTableauReadPermission] Erreur extraction processus depuis tableau {tableau_uuid}: {e}")
+        
+        # Fallback sur la méthode parent pour les autres cas
+        return super()._extract_processus_uuid(request, view, obj)
 
 
 class DashboardAmendementCreatePermission(AppActionPermission):
