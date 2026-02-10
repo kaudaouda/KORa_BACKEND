@@ -55,6 +55,18 @@ def get_dashboard_actions():
             }
         },
         {
+            'code': 'devalidate_tableau_bord',
+            'nom': 'Dévalider un tableau de bord',
+            'description': 'Permet de dévalider un tableau de bord',
+            'category': 'main',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'contributeur': {'granted': False, 'priority': 0},
+                'lecteur': {'granted': False, 'priority': 0},
+                'admin': {'granted': True, 'priority': 8},
+            }
+        },
+        {
             'code': 'read_tableau_bord',
             'nom': 'Lire un tableau de bord',
             'description': 'Permet de consulter un tableau de bord',

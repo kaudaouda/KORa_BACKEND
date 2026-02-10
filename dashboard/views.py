@@ -26,6 +26,7 @@ from permissions.permissions import (
     DashboardTableauUpdatePermission,
     DashboardTableauDeletePermission,
     DashboardTableauValidatePermission,
+    DashboardTableauDevalidatePermission,
     DashboardTableauReadPermission,
     DashboardTableauListCreatePermission,
     DashboardTableauDetailPermission,
@@ -729,6 +730,79 @@ def validate_tableau_bord(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, DashboardTableauDevalidatePermission])
+def devalidate_tableau_bord(request, uuid):
+    """Dévalider un tableau de bord"""
+    try:
+        # Security by Design : La vérification des permissions est gérée par DashboardTableauDevalidatePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère le tableau depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        tableau = TableauBord.objects.select_related('processus').get(uuid=uuid)
+        
+        # Vérifier que le tableau est bien validé
+        if not tableau.is_validated:
+            return Response({
+                'success': False,
+                'error': 'Ce tableau n\'est pas validé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier qu'il n'y a pas d'amendements validés qui dépendent de ce tableau
+        # Si c'est un tableau initial, vérifier les amendements
+        if tableau.type_tableau and tableau.type_tableau.code == 'INITIAL':
+            amendements_valides = TableauBord.objects.filter(
+                initial_ref=tableau,
+                is_validated=True
+            ).exists()
+            if amendements_valides:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de dévalider ce tableau : il existe des amendements validés qui en dépendent'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        # Si c'est un amendement 1, vérifier l'amendement 2
+        elif tableau.type_tableau and tableau.type_tableau.code == 'AMENDEMENT_1':
+            amendement_2_valide = TableauBord.objects.filter(
+                annee=tableau.annee,
+                processus=tableau.processus,
+                type_tableau__code='AMENDEMENT_2',
+                is_validated=True
+            ).exists()
+            if amendement_2_valide:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de dévalider cet amendement : l\'amendement 2 est validé'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Dévalider le tableau
+        tableau.is_validated = False
+        tableau.date_validation = None
+        tableau.valide_par = None
+        tableau.save()
+        
+        logger.info(f"Tableau {tableau.uuid} dévalidé par {request.user.username}")
+        
+        return Response({
+            'success': True,
+            'message': 'Tableau dévalidé avec succès',
+            'data': TableauBordSerializer(tableau).data
+        }, status=status.HTTP_200_OK)
+        
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
+    except TableauBord.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Tableau de bord non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur dévalidation tableau: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la dévalidation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def tableau_bord_objectives(request, uuid):
@@ -780,7 +854,11 @@ def objectives_list(request):
         user_processus_uuids = get_user_processus_list(request.user)
         
         # Filtrer les objectifs pour ne montrer que ceux des tableaux de bord accessibles
-        if user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les objectifs sans filtre
+            objectives = Objectives.objects.all().order_by('number')
+        elif user_processus_uuids:
             objectives = Objectives.objects.filter(
                 tableau_bord__processus__uuid__in=user_processus_uuids
             ).order_by('number')
