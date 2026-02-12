@@ -16,11 +16,20 @@ from .serializers import (
 )
 from dashboard.models import TableauBord, Objectives, Indicateur
 from parametre.models import Periodicite, Cible
-from parametre.permissions import user_has_access_to_processus
+
+# Import des classes de permissions pour l'analyse tableau
+from permissions.permissions import (
+    AnalyseTableauCreatePermission,
+    AnalyseLigneCreatePermission,
+    AnalyseLigneUpdatePermission,
+    AnalyseActionCreatePermission,
+    AnalyseActionUpdatePermission,
+    AnalyseActionDeletePermission,
+)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, AnalyseTableauCreatePermission])
 def create_analyse_tableau(request):
     """
     Créer une analyse pour un tableau de bord donné.
@@ -30,7 +39,7 @@ def create_analyse_tableau(request):
     }
 
     Security by Design :
-    - Vérifie que l'utilisateur a accès au processus du tableau.
+    - Les permissions sont vérifiées AVANT cette fonction via AnalyseTableauCreatePermission
     - Empêche la création multiple d'une analyse pour le même tableau.
 
     Retourne 201 + analyse complète si succès.
@@ -39,21 +48,8 @@ def create_analyse_tableau(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    tableau_uuid = serializer.validated_data.get('tableau_bord_uuid')
-    try:
-        tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
-    except TableauBord.DoesNotExist:
-        return Response(
-            {'detail': 'Tableau de bord introuvable.'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    # Security by Design : vérifier l'accès au processus du tableau
-    if not user_has_access_to_processus(request.user, tableau.processus):
-        return Response(
-            {'detail': 'Accès non autorisé à ce processus.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    # Security by Design : La vérification des permissions est maintenant gérée par AnalyseTableauCreatePermission
+    # via le décorateur @permission_classes
 
     # Création via le serializer (utilise request.user pour cree_par)
     instance = serializer.save()
@@ -70,7 +66,7 @@ def get_analyse_by_tableau(request, tableau_uuid):
     Récupérer l'analyse associée à un tableau de bord (par UUID du tableau).
 
     Security by Design :
-    - Vérifie que l'utilisateur a accès au processus du tableau.
+    - Tous les utilisateurs authentifiés peuvent lire l'analyse (lecture publique)
     """
     try:
         tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
@@ -80,11 +76,7 @@ def get_analyse_by_tableau(request, tableau_uuid):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    if not user_has_access_to_processus(request.user, tableau.processus):
-        return Response(
-            {'detail': 'Accès non autorisé à ce processus.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    # Security by Design : Tous les utilisateurs authentifiés peuvent lire l'analyse (lecture publique)
 
     try:
         analyse = AnalyseTableau.objects.prefetch_related(
@@ -104,7 +96,7 @@ def get_analyse_by_tableau(request, tableau_uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, AnalyseLigneCreatePermission])
 def create_ligne_from_tableau(request):
     """
     Créer une ligne d'analyse pré-remplie à partir d'un objectif,
@@ -122,6 +114,9 @@ def create_ligne_from_tableau(request):
     - Objectif non atteint = libellé de l'objectif
     - Cible = condition + valeur de la Cible de l'indicateur (ex: "≥ 70%")
     - Résultat = taux de la Periodicite pour la période choisie (ex: "75%")
+
+    Security by Design :
+    - Les permissions sont vérifiées AVANT cette fonction via AnalyseLigneCreatePermission
     """
     input_serializer = AnalyseLigneFromTableauCreateSerializer(data=request.data)
     if not input_serializer.is_valid():
@@ -133,19 +128,14 @@ def create_ligne_from_tableau(request):
     indicateur_uuid = data['indicateur_uuid']
     periode = data['periode']
 
-    # 1) Récupérer le tableau + sécurité processus
+    # 1) Récupérer le tableau
+    # Security by Design : La vérification des permissions est maintenant gérée par AnalyseLigneCreatePermission
     try:
         tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
     except TableauBord.DoesNotExist:
         return Response(
             {'detail': 'Tableau de bord introuvable.'},
             status=status.HTTP_404_NOT_FOUND
-        )
-
-    if not user_has_access_to_processus(request.user, tableau.processus):
-        return Response(
-            {'detail': 'Accès non autorisé à ce processus.'},
-            status=status.HTTP_403_FORBIDDEN
         )
 
     # 2) Récupérer l'objectif (et vérifier qu'il appartient bien au tableau)
@@ -238,7 +228,7 @@ def create_ligne_from_tableau(request):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, AnalyseLigneUpdatePermission])
 def update_ligne(request, ligne_uuid):
     """
     Mettre à jour une ligne d'analyse (notamment le champ 'causes').
@@ -249,7 +239,7 @@ def update_ligne(request, ligne_uuid):
     }
 
     Security by Design :
-    - Vérifie que l'utilisateur a accès au processus du tableau de bord.
+    - Les permissions sont vérifiées AVANT cette fonction via AnalyseLigneUpdatePermission
     - Seuls les champs modifiables peuvent être mis à jour (causes).
     - Les champs calculés (objectif, cible, résultat) ne peuvent pas être modifiés.
     """
@@ -265,13 +255,8 @@ def update_ligne(request, ligne_uuid):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    # Security by Design : vérifier l'accès au processus du tableau
-    tableau = ligne.analyse_tableau.tableau_bord
-    if not user_has_access_to_processus(request.user, tableau.processus):
-        return Response(
-            {'detail': 'Accès non autorisé à ce processus.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    # Security by Design : La vérification des permissions est maintenant gérée par AnalyseLigneUpdatePermission
+    # via le décorateur @permission_classes
 
     # Utiliser le serializer de mise à jour (ne permet que 'causes')
     serializer = AnalyseLigneUpdateSerializer(ligne, data=request.data, partial=True)
@@ -287,7 +272,7 @@ def update_ligne(request, ligne_uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, AnalyseActionCreatePermission])
 def create_action(request):
     """
     Créer une action pour une ligne d'analyse.
@@ -307,7 +292,7 @@ def create_action(request):
     }
 
     Security by Design :
-    - Vérifie que l'utilisateur a accès au processus du tableau de bord.
+    - Les permissions sont vérifiées AVANT cette fonction via AnalyseActionCreatePermission
     """
     serializer = AnalyseActionCreateSerializer(data=request.data)
     if not serializer.is_valid():
@@ -316,20 +301,15 @@ def create_action(request):
     # Le serializer DRF convertit automatiquement l'UUID en objet AnalyseLigne
     ligne = serializer.validated_data.get('ligne')
     
-    # Recharger la ligne avec les relations nécessaires pour la vérification de sécurité
+    # Recharger la ligne avec les relations nécessaires
     ligne = AnalyseLigne.objects.select_related(
         'analyse_tableau',
         'analyse_tableau__tableau_bord',
         'analyse_tableau__tableau_bord__processus'
     ).get(uuid=ligne.uuid)
 
-    # Security by Design : vérifier l'accès au processus du tableau
-    tableau = ligne.analyse_tableau.tableau_bord
-    if not user_has_access_to_processus(request.user, tableau.processus):
-        return Response(
-            {'detail': 'Accès non autorisé à ce processus.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    # Security by Design : La vérification des permissions est maintenant gérée par AnalyseActionCreatePermission
+    # via le décorateur @permission_classes
 
     # Mettre à jour validated_data avec la ligne chargée (pour éviter les problèmes de relations)
     serializer.validated_data['ligne'] = ligne
@@ -343,7 +323,7 @@ def create_action(request):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, AnalyseActionUpdatePermission])
 def update_action(request, action_uuid):
     """
     Mettre à jour une action d'analyse.
@@ -356,7 +336,7 @@ def update_action(request, action_uuid):
     }
 
     Security by Design :
-    - Vérifie que l'utilisateur a accès au processus du tableau de bord.
+    - Les permissions sont vérifiées AVANT cette fonction via AnalyseActionUpdatePermission
     """
     try:
         action = AnalyseAction.objects.select_related(
@@ -371,13 +351,8 @@ def update_action(request, action_uuid):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    # Security by Design : vérifier l'accès au processus du tableau
-    tableau = action.ligne.analyse_tableau.tableau_bord
-    if not user_has_access_to_processus(request.user, tableau.processus):
-        return Response(
-            {'detail': 'Accès non autorisé à ce processus.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    # Security by Design : La vérification des permissions est maintenant gérée par AnalyseActionUpdatePermission
+    # via le décorateur @permission_classes
 
     # Utiliser le serializer de mise à jour
     serializer = AnalyseActionUpdateSerializer(action, data=request.data, partial=True)
@@ -393,13 +368,13 @@ def update_action(request, action_uuid):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, AnalyseActionDeletePermission])
 def delete_action(request, action_uuid):
     """
     Supprimer une action d'analyse.
 
     Security by Design :
-    - Vérifie que l'utilisateur a accès au processus du tableau de bord.
+    - Les permissions sont vérifiées AVANT cette fonction via AnalyseActionDeletePermission
     """
     try:
         action = AnalyseAction.objects.select_related(
@@ -414,13 +389,8 @@ def delete_action(request, action_uuid):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    # Security by Design : vérifier l'accès au processus du tableau
-    tableau = action.ligne.analyse_tableau.tableau_bord
-    if not user_has_access_to_processus(request.user, tableau.processus):
-        return Response(
-            {'detail': 'Accès non autorisé à ce processus.'},
-            status=status.HTTP_403_FORBIDDEN
-        )
+    # Security by Design : La vérification des permissions est maintenant gérée par AnalyseActionDeletePermission
+    # via le décorateur @permission_classes
 
     # Supprimer l'action
     action.delete()

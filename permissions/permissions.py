@@ -1201,6 +1201,240 @@ class DashboardObservationDeletePermission(AppActionPermission):
             return None
 
 
+# ==================== ANALYSE TABLEAU ====================
+
+class AnalyseTableauCreatePermission(AppActionPermission):
+    """Permission pour créer une analyse de tableau de bord"""
+    app_name = 'dashboard'
+    action = 'create_analyse_tableau'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis tableau_bord_uuid dans request.data"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj:
+            if hasattr(obj, 'tableau_bord') and obj.tableau_bord:
+                if hasattr(obj.tableau_bord, 'processus') and obj.tableau_bord.processus:
+                    return str(obj.tableau_bord.processus.uuid)
+        
+        # Depuis request.data (si déjà parsé par DRF)
+        if hasattr(request, 'data') and request.data:
+            tableau_bord_uuid = request.data.get('tableau_bord_uuid')
+            if tableau_bord_uuid:
+                try:
+                    from dashboard.models import TableauBord
+                    tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_bord_uuid)
+                    if tableau.processus:
+                        return str(tableau.processus.uuid)
+                except TableauBord.DoesNotExist:
+                    logger.warning(f"[AnalyseTableauCreatePermission] TableauBord {tableau_bord_uuid} non trouvé.")
+                except Exception as e:
+                    logger.error(f"[AnalyseTableauCreatePermission] Erreur extraction processus: {e}")
+        
+        # Fallback pour request.body si request.data n'est pas encore parsé
+        if hasattr(request, 'body') and request.body and request.method == 'POST':
+            try:
+                import json
+                body_data = json.loads(request.body)
+                tableau_bord_uuid = body_data.get('tableau_bord_uuid')
+                if tableau_bord_uuid:
+                    from dashboard.models import TableauBord
+                    tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_bord_uuid)
+                    if tableau.processus:
+                        return str(tableau.processus.uuid)
+            except (json.JSONDecodeError, TableauBord.DoesNotExist, Exception) as e:
+                logger.warning(f"[AnalyseTableauCreatePermission] Erreur extraction depuis body: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class AnalyseLigneCreatePermission(AppActionPermission):
+    """Permission pour créer une ligne d'analyse"""
+    app_name = 'dashboard'
+    action = 'create_analyse_ligne'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis tableau_bord_uuid dans request.data"""
+        # Depuis request.data (si déjà parsé par DRF)
+        if hasattr(request, 'data') and request.data:
+            tableau_bord_uuid = request.data.get('tableau_bord_uuid')
+            if tableau_bord_uuid:
+                try:
+                    from dashboard.models import TableauBord
+                    tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_bord_uuid)
+                    if tableau.processus:
+                        return str(tableau.processus.uuid)
+                except TableauBord.DoesNotExist:
+                    logger.warning(f"[AnalyseLigneCreatePermission] TableauBord {tableau_bord_uuid} non trouvé.")
+                except Exception as e:
+                    logger.error(f"[AnalyseLigneCreatePermission] Erreur extraction processus: {e}")
+        
+        # Fallback pour request.body si request.data n'est pas encore parsé
+        if hasattr(request, 'body') and request.body and request.method == 'POST':
+            try:
+                import json
+                body_data = json.loads(request.body)
+                tableau_bord_uuid = body_data.get('tableau_bord_uuid')
+                if tableau_bord_uuid:
+                    from dashboard.models import TableauBord
+                    tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_bord_uuid)
+                    if tableau.processus:
+                        return str(tableau.processus.uuid)
+            except (json.JSONDecodeError, TableauBord.DoesNotExist, Exception) as e:
+                logger.warning(f"[AnalyseLigneCreatePermission] Erreur extraction depuis body: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class AnalyseLigneUpdatePermission(AppActionPermission):
+    """Permission pour modifier une ligne d'analyse"""
+    app_name = 'dashboard'
+    action = 'update_analyse_ligne'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis la ligne -> analyse_tableau -> tableau_bord -> processus"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj:
+            if hasattr(obj, 'analyse_tableau') and obj.analyse_tableau:
+                if hasattr(obj.analyse_tableau, 'tableau_bord') and obj.analyse_tableau.tableau_bord:
+                    if hasattr(obj.analyse_tableau.tableau_bord, 'processus') and obj.analyse_tableau.tableau_bord.processus:
+                        return str(obj.analyse_tableau.tableau_bord.processus.uuid)
+        
+        # Depuis view.kwargs (pour has_permission)
+        if hasattr(view, 'kwargs') and view.kwargs.get('ligne_uuid'):
+            ligne_uuid = view.kwargs['ligne_uuid']
+            try:
+                from analyse_tableau.models import AnalyseLigne
+                ligne = AnalyseLigne.objects.select_related(
+                    'analyse_tableau__tableau_bord__processus'
+                ).get(uuid=ligne_uuid)
+                if ligne.analyse_tableau and ligne.analyse_tableau.tableau_bord:
+                    if ligne.analyse_tableau.tableau_bord.processus:
+                        return str(ligne.analyse_tableau.tableau_bord.processus.uuid)
+            except AnalyseLigne.DoesNotExist:
+                logger.warning(f"[AnalyseLigneUpdatePermission] AnalyseLigne {ligne_uuid} non trouvée.")
+            except Exception as e:
+                logger.error(f"[AnalyseLigneUpdatePermission] Erreur extraction processus: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class AnalyseActionCreatePermission(AppActionPermission):
+    """Permission pour créer une action d'analyse"""
+    app_name = 'dashboard'
+    action = 'create_analyse_action'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis ligne (UUID) dans request.data -> analyse_tableau -> tableau_bord -> processus"""
+        # Depuis request.data (si déjà parsé par DRF)
+        if hasattr(request, 'data') and request.data:
+            ligne_uuid = request.data.get('ligne')
+            if ligne_uuid:
+                try:
+                    from analyse_tableau.models import AnalyseLigne
+                    # ligne peut être un UUID string ou un objet
+                    ligne_uuid_str = str(ligne_uuid) if not isinstance(ligne_uuid, str) else ligne_uuid
+                    ligne = AnalyseLigne.objects.select_related(
+                        'analyse_tableau__tableau_bord__processus'
+                    ).get(uuid=ligne_uuid_str)
+                    if ligne.analyse_tableau and ligne.analyse_tableau.tableau_bord:
+                        if ligne.analyse_tableau.tableau_bord.processus:
+                            return str(ligne.analyse_tableau.tableau_bord.processus.uuid)
+                except AnalyseLigne.DoesNotExist:
+                    logger.warning(f"[AnalyseActionCreatePermission] AnalyseLigne {ligne_uuid} non trouvée.")
+                except Exception as e:
+                    logger.error(f"[AnalyseActionCreatePermission] Erreur extraction processus: {e}")
+        
+        # Fallback pour request.body si request.data n'est pas encore parsé
+        if hasattr(request, 'body') and request.body and request.method == 'POST':
+            try:
+                import json
+                body_data = json.loads(request.body)
+                ligne_uuid = body_data.get('ligne')
+                if ligne_uuid:
+                    from analyse_tableau.models import AnalyseLigne
+                    ligne_uuid_str = str(ligne_uuid) if not isinstance(ligne_uuid, str) else ligne_uuid
+                    ligne = AnalyseLigne.objects.select_related(
+                        'analyse_tableau__tableau_bord__processus'
+                    ).get(uuid=ligne_uuid_str)
+                    if ligne.analyse_tableau and ligne.analyse_tableau.tableau_bord:
+                        if ligne.analyse_tableau.tableau_bord.processus:
+                            return str(ligne.analyse_tableau.tableau_bord.processus.uuid)
+            except (json.JSONDecodeError, AnalyseLigne.DoesNotExist, Exception) as e:
+                logger.warning(f"[AnalyseActionCreatePermission] Erreur extraction depuis body: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class AnalyseActionUpdatePermission(AppActionPermission):
+    """Permission pour modifier une action d'analyse"""
+    app_name = 'dashboard'
+    action = 'update_analyse_action'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'action -> ligne -> analyse_tableau -> tableau_bord -> processus"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj:
+            if hasattr(obj, 'ligne') and obj.ligne:
+                if hasattr(obj.ligne, 'analyse_tableau') and obj.ligne.analyse_tableau:
+                    if hasattr(obj.ligne.analyse_tableau, 'tableau_bord') and obj.ligne.analyse_tableau.tableau_bord:
+                        if hasattr(obj.ligne.analyse_tableau.tableau_bord, 'processus') and obj.ligne.analyse_tableau.tableau_bord.processus:
+                            return str(obj.ligne.analyse_tableau.tableau_bord.processus.uuid)
+        
+        # Depuis view.kwargs (pour has_permission)
+        if hasattr(view, 'kwargs') and view.kwargs.get('action_uuid'):
+            action_uuid = view.kwargs['action_uuid']
+            try:
+                from analyse_tableau.models import AnalyseAction
+                action = AnalyseAction.objects.select_related(
+                    'ligne__analyse_tableau__tableau_bord__processus'
+                ).get(uuid=action_uuid)
+                if action.ligne and action.ligne.analyse_tableau:
+                    if action.ligne.analyse_tableau.tableau_bord:
+                        if action.ligne.analyse_tableau.tableau_bord.processus:
+                            return str(action.ligne.analyse_tableau.tableau_bord.processus.uuid)
+            except AnalyseAction.DoesNotExist:
+                logger.warning(f"[AnalyseActionUpdatePermission] AnalyseAction {action_uuid} non trouvée.")
+            except Exception as e:
+                logger.error(f"[AnalyseActionUpdatePermission] Erreur extraction processus: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
+class AnalyseActionDeletePermission(AppActionPermission):
+    """Permission pour supprimer une action d'analyse"""
+    app_name = 'dashboard'
+    action = 'delete_analyse_action'
+    
+    def _extract_processus_uuid(self, request, view, obj=None):
+        """Extrait le processus_uuid depuis l'action -> ligne -> analyse_tableau -> tableau_bord -> processus"""
+        # Si obj est fourni (pour has_object_permission)
+        if obj:
+            if hasattr(obj, 'ligne') and obj.ligne:
+                if hasattr(obj.ligne, 'analyse_tableau') and obj.ligne.analyse_tableau:
+                    if hasattr(obj.ligne.analyse_tableau, 'tableau_bord') and obj.ligne.analyse_tableau.tableau_bord:
+                        if hasattr(obj.ligne.analyse_tableau.tableau_bord, 'processus') and obj.ligne.analyse_tableau.tableau_bord.processus:
+                            return str(obj.ligne.analyse_tableau.tableau_bord.processus.uuid)
+        
+        # Depuis view.kwargs (pour has_permission)
+        if hasattr(view, 'kwargs') and view.kwargs.get('action_uuid'):
+            action_uuid = view.kwargs['action_uuid']
+            try:
+                from analyse_tableau.models import AnalyseAction
+                action = AnalyseAction.objects.select_related(
+                    'ligne__analyse_tableau__tableau_bord__processus'
+                ).get(uuid=action_uuid)
+                if action.ligne and action.ligne.analyse_tableau:
+                    if action.ligne.analyse_tableau.tableau_bord:
+                        if action.ligne.analyse_tableau.tableau_bord.processus:
+                            return str(action.ligne.analyse_tableau.tableau_bord.processus.uuid)
+            except AnalyseAction.DoesNotExist:
+                logger.warning(f"[AnalyseActionDeletePermission] AnalyseAction {action_uuid} non trouvée.")
+            except Exception as e:
+                logger.error(f"[AnalyseActionDeletePermission] Erreur extraction processus: {e}")
+        
+        return super()._extract_processus_uuid(request, view, obj)
+
+
 # ==================== PERMISSIONS MULTI-MÉTHODES ====================
 
 class DashboardTableauListCreatePermission(BasePermission):

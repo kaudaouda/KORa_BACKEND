@@ -283,5 +283,78 @@ def get_dashboard_actions():
                 'lecteur': {'granted': False, 'priority': 0},
             }
         },
+        # ==================== ANALYSE TABLEAU ====================
+        {
+            'code': 'create_analyse_tableau',
+            'nom': 'Créer une analyse de tableau',
+            'description': 'Permet de créer une analyse pour un tableau de bord',
+            'category': 'analyse',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'contributeur': {'granted': True, 'priority': 5},
+                'lecteur': {'granted': False, 'priority': 0},
+                'admin': {'granted': True, 'priority': 8},
+            }
+        },
+        {
+            'code': 'create_analyse_ligne',
+            'nom': 'Créer une ligne d\'analyse',
+            'description': 'Permet de créer une ligne d\'analyse pour un tableau de bord',
+            'category': 'analyse',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'contributeur': {'granted': True, 'priority': 5},
+                'lecteur': {'granted': False, 'priority': 0},
+                'admin': {'granted': True, 'priority': 8},
+            }
+        },
+        {
+            'code': 'update_analyse_ligne',
+            'nom': 'Modifier une ligne d\'analyse',
+            'description': 'Permet de modifier une ligne d\'analyse (causes)',
+            'category': 'analyse',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
+                'lecteur': {'granted': False, 'priority': 0},
+                'admin': {'granted': True, 'priority': 8},
+            }
+        },
+        {
+            'code': 'create_analyse_action',
+            'nom': 'Créer une action d\'analyse',
+            'description': 'Permet de créer une action pour une ligne d\'analyse',
+            'category': 'analyse',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'contributeur': {'granted': True, 'priority': 5},
+                'lecteur': {'granted': False, 'priority': 0},
+                'admin': {'granted': True, 'priority': 8},
+            }
+        },
+        {
+            'code': 'update_analyse_action',
+            'nom': 'Modifier une action d\'analyse',
+            'description': 'Permet de modifier une action d\'analyse',
+            'category': 'analyse',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
+                'lecteur': {'granted': False, 'priority': 0},
+                'admin': {'granted': True, 'priority': 8},
+            }
+        },
+        {
+            'code': 'delete_analyse_action',
+            'nom': 'Supprimer une action d\'analyse',
+            'description': 'Permet de supprimer une action d\'analyse',
+            'category': 'analyse',
+            'role_mappings': {
+                'validateur': {'granted': True, 'priority': 10},
+                'admin': {'granted': True, 'priority': 8},
+                'contributeur': {'granted': False, 'priority': 0},
+                'lecteur': {'granted': False, 'priority': 0},
+            }
+        },
     ]
 
