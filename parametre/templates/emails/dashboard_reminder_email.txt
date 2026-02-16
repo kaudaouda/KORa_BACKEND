@@ -1,0 +1,37 @@
+================================================================
+KORA - Autorité Nationale de l'Aviation Civile (ANAC)
+Rappel Tableau de bord
+================================================================
+
+Bonjour {{ user_name }},
+
+Un indicateur nécessite votre attention. Veuillez compléter les
+données de la période concernée.
+
+----------------------------------------------------------------
+DÉTAILS DE L'INDICATEUR
+----------------------------------------------------------------
+
+Objectif       : {{ objective_number }} - {{ objective_libelle }}
+Indicateur     : {{ indicateur_libelle }}
+Fréquence      : {{ frequence }}
+Période        : {{ periode_name }}
+Date de fin    : {{ periode_end_date }}
+Statut         : {{ message }}
+
+================================================================
+
+ACTION REQUISE
+
+Accédez au tableau de bord pour compléter les données:
+{{ dashboard_url }}
+
+================================================================
+
+Cordialement,
+L'équipe KORA
+Autorité Nationale de l'Aviation Civile (ANAC)
+
+---
+Message automatique envoyé par KORA
+Merci de ne pas répondre à cet email

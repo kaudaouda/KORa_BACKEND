@@ -4,4 +4,6 @@ django-cors-headers
 djangorestframework-simplejwt
 python-dotenv
 requests
+apscheduler==3.10.4
+django-apscheduler==0.7.0
 

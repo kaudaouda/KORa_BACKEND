@@ -1,0 +1,132 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>KORA - Rappel d'échéances</title>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td {font-family: Arial, sans-serif !important;}
+    </style>
+    <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; background-color: #F5F5F5;">
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F5F5F5;">
+        <tr>
+            <td align="center" style="padding: 20px 0;">
+                <!-- Container principal -->
+                <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #FFFFFF; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    
+                    <!-- Header avec logo et titre -->
+                    <tr>
+                        <td style="background-color: #1E40AF; padding: 30px 40px; text-align: center;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <h1 style="margin: 0 0 8px 0; color: #FFFFFF; font-size: 32px; font-weight: bold; font-family: Arial, sans-serif; letter-spacing: 2px;">KORA</h1>
+                                        <p style="margin: 0 0 4px 0; color: #BFDBFE; font-size: 14px; font-family: Arial, sans-serif; font-weight: 500;">Autorité Nationale de l'Aviation Civile</p>
+                                        <div style="width: 60px; height: 3px; background-color: #F97316; margin: 12px auto 8px auto;"></div>
+                                        <p style="margin: 0; color: #FFFFFF; font-size: 16px; font-family: Arial, sans-serif; font-weight: 600;">Rappel d'échéances</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Contenu principal -->
+                    <tr>
+                        <td style="padding: 40px 40px 30px 40px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td>
+                                        <p style="margin: 0 0 20px 0; color: #1F2937; font-size: 15px; font-family: Arial, sans-serif; line-height: 1.6;">
+                                            Madame, Monsieur <strong style="color: #1E40AF;">{{ user_name }}</strong>,
+                                        </p>
+                                        
+                                        <p style="margin: 0 0 30px 0; color: #4B5563; font-size: 14px; font-family: Arial, sans-serif; line-height: 1.6;">
+                                            Vous avez <strong>{{ notifications|length }}</strong> échéance(s) approchant dans le système KORA. Veuillez prendre les mesures nécessaires pour respecter les délais.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Liste des notifications -->
+                            {% for notification in notifications %}
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 16px; background-color: #F9FAFB; border: 2px solid #E5E7EB; border-radius: 6px;">
+                                <tr>
+                                    <td style="padding: 0;">
+                                        <!-- Barre de couleur latérale -->
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="6" style="background-color: {{ notification.priority_color }}; border-radius: 6px 0 0 6px;"></td>
+                                                <td style="padding: 18px 20px;">
+                                                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                                        <tr>
+                                                            <td>
+                                                                <h3 style="margin: 0 0 10px 0; color: #111827; font-size: 16px; font-family: Arial, sans-serif; font-weight: 600;">
+                                                                    {{ notification.title }}
+                                                                </h3>
+                                                                <p style="margin: 0 0 12px 0; color: #4B5563; font-size: 14px; font-family: Arial, sans-serif; line-height: 1.5;">
+                                                                    {{ notification.message }}
+                                                                </p>
+                                                                <table border="0" cellpadding="0" cellspacing="0">
+                                                                    <tr>
+                                                                        <td style="background-color: #FFFFFF; padding: 6px 12px; border-radius: 4px; border: 1px solid #E5E7EB;">
+                                                                            <span style="color: #6B7280; font-size: 13px; font-family: Arial, sans-serif;">
+                                                                                Échéance: <strong style="color: #DC2626;">{{ notification.due_date_formatted }}</strong>
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endfor %}
+                            
+                            <!-- Appel à l'action -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
+                                <tr>
+                                    <td style="padding: 20px; background-color: #EFF6FF; border-radius: 6px; border-left: 4px solid #1E40AF;">
+                                        <p style="margin: 0; color: #1E40AF; font-size: 13px; font-family: Arial, sans-serif; line-height: 1.6;">
+                                            <strong>Important :</strong> Connectez-vous au système KORA pour traiter ces échéances dans les meilleurs délais.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #F9FAFB; padding: 30px 40px; border-top: 1px solid #E5E7EB;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <p style="margin: 0 0 8px 0; color: #6B7280; font-size: 12px; font-family: Arial, sans-serif;">
+                                            <strong>Autorité Nationale de l'Aviation Civile (ANAC)</strong>
+                                        </p>
+                                        <p style="margin: 0 0 4px 0; color: #9CA3AF; font-size: 11px; font-family: Arial, sans-serif;">
+                                            Message automatique envoyé par KORA le {{ current_date }}
+                                        </p>
+                                        <p style="margin: 0; color: #9CA3AF; font-size: 11px; font-family: Arial, sans-serif;">
+                                            Merci de ne pas répondre à cet email
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                </table>
+                <!-- Fin du container principal -->
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
