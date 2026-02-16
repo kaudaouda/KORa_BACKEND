@@ -38,7 +38,6 @@ print("Test 2 : Verification des commandes de rappel...")
 import os.path
 commands_dir = "parametre/management/commands"
 commands = [
-    "send_reminders.py",
     "send_dashboard_reminders.py",
     "send_reminders_secure.py"
 ]
@@ -128,10 +127,14 @@ print()
 if config_ok and users_ok:
     print("[OK] Le systeme de rappels est OPERATIONNEL")
     print()
-    print("Pour envoyer des rappels automatiques:")
-    print("1. Configurez un cron/tache planifiee")
-    print("2. Executez: python manage.py send_reminders_secure")
-    print("3. Ou: python manage.py send_dashboard_reminders")
+    print("Le scheduler APScheduler est configure et demarrera automatiquement")
+    print("avec le serveur Django. Les rappels seront envoyes:")
+    print("- Rappels de traitements: chaque jour a 8h00")
+    print("- Rappels de tableaux de bord: chaque jour a 8h30")
+    print()
+    print("Pour tester manuellement:")
+    print("1. python manage.py send_reminders_secure --dry-run")
+    print("2. python manage.py send_dashboard_reminders --dry-run")
 else:
     print("[WARNING] Le systeme necessite une configuration")
     if not config_ok:

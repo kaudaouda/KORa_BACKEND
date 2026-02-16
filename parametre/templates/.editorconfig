@@ -1,0 +1,4 @@
+# Templates Django - ignorer les erreurs CSS car les variables Django sont remplacées au runtime
+[*.html]
+# Les linters CSS ne comprennent pas les variables Django template {{ }}
+# Ces "erreurs" sont des faux positifs - le code fonctionne correctement

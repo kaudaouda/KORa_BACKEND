@@ -25,7 +25,7 @@ class Command(BaseCommand):
         email_settings = EmailSettings.get_solo()
         
         # Vérifier que la configuration email est complète
-        if not email_settings.email_host_user or not email_settings.email_host_password:
+        if not email_settings.email_host_user or not email_settings.get_password():
             self.stderr.write(self.style.ERROR("Configuration email incomplète. Veuillez configurer EMAIL_HOST_USER et EMAIL_HOST_PASSWORD dans l'admin."))
             return
 
@@ -158,62 +158,24 @@ class Command(BaseCommand):
         
         subject = f"KORA - {subject_prefix} Indicateur {indicateur.objective_id.number}"
         
-        html_body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px 8px 0 0;">
-                    <h2 style="margin: 0;">KORA - Tableau de bord</h2>
-                </div>
-                
-                <div style="background: #f9f9f9; padding: 20px; border-radius: 0 0 8px 8px;">
-                    <p>Bonjour {user.first_name or user.username},</p>
-                    
-                    <div style="background: white; padding: 15px; border-left: 4px solid #667eea; margin: 20px 0;">
-                        <p style="margin: 0;"><strong>Objectif:</strong> {objective.number} - {objective.libelle}</p>
-                        <p style="margin: 5px 0;"><strong>Indicateur:</strong> {indicateur.libelle}</p>
-                        <p style="margin: 5px 0;"><strong>Fréquence:</strong> {indicateur.frequence_id.nom}</p>
-                        <p style="margin: 5px 0;"><strong>Période:</strong> {periode_name}</p>
-                        <p style="margin: 5px 0;"><strong>Date de fin:</strong> {periode_end_date.strftime('%d/%m/%Y')}</p>
-                        <p style="margin: 5px 0;"><strong>Statut:</strong> {message}</p>
-                    </div>
-                    
-                    <p>Veuillez compléter les données de la période dans KORA.</p>
-                    
-                    <div style="text-align: center; margin: 20px 0;">
-                        <a href="{getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173')}/dashboard" 
-                           style="background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                            Accéder au tableau de bord
-                        </a>
-                    </div>
-                    
-                    <p style="color: #666; font-size: 0.9em; margin-top: 30px;">
-                        Cordialement,<br>
-                        L'équipe KORA
-                    </p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        # Préparer le contexte pour les templates
+        from django.template.loader import render_to_string
         
-        text_body = f"""
-KORA - Tableau de bord
-
-Bonjour {user.first_name or user.username},
-
-Objectif: {objective.number} - {objective.libelle}
-Indicateur: {indicateur.libelle}
-Fréquence: {indicateur.frequence_id.nom}
-Période: {periode_name}
-Date de fin: {periode_end_date.strftime('%d/%m/%Y')}
-Statut: {message}
-
-Veuillez compléter les données de la période dans KORA.
-
-Cordialement,
-L'équipe KORA
-        """
+        context = {
+            'user_name': user.first_name or user.username,
+            'objective_number': objective.number,
+            'objective_libelle': objective.libelle,
+            'indicateur_libelle': indicateur.libelle,
+            'frequence': indicateur.frequence_id.nom,
+            'periode_name': periode_name,
+            'periode_end_date': periode_end_date.strftime('%d/%m/%Y'),
+            'message': message,
+            'dashboard_url': f"{getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173')}/dashboard"
+        }
+        
+        # Rendre les templates
+        html_body = render_to_string('emails/dashboard_reminder_email.html', context)
+        text_body = render_to_string('emails/dashboard_reminder_email.txt', context)
         
         # Générer un hash du contexte pour éviter les doublons
         context_key = f"{user.email}:{indicateur.uuid}:{periode_name}:{periode_end_date}:{notification_type}"

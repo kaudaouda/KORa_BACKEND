@@ -327,12 +327,17 @@ def log_traitement_creation(user, traitement, ip_address=None, user_agent=None):
     """
     Log spécifique pour la création d'un traitement
     """
+    # numero_pac est sur DetailsPac, pas sur Pac
+    numero_pac = 'N/A'
+    if traitement.details_pac and traitement.details_pac.numero_pac:
+        numero_pac = traitement.details_pac.numero_pac
+    
     return log_activity(
         user=user,
         action='create',
         entity_type='traitement',
         entity_id=str(traitement.uuid),
-        entity_name=f"Traitement pour PAC {traitement.pac.numero_pac}",
+        entity_name=f"Traitement pour PAC {numero_pac}",
         description=f"Création d'un traitement: {traitement.action[:50]}...",
         ip_address=ip_address,
         user_agent=user_agent
@@ -343,12 +348,17 @@ def log_suivi_creation(user, suivi, ip_address=None, user_agent=None):
     """
     Log spécifique pour la création d'un suivi
     """
+    # numero_pac est sur DetailsPac, pas sur Pac
+    numero_pac = 'N/A'
+    if suivi.traitement and suivi.traitement.details_pac and suivi.traitement.details_pac.numero_pac:
+        numero_pac = suivi.traitement.details_pac.numero_pac
+    
     return log_activity(
         user=user,
         action='create',
         entity_type='suivi',
         entity_id=str(suivi.uuid),
-        entity_name=f"Suivi pour PAC {suivi.traitement.pac.numero_pac}",
+        entity_name=f"Suivi pour PAC {numero_pac}",
         description=f"Création d'un suivi: {suivi.etat_mise_en_oeuvre.nom}",
         ip_address=ip_address,
         user_agent=user_agent
@@ -1590,10 +1600,15 @@ def upcoming_notifications(request):
             # Libellé de délai + jours restants entre parenthèses
             delai_label = f"{traitement.delai_realisation.strftime('%d/%m/%Y')} ({days_until_due} jour{'s' if days_until_due > 1 else ''})"
 
+            # Récupérer le numéro PAC depuis DetailsPac (numero_pac est sur DetailsPac, pas sur Pac)
+            numero_pac = 'N/A'
+            if traitement.details_pac:
+                numero_pac = traitement.details_pac.numero_pac or 'N/A'
+            
             notifications.append({
                 'id': f'traitement_{traitement.uuid}',
                 'type': 'traitement',
-                'title': f"{traitement.details_pac.pac.numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}",
+                'title': f"{numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}",
                 'message': f"Délai de réalisation dans {days_until_due} jour{'s' if days_until_due > 1 else ''}",
                 'due_date': traitement.delai_realisation.isoformat(),
                 'priority': priority,
