@@ -3,7 +3,7 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>KORA - Rappel Tableau de bord</title>
+    <title>KORA - Alerte Admin</title>
     <style type="text/css">
         {% include 'emails/email_styles.css' %}
     </style>
@@ -22,14 +22,14 @@
                     
                     <!-- Header -->
                     <tr>
-                        <td class="email-header-dashboard">
+                        <td class="email-header-admin">
                             <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                 <tr>
                                     <td align="center">
                                         <h1 class="email-logo">KORA</h1>
-                                        <p class="email-subtitle email-subtitle-dashboard">Autorité Nationale de l'Aviation Civile</p>
+                                        <p class="email-subtitle email-subtitle-admin">Autorité Nationale de l'Aviation Civile</p>
                                         <div class="email-divider"></div>
-                                        <p class="email-title">Rappel Tableau de bord</p>
+                                        <p class="email-title">Alerte Administration</p>
                                     </td>
                                 </tr>
                             </table>
@@ -43,74 +43,73 @@
                                 <tr>
                                     <td>
                                         <p class="email-greeting">
-                                            Bonjour <strong class="color-dashboard">{{ user_name }}</strong>,
+                                            <strong>Échéances approchant :</strong> {{ total_unique_pacs }} PAC{% if total_unique_pacs > 1 %}s arrivent{% else %} arrive{% endif %} bientôt à échéance.
                                         </p>
                                         
                                         <p class="email-text-small">
-                                            Un indicateur nécessite votre attention. Veuillez compléter les données de la période concernée.
+                                            Des emails de rappel automatiques ont été envoyés le <strong>{{ current_date }}</strong> à <strong>{{ total_users }}</strong> responsable{{ total_users|pluralize }} concerné{{ total_users|pluralize }} ({{ user_names|join:", " }}).
                                         </p>
                                     </td>
                                 </tr>
                             </table>
                             
-                            <!-- Détails de l'indicateur -->
-                            <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-card">
+                            <!-- Liste des PACs -->
+                            {% for notification in notifications %}
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-card" style="background-color: #FEF2F2; border: 2px solid #FEE2E2;">
                                 <tr>
                                     <td style="padding: 0;">
                                         <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                             <tr>
-                                                <td width="6" class="notification-priority-bar" style="background-color: #7C3AED;"></td>
+                                                <td width="6" class="notification-priority-bar priority-{{ notification.priority|default:'medium' }}"></td>
                                                 <td class="notification-card-content" style="padding: 20px;">
                                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                                         <tr>
                                                             <td>
+                                                                <h3 class="notification-title">
+                                                                    PAC {{ notification.numero_pac }}
+                                                                </h3>
+                                                                
                                                                 <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-details-table">
                                                                     <tr>
-                                                                        <td class="notification-label">
-                                                                            <strong>Objectif:</strong>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Processus:</strong>
                                                                         </td>
                                                                         <td class="notification-value">
-                                                                            {{ objective_number }} - {{ objective_libelle }}
+                                                                            {{ notification.processus_name }}
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td class="notification-label">
-                                                                            <strong>Indicateur:</strong>
-                                                                        </td>
-                                                                        <td class="notification-value">
-                                                                            {{ indicateur_libelle }}
-                                                                        </td>
-                                                                    </tr>
-                                                                    <tr>
-                                                                        <td class="notification-label">
-                                                                            <strong>Fréquence:</strong>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Action:</strong>
                                                                         </td>
                                                                         <td class="notification-value notification-value-secondary">
-                                                                            {{ frequence }}
+                                                                            {{ notification.action }}
                                                                         </td>
                                                                     </tr>
+                                                                    {% if notification.nature_label %}
                                                                     <tr>
-                                                                        <td class="notification-label">
-                                                                            <strong>Période:</strong>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Nature:</strong>
                                                                         </td>
                                                                         <td class="notification-value notification-value-secondary">
-                                                                            {{ periode_name }}
+                                                                            {{ notification.nature_label }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    {% endif %}
+                                                                    <tr>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Échéance:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-urgent">
+                                                                            {{ notification.due_date_formatted }}
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td class="notification-label">
-                                                                            <strong>Date de fin:</strong>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Jours restants:</strong>
                                                                         </td>
-                                                                        <td class="notification-value notification-value-secondary" style="font-weight: 600;">
-                                                                            {{ periode_end_date }}
-                                                                        </td>
-                                                                    </tr>
-                                                                    <tr>
-                                                                        <td class="notification-label" style="padding: 8px 0 4px 0;">
-                                                                            <strong>Statut:</strong>
-                                                                        </td>
-                                                                        <td class="notification-value notification-value-urgent" style="padding: 8px 0 4px 0;">
-                                                                            {{ message }}
+                                                                        <td class="notification-value notification-value-urgent">
+                                                                            {{ notification.days_remaining }} jour{{ notification.days_remaining|pluralize }}
                                                                         </td>
                                                                     </tr>
                                                                 </table>
@@ -123,20 +122,15 @@
                                     </td>
                                 </tr>
                             </table>
+                            {% endfor %}
                             
-                            <!-- Bouton d'action -->
+                            <!-- Note importante -->
                             <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
                                 <tr>
-                                    <td align="center">
-                                        <table border="0" cellpadding="0" cellspacing="0">
-                                            <tr>
-                                                <td align="center" style="border-radius: 6px; background-color: #7C3AED;">
-                                                    <a href="{{ dashboard_url }}" target="_blank" style="font-size: 15px; font-family: Arial, sans-serif; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 6px; padding: 14px 32px; display: inline-block;">
-                                                        Accéder au tableau de bord
-                                                    </a>
-                                                </td>
-                                            </tr>
-                                        </table>
+                                    <td class="alert-box alert-warning">
+                                        <p style="margin: 0;">
+                                            <strong>Note :</strong> Email d'information automatique. Les responsables concernés ont été notifiés et disposent des détails nécessaires pour traiter les échéances.
+                                        </p>
                                     </td>
                                 </tr>
                             </table>
@@ -153,10 +147,10 @@
                                             <strong>Autorité Nationale de l'Aviation Civile (ANAC)</strong>
                                         </p>
                                         <p class="footer-text-small">
-                                            Message automatique envoyé par KORA
+                                            Message automatique envoyé par KORA le {{ current_date }}
                                         </p>
                                         <p class="footer-text-small-last">
-                                            Merci de ne pas répondre à cet email
+                                            Email d'information administrative - Merci de ne pas répondre
                                         </p>
                                     </td>
                                 </tr>

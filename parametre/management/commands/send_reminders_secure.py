@@ -19,6 +19,7 @@ from django.db import transaction
 
 from parametre.models import ReminderEmailLog, EmailSettings, UserProcessusRole, Role
 from parametre.views import upcoming_notifications, get_client_ip
+from pac.models import TraitementPac
 from parametre.utils.email_security import (
     EmailValidator,
     EmailContentSanitizer,
@@ -94,36 +95,49 @@ class Command(BaseCommand):
                 return
 
         # ===== ÉTAPE 3 : Récupération des utilisateurs éligibles =====
-        # Filtrer les utilisateurs qui ont les rôles "admin", "contributeur" ou "responsable_processus"
-        # pour au moins un processus
+        # Séparer les admins des utilisateurs normaux
+        # Les admins ne reçoivent QUE l'email récapitulatif admin
+        # Les utilisateurs normaux (contributeur, responsable_processus) reçoivent l'email de rappel
         
-        # Récupérer les IDs des rôles "admin", "contributeur" et "responsable_processus"
-        allowed_role_codes = ['admin', 'contributeur', 'responsable_processus']
-        allowed_roles = Role.objects.filter(
-            code__in=allowed_role_codes,
+        # Récupérer le rôle admin
+        admin_role = Role.objects.filter(code='admin', is_active=True).first()
+        
+        # Récupérer les rôles pour les utilisateurs normaux
+        normal_user_role_codes = ['contributeur', 'responsable_processus']
+        normal_user_roles = Role.objects.filter(
+            code__in=normal_user_role_codes,
             is_active=True
         )
         
-        if not allowed_roles.exists():
+        if not normal_user_roles.exists():
             self.stderr.write(self.style.ERROR(
-                "Aucun rôle 'admin', 'contributeur' ou 'responsable_processus' trouvé dans la base de données.\n"
+                "Aucun rôle 'contributeur' ou 'responsable_processus' trouvé dans la base de données.\n"
                 "   Veuillez exécuter: python manage.py seed_roles"
             ))
             return
         
-        # Récupérer les utilisateurs qui ont au moins un de ces rôles pour au moins un processus
-        # et qui sont actifs avec un email valide
+        # Récupérer les utilisateurs NORMaux (contributeur, responsable_processus) qui recevront l'email de rappel
+        # EXCLURE les admins de cette liste
         users_with_roles = User.objects.filter(
             is_active=True,
             email__isnull=False
         ).exclude(email='').filter(
-            user_processus_roles__role__in=allowed_roles,
+            user_processus_roles__role__in=normal_user_roles,
             user_processus_roles__is_active=True
-        ).distinct()
+        )
+        
+        # Exclure les utilisateurs qui ont AUSSI le rôle admin
+        if admin_role:
+            users_with_roles = users_with_roles.exclude(
+                user_processus_roles__role=admin_role,
+                user_processus_roles__is_active=True
+            )
+        
+        users_with_roles = users_with_roles.distinct()
         
         users_count = users_with_roles.count()
         self.stdout.write(self.style.SUCCESS(
-            f"{users_count} utilisateur(s) avec les rôles 'admin', 'contributeur' ou 'responsable_processus' trouvé(s)"
+            f"{users_count} utilisateur(s) avec les rôles 'contributeur' ou 'responsable_processus' trouvé(s) (admins exclus)"
         ))
         
         if users_count == 0:
@@ -138,6 +152,9 @@ class Command(BaseCommand):
         total_emails = 0
         total_errors = 0
         total_skipped = 0
+        
+        # Collecter toutes les notifications pour l'alerte admin globale
+        all_notifications_for_admin = []
 
         for user in users_with_roles:
             # Valider l'email de l'utilisateur
@@ -188,10 +205,26 @@ class Command(BaseCommand):
 
             if success:
                 total_emails += 1
+                
+                # ===== ÉTAPE 5.1 : Collecter pour l'alerte admin globale =====
+                # Ajouter les notifications de cet utilisateur à la liste globale
+                all_notifications_for_admin.append({
+                    'user': user,
+                    'notifications': notifications
+                })
+                    
             elif success is False:
                 total_errors += 1
             else:  # None = skipped
                 total_skipped += 1
+
+        # ===== ÉTAPE 5.2 : Envoyer UN SEUL email récapitulatif aux admins =====
+        if all_notifications_for_admin:
+            try:
+                self.send_admin_alert_global(all_notifications_for_admin, email_settings, dry_run)
+            except Exception as e:
+                logger.error(f"Erreur lors de l'envoi de l'alerte admin globale: {str(e)}")
+                # Ne pas bloquer le processus si l'alerte admin échoue
 
         # ===== ÉTAPE 6 : Rapport final =====
         if dry_run:
@@ -383,7 +416,7 @@ class Command(BaseCommand):
         )
         current_date = datetime.now().strftime("%d/%m/%Y à %H:%M")
 
-        # Préparer les notifications avec sanitization et formatage
+        # Préparer les notifications avec sanitization et formatage enrichi
         sanitized_notifications = []
         for n in notifications:
             title = EmailContentSanitizer.sanitize_html(n.get('title', 'Échéance'))
@@ -402,12 +435,46 @@ class Command(BaseCommand):
                 due_date_formatted = datetime.fromisoformat(due.replace('Z', '+00:00')).strftime("%d/%m/%Y")
             except:
                 due_date_formatted = EmailContentSanitizer.sanitize_html(str(due))
+            
+            # Enrichir avec les détails complets du PAC
+            entity_id = n.get('entity_id')
+            numero_pac = "N/A"
+            processus_name = "N/A"
+            action = message  # Fallback
+            nature_label = None
+            days_remaining = n.get('days_remaining', 0)
+            
+            if entity_id:
+                try:
+                    traitement = TraitementPac.objects.select_related(
+                        'details_pac__pac__processus'
+                    ).get(uuid=entity_id)
+                    
+                    if traitement.details_pac:
+                        numero_pac = traitement.details_pac.numero_pac or "N/A"
+                    
+                    if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
+                        processus_name = traitement.details_pac.pac.processus.nom
+                    
+                    action = traitement.action[:100] if traitement.action else message
+                    nature_label = n.get('nature_label')
+                    
+                except TraitementPac.DoesNotExist:
+                    logger.warning(f"Traitement {entity_id} non trouvé pour email utilisateur")
+                except Exception as e:
+                    logger.error(f"Erreur lors de l'enrichissement {entity_id}: {str(e)}")
 
             sanitized_notifications.append({
                 'title': title,
                 'message': message,
                 'due_date_formatted': due_date_formatted,
-                'priority_color': priority_color
+                'priority': priority,
+                'priority_color': priority_color,
+                'numero_pac': numero_pac,
+                'processus_name': processus_name,
+                'action': action,
+                'nature_label': nature_label,
+                'days_remaining': days_remaining
             })
 
         # Contexte pour le template
@@ -431,12 +498,40 @@ class Command(BaseCommand):
         user_name = user.get_full_name() or user.username
         current_date = datetime.now().strftime("%d/%m/%Y à %H:%M")
 
-        # Préparer les notifications avec formatage
+        # Préparer les notifications avec formatage enrichi
         formatted_notifications = []
         for n in notifications:
             title = n.get('title', 'Échéance')
             message = n.get('message', '')
             due = n.get('due_date', '')
+            
+            # Enrichir avec les détails complets du PAC
+            entity_id = n.get('entity_id')
+            numero_pac = "N/A"
+            processus_name = "N/A"
+            action = message  # Fallback
+            nature_label = None
+            days_remaining = n.get('days_remaining', 0)
+            
+            if entity_id:
+                try:
+                    traitement = TraitementPac.objects.select_related(
+                        'details_pac__pac__processus'
+                    ).get(uuid=entity_id)
+                    
+                    if traitement.details_pac:
+                        numero_pac = traitement.details_pac.numero_pac or "N/A"
+                    
+                    if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
+                        processus_name = traitement.details_pac.pac.processus.nom
+                    
+                    action = traitement.action[:100] if traitement.action else message
+                    nature_label = n.get('nature_label')
+                    
+                except TraitementPac.DoesNotExist:
+                    logger.warning(f"Traitement {entity_id} non trouvé pour email utilisateur")
+                except Exception as e:
+                    logger.error(f"Erreur lors de l'enrichissement {entity_id}: {str(e)}")
 
             # Formater la date
             try:
@@ -447,7 +542,12 @@ class Command(BaseCommand):
             formatted_notifications.append({
                 'title': title,
                 'message': message,
-                'due_date_formatted': due_date_formatted
+                'due_date_formatted': due_date_formatted,
+                'numero_pac': numero_pac,
+                'processus_name': processus_name,
+                'action': action,
+                'nature_label': nature_label,
+                'days_remaining': days_remaining
             })
 
         # Contexte pour le template
@@ -459,6 +559,190 @@ class Command(BaseCommand):
 
         # Rendre le template
         return render_to_string('emails/reminder_email.txt', context)
+
+    def send_admin_alert_global(self, all_user_notifications, email_settings, dry_run):
+        """
+        Envoie UN SEUL email récapitulatif aux administrateurs
+        Informe les admins de TOUTES les échéances signalées à TOUS les utilisateurs
+        
+        Args:
+            all_user_notifications: Liste de dictionnaires [{'user': user, 'notifications': [...]}, ...]
+        
+        Returns:
+            True si envoyé, False si erreur, None si aucun admin trouvé
+        """
+        from datetime import datetime
+        from django.template.loader import render_to_string
+        
+        # Récupérer tous les utilisateurs avec le rôle admin
+        User = get_user_model()
+        try:
+            admin_role = Role.objects.filter(code='admin', is_active=True).first()
+            if not admin_role:
+                logger.warning("Aucun rôle 'admin' trouvé pour envoyer les alertes")
+                return None
+            
+            admin_users = User.objects.filter(
+                is_active=True,
+                email__isnull=False,
+                user_processus_roles__role=admin_role,
+                user_processus_roles__is_active=True
+            ).exclude(email='').distinct()
+            
+            if not admin_users.exists():
+                logger.info("Aucun administrateur trouvé pour envoyer les alertes")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des admins: {str(e)}")
+            return False
+        
+        # Préparer les données enrichies pour TOUTES les notifications de TOUS les utilisateurs
+        # Utiliser un dictionnaire pour DEDUPLIQUER les PACs (même PAC = une seule fois)
+        unique_pacs = {}
+        total_notifications = 0
+        
+        for user_notif in all_user_notifications:
+            user = user_notif['user']
+            notifications = user_notif['notifications']
+            total_notifications += len(notifications)
+            
+            for n in notifications:
+                # Extraire l'UUID du traitement depuis l'entity_id
+                entity_id = n.get('entity_id')
+                if not entity_id:
+                    continue
+                
+                try:
+                    # Récupérer le traitement pour obtenir le processus
+                    traitement = TraitementPac.objects.select_related(
+                        'details_pac__pac__processus'
+                    ).get(uuid=entity_id)
+                    
+                    processus_name = "N/A"
+                    if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
+                        processus_name = traitement.details_pac.pac.processus.nom
+                    
+                    numero_pac = "N/A"
+                    if traitement.details_pac:
+                        numero_pac = traitement.details_pac.numero_pac or "N/A"
+                    
+                    # Si ce PAC existe déjà, on ne l'ajoute pas à nouveau (DEDUPLICATION)
+                    if numero_pac in unique_pacs:
+                        continue
+                    
+                    # Formater la date
+                    due_date = n.get('due_date', '')
+                    try:
+                        due_date_formatted = datetime.fromisoformat(due_date.replace('Z', '+00:00')).strftime("%d/%m/%Y")
+                    except:
+                        due_date_formatted = str(due_date)
+                    
+                    # Déterminer la couleur de priorité
+                    priority = n.get('priority', 'medium')
+                    priority_color = {
+                        'high': '#EF4444',
+                        'medium': '#F59E0B',
+                        'low': '#10B981'
+                    }.get(priority, '#3B82F6')
+                    
+                    # Stocker ce PAC dans le dictionnaire unique (clé = numero_pac)
+                    unique_pacs[numero_pac] = {
+                        'numero_pac': numero_pac,
+                        'processus_name': processus_name,
+                        'action': traitement.action[:100] if traitement.action else 'N/A',
+                        'nature_label': n.get('nature_label'),
+                        'due_date_formatted': due_date_formatted,
+                        'days_remaining': n.get('days_remaining', 0),
+                        'priority': priority,
+                        'priority_color': priority_color,
+                    }
+                except TraitementPac.DoesNotExist:
+                    logger.warning(f"Traitement {entity_id} non trouvé pour alerte admin")
+                    continue
+                except Exception as e:
+                    logger.error(f"Erreur lors du traitement {entity_id}: {str(e)}")
+                    continue
+        
+        # Convertir le dictionnaire en liste (valeurs uniquement)
+        all_enriched_notifications = list(unique_pacs.values())
+        
+        if not all_enriched_notifications:
+            logger.info("Aucune notification enrichie pour les admins")
+            return None
+        
+        # Préparer le contexte pour les templates
+        current_date = datetime.now().strftime("%d/%m/%Y à %H:%M")
+        
+        # Liste des noms des responsables notifiés
+        user_names = [
+            user_notif['user'].get_full_name() or user_notif['user'].username
+            for user_notif in all_user_notifications
+        ]
+        
+        # Le nombre de PACs DISTINCTS = la taille de la liste (déjà dédupliquée)
+        total_unique_pacs = len(all_enriched_notifications)
+        
+        context = {
+            'notifications': all_enriched_notifications,
+            'current_date': current_date,
+            'total_users': len(all_user_notifications),
+            'total_notifications': total_notifications,
+            'total_unique_pacs': total_unique_pacs,
+            'user_names': user_names
+        }
+        
+        # Générer les emails
+        try:
+            html_body = render_to_string('emails/admin_alert_email.html', context)
+            text_body = render_to_string('emails/admin_alert_email.txt', context)
+        except Exception as e:
+            logger.error(f"Erreur lors du rendu des templates admin: {str(e)}")
+            return False
+        
+        # Sujet de l'email
+        subject = f"KORA - Alerte Admin : {total_unique_pacs} PAC{'s' if total_unique_pacs > 1 else ''} à échéance"
+        
+        # Envoyer à tous les admins
+        sent_count = 0
+        for admin in admin_users:
+            if not EmailValidator.is_valid_email(admin.email):
+                logger.warning(f"Email admin invalide: {admin.email}")
+                continue
+            
+            if dry_run:
+                self.stdout.write(self.style.SUCCESS(
+                    f"[DRY-RUN] Alerte admin serait envoyée à {SecureEmailLogger.mask_email(admin.email)}"
+                ))
+                sent_count += 1
+                continue
+            
+            try:
+                from_email = f"{email_settings.email_from_name} <{email_settings.email_host_user}>"
+                email = EmailMultiAlternatives(
+                    subject=subject,
+                    body=text_body,
+                    from_email=from_email,
+                    to=[admin.email]
+                )
+                email.attach_alternative(html_body, "text/html")
+                email.send()
+                
+                SecureEmailLogger.log_email_sent(admin.email, subject, True)
+                self.stdout.write(self.style.SUCCESS(
+                    f"Alerte admin envoyée à {SecureEmailLogger.mask_email(admin.email)}"
+                ))
+                sent_count += 1
+                
+            except Exception as e:
+                error_message = str(e)[:500]
+                logger.error(f"Erreur lors de l'envoi alerte admin à {admin.email}: {error_message}")
+                SecureEmailLogger.log_email_sent(admin.email, subject, False)
+                self.stderr.write(self.style.ERROR(
+                    f"Échec alerte admin pour {SecureEmailLogger.mask_email(admin.email)}"
+                ))
+        
+        return sent_count > 0
 
     def apply_email_config(self, email_settings):
         """Applique la configuration email"""

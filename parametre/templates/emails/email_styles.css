@@ -1,0 +1,277 @@
+/* 
+ * Styles CSS pour les emails KORA
+ * Compatible avec les clients email (Outlook, Gmail, etc.)
+ * Note: Certains styles doivent rester inline pour Outlook
+ */
+
+/* Reset et base */
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #F5F5F5;
+    font-family: Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+}
+
+table {
+    border-collapse: collapse;
+    mso-table-lspace: 0pt;
+    mso-table-rspace: 0pt;
+}
+
+/* Container principal */
+.email-container {
+    width: 600px;
+    background-color: #FFFFFF;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.email-wrapper {
+    background-color: #F5F5F5;
+    padding: 20px 0;
+}
+
+/* Headers */
+.email-header-primary {
+    background-color: #1E40AF;
+    padding: 30px 40px;
+    text-align: center;
+}
+
+.email-header-admin {
+    background-color: #DC2626;
+    padding: 30px 40px;
+    text-align: center;
+}
+
+.email-header-dashboard {
+    background-color: #7C3AED;
+    padding: 30px 40px;
+    text-align: center;
+}
+
+.email-logo {
+    margin: 0 0 8px 0;
+    color: #FFFFFF;
+    font-size: 32px;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+    letter-spacing: 2px;
+}
+
+.email-subtitle {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    font-weight: 500;
+}
+
+.email-subtitle-primary {
+    color: #BFDBFE;
+}
+
+.email-subtitle-admin {
+    color: #FEE2E2;
+}
+
+.email-subtitle-dashboard {
+    color: #DDD6FE;
+}
+
+.email-divider {
+    width: 60px;
+    height: 3px;
+    background-color: #F97316;
+    margin: 12px auto 8px auto;
+}
+
+.email-title {
+    margin: 0;
+    color: #FFFFFF;
+    font-size: 16px;
+    font-family: Arial, sans-serif;
+    font-weight: 600;
+}
+
+/* Contenu */
+.email-content {
+    padding: 40px 40px 30px 40px;
+}
+
+.email-greeting {
+    margin: 0 0 20px 0;
+    color: #1F2937;
+    font-size: 15px;
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+}
+
+.email-text {
+    margin: 0 0 30px 0;
+    color: #4B5563;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+}
+
+.email-text-small {
+    margin: 0 0 25px 0;
+    color: #4B5563;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+}
+
+/* Notifications / Cards */
+.notification-card {
+    margin-bottom: 16px;
+    background-color: #F9FAFB;
+    border: 2px solid #E5E7EB;
+    border-radius: 6px;
+}
+
+.notification-card-content {
+    padding: 18px 20px;
+}
+
+.notification-priority-bar {
+    width: 6px;
+    border-radius: 6px 0 0 6px;
+}
+
+/* Couleurs de priorité pour les barres latérales */
+.priority-high {
+    background-color: #EF4444 !important;
+}
+
+.priority-medium {
+    background-color: #F59E0B !important;
+}
+
+.priority-low {
+    background-color: #10B981 !important;
+}
+
+.notification-title {
+    margin: 0 0 12px 0;
+    color: #DC2626;
+    font-size: 16px;
+    font-family: Arial, sans-serif;
+    font-weight: 600;
+}
+
+.notification-details-table {
+    margin-bottom: 12px;
+    width: 100%;
+}
+
+.notification-label {
+    width: 120px;
+    padding: 4px 0;
+    color: #6B7280;
+    font-size: 13px;
+    font-family: Arial, sans-serif;
+}
+
+.notification-value {
+    padding: 4px 0;
+    color: #111827;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+}
+
+.notification-value-secondary {
+    color: #4B5563;
+}
+
+.notification-value-urgent {
+    color: #DC2626;
+    font-weight: 600;
+}
+
+/* Alertes et notes */
+.alert-box {
+    padding: 20px;
+    border-radius: 6px;
+    border-left: 4px solid;
+}
+
+.alert-info {
+    background-color: #EFF6FF;
+    border-left-color: #1E40AF;
+    color: #1E40AF;
+    font-size: 13px;
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+}
+
+.alert-warning {
+    background-color: #FEF3C7;
+    border-radius: 6px;
+    border-left: 4px solid #F59E0B;
+    color: #92400E;
+    font-size: 13px;
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+}
+
+/* Footer */
+.email-footer {
+    background-color: #F9FAFB;
+    padding: 30px 40px;
+    border-top: 1px solid #E5E7EB;
+}
+
+.footer-text {
+    margin: 0 0 8px 0;
+    color: #6B7280;
+    font-size: 12px;
+    font-family: Arial, sans-serif;
+}
+
+.footer-text-small {
+    margin: 0 0 4px 0;
+    color: #9CA3AF;
+    font-size: 11px;
+    font-family: Arial, sans-serif;
+}
+
+.footer-text-small-last {
+    margin: 0;
+    color: #9CA3AF;
+    font-size: 11px;
+    font-family: Arial, sans-serif;
+}
+
+/* Couleurs spécifiques */
+.color-primary {
+    color: #1E40AF;
+}
+
+.color-admin {
+    color: #DC2626;
+}
+
+.color-dashboard {
+    color: #7C3AED;
+}
+
+/* Responsive (pour les clients qui le supportent) */
+@media only screen and (max-width: 600px) {
+    .email-container {
+        width: 100% !important;
+    }
+    
+    .email-content {
+        padding: 20px 15px !important;
+    }
+    
+    .email-header-primary,
+    .email-header-admin,
+    .email-header-dashboard {
+        padding: 20px 15px !important;
+    }
+}
