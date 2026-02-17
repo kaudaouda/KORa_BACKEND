@@ -1604,7 +1604,7 @@ def upcoming_notifications(request):
             numero_pac = 'N/A'
             if traitement.details_pac:
                 numero_pac = traitement.details_pac.numero_pac or 'N/A'
-            
+
             notifications.append({
                 'id': f'traitement_{traitement.uuid}',
                 'type': 'traitement',

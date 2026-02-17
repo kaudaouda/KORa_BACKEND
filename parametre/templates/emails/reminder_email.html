@@ -4,29 +4,32 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>KORA - Rappel d'échéances</title>
+    <style type="text/css">
+        {% include 'emails/email_styles.css' %}
+    </style>
     <!--[if mso]>
     <style type="text/css">
         body, table, td {font-family: Arial, sans-serif !important;}
     </style>
     <![endif]-->
 </head>
-<body style="margin: 0; padding: 0; background-color: #F5F5F5;">
-    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F5F5F5;">
+<body>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" class="email-wrapper">
         <tr>
-            <td align="center" style="padding: 20px 0;">
+            <td align="center">
                 <!-- Container principal -->
-                <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #FFFFFF; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="email-container">
                     
                     <!-- Header avec logo et titre -->
                     <tr>
-                        <td style="background-color: #1E40AF; padding: 30px 40px; text-align: center;">
+                        <td class="email-header-primary">
                             <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                 <tr>
                                     <td align="center">
-                                        <h1 style="margin: 0 0 8px 0; color: #FFFFFF; font-size: 32px; font-weight: bold; font-family: Arial, sans-serif; letter-spacing: 2px;">KORA</h1>
-                                        <p style="margin: 0 0 4px 0; color: #BFDBFE; font-size: 14px; font-family: Arial, sans-serif; font-weight: 500;">Autorité Nationale de l'Aviation Civile</p>
-                                        <div style="width: 60px; height: 3px; background-color: #F97316; margin: 12px auto 8px auto;"></div>
-                                        <p style="margin: 0; color: #FFFFFF; font-size: 16px; font-family: Arial, sans-serif; font-weight: 600;">Rappel d'échéances</p>
+                                        <h1 class="email-logo">KORA</h1>
+                                        <p class="email-subtitle email-subtitle-primary">Autorité Nationale de l'Aviation Civile</p>
+                                        <div class="email-divider"></div>
+                                        <p class="email-title">Rappel d'échéances</p>
                                     </td>
                                 </tr>
                             </table>
@@ -35,15 +38,15 @@
                     
                     <!-- Contenu principal -->
                     <tr>
-                        <td style="padding: 40px 40px 30px 40px;">
+                        <td class="email-content">
                             <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                 <tr>
                                     <td>
-                                        <p style="margin: 0 0 20px 0; color: #1F2937; font-size: 15px; font-family: Arial, sans-serif; line-height: 1.6;">
-                                            Madame, Monsieur <strong style="color: #1E40AF;">{{ user_name }}</strong>,
+                                        <p class="email-greeting">
+                                            Madame, Monsieur <strong class="color-primary">{{ user_name }}</strong>,
                                         </p>
                                         
-                                        <p style="margin: 0 0 30px 0; color: #4B5563; font-size: 14px; font-family: Arial, sans-serif; line-height: 1.6;">
+                                        <p class="email-text">
                                             Vous avez <strong>{{ notifications|length }}</strong> échéance(s) approchant dans le système KORA. Veuillez prendre les mesures nécessaires pour respecter les délais.
                                         </p>
                                     </td>
@@ -52,29 +55,62 @@
                             
                             <!-- Liste des notifications -->
                             {% for notification in notifications %}
-                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 16px; background-color: #F9FAFB; border: 2px solid #E5E7EB; border-radius: 6px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-card">
                                 <tr>
                                     <td style="padding: 0;">
                                         <!-- Barre de couleur latérale -->
                                         <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                             <tr>
-                                                <td width="6" style="background-color: {{ notification.priority_color }}; border-radius: 6px 0 0 6px;"></td>
-                                                <td style="padding: 18px 20px;">
+                                                <td width="6" class="notification-priority-bar priority-{{ notification.priority|default:'medium' }}"></td>
+                                                <td class="notification-card-content">
                                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                                         <tr>
                                                             <td>
-                                                                <h3 style="margin: 0 0 10px 0; color: #111827; font-size: 16px; font-family: Arial, sans-serif; font-weight: 600;">
-                                                                    {{ notification.title }}
+                                                                <h3 class="notification-title">
+                                                                    PAC {{ notification.numero_pac }}
                                                                 </h3>
-                                                                <p style="margin: 0 0 12px 0; color: #4B5563; font-size: 14px; font-family: Arial, sans-serif; line-height: 1.5;">
-                                                                    {{ notification.message }}
-                                                                </p>
-                                                                <table border="0" cellpadding="0" cellspacing="0">
+                                                                
+                                                                <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-details-table">
                                                                     <tr>
-                                                                        <td style="background-color: #FFFFFF; padding: 6px 12px; border-radius: 4px; border: 1px solid #E5E7EB;">
-                                                                            <span style="color: #6B7280; font-size: 13px; font-family: Arial, sans-serif;">
-                                                                                Échéance: <strong style="color: #DC2626;">{{ notification.due_date_formatted }}</strong>
-                                                                            </span>
+                                                                        <td class="notification-label">
+                                                                            <strong>Processus:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value">
+                                                                            {{ notification.processus_name }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Action:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-secondary">
+                                                                            {{ notification.action }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    {% if notification.nature_label %}
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Nature:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-secondary">
+                                                                            {{ notification.nature_label }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    {% endif %}
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Échéance:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-urgent">
+                                                                            {{ notification.due_date_formatted }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Jours restants:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-urgent">
+                                                                            {{ notification.days_remaining }} jour{{ notification.days_remaining|pluralize }}
                                                                         </td>
                                                                     </tr>
                                                                 </table>
@@ -92,8 +128,8 @@
                             <!-- Appel à l'action -->
                             <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
                                 <tr>
-                                    <td style="padding: 20px; background-color: #EFF6FF; border-radius: 6px; border-left: 4px solid #1E40AF;">
-                                        <p style="margin: 0; color: #1E40AF; font-size: 13px; font-family: Arial, sans-serif; line-height: 1.6;">
+                                    <td class="alert-box alert-info">
+                                        <p style="margin: 0;">
                                             <strong>Important :</strong> Connectez-vous au système KORA pour traiter ces échéances dans les meilleurs délais.
                                         </p>
                                     </td>
@@ -104,17 +140,17 @@
                     
                     <!-- Footer -->
                     <tr>
-                        <td style="background-color: #F9FAFB; padding: 30px 40px; border-top: 1px solid #E5E7EB;">
+                        <td class="email-footer">
                             <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                 <tr>
                                     <td align="center">
-                                        <p style="margin: 0 0 8px 0; color: #6B7280; font-size: 12px; font-family: Arial, sans-serif;">
+                                        <p class="footer-text">
                                             <strong>Autorité Nationale de l'Aviation Civile (ANAC)</strong>
                                         </p>
-                                        <p style="margin: 0 0 4px 0; color: #9CA3AF; font-size: 11px; font-family: Arial, sans-serif;">
+                                        <p class="footer-text-small">
                                             Message automatique envoyé par KORA le {{ current_date }}
                                         </p>
-                                        <p style="margin: 0; color: #9CA3AF; font-size: 11px; font-family: Arial, sans-serif;">
+                                        <p class="footer-text-small-last">
                                             Merci de ne pas répondre à cet email
                                         </p>
                                     </td>

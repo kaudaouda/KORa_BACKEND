@@ -221,7 +221,7 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
 class ParametreConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'parametre'
-    
+
     def ready(self):
         # Importer l'admin personnalisé pour les jobs
         try:
