@@ -216,7 +216,7 @@ class IndicateurCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Indicateur
-        fields = ['libelle', 'objective_id']
+        fields = ['libelle', 'objective_id', 'frequence_id']
     
     def validate_objective_id(self, value):
         """Valider que l'objectif existe"""
@@ -233,6 +233,26 @@ class IndicateurCreateSerializer(serializers.ModelSerializer):
             return value
         else:
             raise serializers.ValidationError("Format d'objectif invalide")
+    
+    def validate_frequence_id(self, value):
+        """Valider que la fréquence existe (optionnel)"""
+        from parametre.models import Frequence
+        # Si value est vide ou None, c'est OK
+        if not value:
+            return None
+        # Si value est une string UUID, convertir en objet Frequence
+        if isinstance(value, str):
+            try:
+                frequence = Frequence.objects.get(uuid=value)
+                return frequence
+            except Frequence.DoesNotExist:
+                raise serializers.ValidationError("La fréquence spécifiée n'existe pas")
+        elif hasattr(value, 'uuid'):
+            if not Frequence.objects.filter(uuid=value.uuid).exists():
+                raise serializers.ValidationError("La fréquence spécifiée n'existe pas")
+            return value
+        else:
+            raise serializers.ValidationError("Format de fréquence invalide")
 
 
 class IndicateurUpdateSerializer(serializers.ModelSerializer):

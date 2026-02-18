@@ -40,10 +40,82 @@ def create_analyse_tableau(request):
 
     Security by Design :
     - Les permissions sont vérifiées AVANT cette fonction via AnalyseTableauCreatePermission
-    - Empêche la création multiple d'une analyse pour le même tableau.
+    - Empêche la création multiple d'une analyse pour le même tableau
+    - Vérifie que le tableau est validé
+    - Vérifie qu'au moins une périodicité est renseignée
 
     Retourne 201 + analyse complète si succès.
     """
+    # Vérifier que le tableau existe et récupérer ses informations
+    tableau_bord_uuid = request.data.get('tableau_bord_uuid')
+    if not tableau_bord_uuid:
+        return Response(
+            {'error': 'Le champ tableau_bord_uuid est requis'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        tableau = TableauBord.objects.get(uuid=tableau_bord_uuid)
+    except TableauBord.DoesNotExist:
+        return Response(
+            {'error': 'Tableau de bord introuvable'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Security by Design : Vérifier que le tableau est validé
+    if not tableau.is_validated:
+        return Response(
+            {
+                'success': False,
+                'error': 'Impossible de créer une analyse : le tableau de bord doit être validé'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Security by Design : Vérifier qu'au moins une périodicité est renseignée
+    from parametre.models import Periodicite
+    from dashboard.models import Indicateur, Objectives
+    
+    # Récupérer tous les objectifs du tableau
+    objectives = Objectives.objects.filter(tableau_bord=tableau)
+    if not objectives.exists():
+        return Response(
+            {
+                'success': False,
+                'error': 'Impossible de créer une analyse : le tableau de bord ne contient aucun objectif'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Récupérer tous les indicateurs des objectifs
+    indicateurs = Indicateur.objects.filter(objective_id__in=objectives)
+    if not indicateurs.exists():
+        return Response(
+            {
+                'success': False,
+                'error': 'Impossible de créer une analyse : le tableau de bord ne contient aucun indicateur'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Vérifier qu'au moins une périodicité avec des données est renseignée
+    has_periodicite_with_data = Periodicite.objects.filter(
+        indicateur_id__in=indicateurs
+    ).exclude(
+        a_realiser__isnull=True,
+        realiser__isnull=True
+    ).exists()
+    
+    if not has_periodicite_with_data:
+        return Response(
+            {
+                'success': False,
+                'error': 'Impossible de créer une analyse : au moins un trimestre doit être renseigné dans le tableau de bord'
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Toutes les vérifications sont passées, créer l'analyse
     serializer = AnalyseTableauSerializer(data=request.data, context={'request': request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -1715,8 +1715,10 @@ def cibles_create(request):
         from parametre.models import Cible
         
         # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        # SAUF si c'est une copie depuis l'année précédente (from_copy=True)
+        is_copy = request.data.get('from_copy', False)
         indicateur_uuid = request.data.get('indicateur_id')
-        if indicateur_uuid:
+        if indicateur_uuid and not is_copy:
             try:
                 indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
                 if indicateur.objective_id.tableau_bord:
@@ -2024,8 +2026,10 @@ def periodicites_create(request):
     try:
         from parametre.models import Periodicite
         # Vérifier que le tableau est validé et n'a pas d'amendements avant de permettre la création de périodicités
+        # SAUF si c'est une copie depuis l'année précédente (from_copy=True)
+        is_copy = request.data.get('from_copy', False)
         indicateur_uuid = request.data.get('indicateur_id')
-        if indicateur_uuid:
+        if indicateur_uuid and not is_copy:
             try:
                 indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
                 tableau = indicateur.objective_id.tableau_bord
@@ -2519,7 +2523,6 @@ def get_last_tableau_bord_previous_year(request):
 
         for code in codes_order:
             tableau = TableauBord.objects.filter(
-                cree_par=request.user,
                 annee=annee_precedente,
                 processus__uuid=processus_uuid,
                 type_tableau__code=code
