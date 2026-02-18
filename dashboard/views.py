@@ -11,6 +11,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 import logging
 from .models import Objectives, Indicateur, Observation, TableauBord
+from analyse_tableau.models import AnalyseTableau
 from parametre.views import (
     log_tableau_bord_creation,
     log_tableau_bord_update,
@@ -1318,6 +1319,47 @@ def dashboard_stats(request):
             cibles_atteintes, cibles_non_atteintes
         )
         
+        # ========== STATISTIQUES D'ANALYSE ==========
+        # Filtrer les tableaux de bord selon les processus accessibles
+        if user_processus_uuids is None:
+            # Super admin : voir tous les tableaux de bord
+            tableaux_bord_filter = TableauBord.objects.all()
+        elif user_processus_uuids:
+            # Filtrer par processus accessibles
+            tableaux_bord_filter = TableauBord.objects.filter(
+                processus__uuid__in=user_processus_uuids
+            )
+        else:
+            tableaux_bord_filter = TableauBord.objects.none()
+        
+        # Compter le nombre total d'analyses effectuées
+        if user_processus_uuids is None:
+            total_analyses = AnalyseTableau.objects.count()
+        elif user_processus_uuids:
+            total_analyses = AnalyseTableau.objects.filter(
+                tableau_bord__processus__uuid__in=user_processus_uuids
+            ).count()
+        else:
+            total_analyses = 0
+        
+        # Compter le nombre de tableaux ayant une analyse
+        tableaux_avec_analyse = AnalyseTableau.objects.filter(
+            tableau_bord__in=tableaux_bord_filter
+        ).count()
+        
+        # Compter le nombre total de tableaux (filtrés par processus)
+        total_tableaux = tableaux_bord_filter.count()
+        
+        # Compter le nombre de tableaux sans analyse
+        tableaux_sans_analyse = total_tableaux - tableaux_avec_analyse
+        
+        logger.info(
+            "[DashboardStats] Statistiques d'analyse - total_analyses=%s, tableaux_avec_analyse=%s, "
+            "tableaux_sans_analyse=%s, total_tableaux=%s",
+            total_analyses, tableaux_avec_analyse, tableaux_sans_analyse, total_tableaux
+        )
+        # ========== FIN STATISTIQUES D'ANALYSE ==========
+        
         stats = {
             'total_objectives': total_objectives,
             'total_frequences': total_frequences,
@@ -1335,6 +1377,10 @@ def dashboard_stats(request):
             'indicateurs_non_atteints': indicateurs_non_atteints,
             'objectifs_atteints': objectifs_atteints,
             'objectifs_non_atteints': objectifs_non_atteints,
+            # Statistiques d'analyse
+            'total_analyses': total_analyses,
+            'tableaux_avec_analyse': tableaux_avec_analyse,
+            'tableaux_sans_analyse': tableaux_sans_analyse,
         }
         
         return Response({
