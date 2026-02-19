@@ -1343,9 +1343,13 @@ def dashboard_stats(request):
             total_analyses = 0
         
         # Compter le nombre de tableaux ayant une analyse
+        # IMPORTANT: On doit compter le nombre de tableaux UNIQUES, pas le nombre d'AnalyseTableau
+        # Si un tableau a plusieurs AnalyseTableau (ce qui ne devrait pas être possible avec OneToOneField),
+        # on doit quand même le compter comme 1 tableau unique
+        # Utiliser distinct() pour compter les tableaux uniques
         tableaux_avec_analyse = AnalyseTableau.objects.filter(
             tableau_bord__in=tableaux_bord_filter
-        ).count()
+        ).values('tableau_bord').distinct().count()
         
         # Compter le nombre total de tableaux (filtrés par processus)
         total_tableaux = tableaux_bord_filter.count()
