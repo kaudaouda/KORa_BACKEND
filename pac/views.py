@@ -11,12 +11,16 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.utils import timezone
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_str
+from datetime import datetime, timedelta
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Versions
-from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip
+from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip, log_activity
 from parametre.permissions import (
     check_permission_or_403,
     user_can_create_objectives_amendements,
@@ -580,6 +584,447 @@ def change_password(request):
         return Response({
             'error': 'Impossible de changer le mot de passe',
             'code': 'CHANGE_PASSWORD_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def check_invitation(request):
+    """
+    Vérifie l'état d'un lien d'invitation sans nécessiter de mot de passe.
+    Security by Design :
+    - Vérifie la validité du token
+    - Vérifie si le compte est déjà activé (mot de passe défini)
+    - Permet au frontend de rediriger automatiquement si le lien a déjà été utilisé
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("DEBUT check_invitation")
+        logger.info(f"IP: {get_client_ip(request)}")
+        
+        # Récupérer les paramètres depuis la query string
+        uidb64 = request.GET.get('uid')
+        token = request.GET.get('token')
+        
+        logger.info(f"uidb64: {uidb64}")
+        logger.info(f"token: {token[:20] if token else None}...")
+        
+        # Validation des paramètres requis
+        if not uidb64 or not token:
+            logger.warning("Paramètres manquants pour check_invitation")
+            return Response({
+                'valid': False,
+                'error': 'Paramètres manquants',
+                'code': 'MISSING_PARAMS'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Décoder l'uid et récupérer l'utilisateur
+        try:
+            decoded_bytes = urlsafe_base64_decode(uidb64)
+            uid = force_str(decoded_bytes)
+            user = User.objects.get(pk=uid)
+            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
+            logger.warning(f"Erreur lors du décodage ou utilisateur non trouvé: {str(e)}")
+            return Response({
+                'valid': False,
+                'error': 'Lien d\'invitation invalide',
+                'code': 'INVALID_LINK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # IMPORTANT : Vérifier d'abord si le compte a déjà un mot de passe défini
+        # Car quand le mot de passe est défini, le token devient invalide automatiquement
+        # Il faut donc vérifier has_usable_password() AVANT de vérifier le token
+        has_usable = user.has_usable_password()
+        logger.info(f"Utilisateur a un mot de passe utilisable: {has_usable}")
+        
+        if has_usable:
+            logger.info(f"Lien d'invitation déjà utilisé pour {user.username} (mot de passe déjà défini)")
+            return Response({
+                'valid': True,
+                'already_used': True,
+                'message': 'Ce lien d\'invitation a déjà été utilisé. Votre compte est déjà activé.',
+                'code': 'INVITATION_ALREADY_USED',
+                'user': {
+                    'username': user.username,
+                    'email': user.email,
+                    'is_active': user.is_active
+                }
+            }, status=status.HTTP_200_OK)
+        
+        # Vérifier le token d'invitation seulement si le mot de passe n'est pas encore défini
+        token_valid = default_token_generator.check_token(user, token)
+        logger.info(f"Token valide: {token_valid}")
+        
+        if not token_valid:
+            logger.warning(f"Token d'invitation invalide ou expiré pour l'utilisateur {user.username}")
+            return Response({
+                'valid': False,
+                'error': 'Lien d\'invitation invalide ou expiré',
+                'code': 'INVALID_TOKEN'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Le lien est valide et n'a pas encore été utilisé
+        logger.info(f"Lien d'invitation valide et disponible pour {user.username}")
+        return Response({
+            'valid': True,
+            'already_used': False,
+            'message': 'Lien d\'invitation valide',
+            'code': 'INVITATION_VALID',
+            'user': {
+                'username': user.username,
+                'email': user.email,
+                'is_active': user.is_active
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error(f"ERREUR EXCEPTION dans check_invitation: {str(e)}")
+        logger.error(f"Type d'erreur: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("=" * 60)
+        return Response({
+            'valid': False,
+            'error': f'Erreur lors de la vérification du lien: {str(e)}',
+            'code': 'CHECK_INVITATION_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def complete_invitation(request):
+    """
+    Finalise l'invitation d'un utilisateur en lui permettant de définir son mot de passe.
+    Security by Design :
+    - Rate limiting pour prévenir les attaques par force brute
+    - Vérifie le token d'invitation signé (uid + token)
+    - Valide la force du mot de passe avec les validateurs Django
+    - Active le compte et connecte automatiquement l'utilisateur
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("DEBUT complete_invitation")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Method: {request.method}")
+        logger.info(f"IP: {get_client_ip(request)}")
+        
+        # ========== RATE LIMITING (Security by Design) ==========
+        # Protection contre les attaques par force brute sur les tokens
+        from django.core.cache import cache
+        
+        client_ip = get_client_ip(request)
+        rate_limit_key = f'invitation_complete_rate_limit_{client_ip}'
+        attempts = cache.get(rate_limit_key, 0)
+        max_attempts = 5  # Maximum 5 tentatives par IP par heure
+        rate_limit_window = 3600  # 1 heure
+        
+        if attempts >= max_attempts:
+            logger.warning(f"Rate limit dépassé pour complete_invitation depuis IP: {client_ip}")
+            return Response({
+                'error': 'Trop de tentatives. Veuillez réessayer dans 1 heure.',
+                'code': 'RATE_LIMIT_EXCEEDED'
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        
+        # Incrémenter le compteur
+        cache.set(rate_limit_key, attempts + 1, rate_limit_window)
+        # ========== FIN RATE LIMITING ==========
+        
+        logger.info(f"request.data type: {type(request.data)}")
+        logger.info(f"request.data: {request.data}")
+
+        # IMPORTANT : ne plus toucher à request.body ici, DRF l'a déjà consommé
+        # On se fie uniquement à request.data, qui contient déjà les données parsées
+        data = request.data
+        
+        # ========== VALIDATION reCAPTCHA (Security by Design) ==========
+        # Protection contre les bots et les attaques automatisées
+        if recaptcha_service.is_enabled():
+            recaptcha_token = data.get('recaptcha_token')
+            if not recaptcha_token:
+                logger.warning(f"reCAPTCHA token manquant pour complete_invitation depuis IP: {client_ip}")
+                return Response({
+                    'error': 'Vérification de sécurité requise',
+                    'recaptcha_required': True,
+                    'code': 'RECAPTCHA_REQUIRED'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                remote_ip = get_client_ip(request)
+                is_valid, recaptcha_data = recaptcha_service.verify_token(
+                    recaptcha_token, 
+                    remote_ip
+                )
+                
+                if not is_valid:
+                    logger.warning(f"reCAPTCHA validation échouée pour complete_invitation: {recaptcha_data}")
+                    return Response({
+                        'error': 'Vérification de sécurité échouée',
+                        'recaptcha_error': recaptcha_data.get('error'),
+                        'recaptcha_required': True,
+                        'code': 'RECAPTCHA_FAILED'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                logger.info(f"reCAPTCHA validé pour complete_invitation: score={recaptcha_data.get('score')}")
+                
+            except RecaptchaValidationError as e:
+                logger.error(f"Erreur reCAPTCHA lors de la finalisation de l'invitation: {str(e)}")
+                return Response({
+                    'error': 'Problème de vérification de sécurité',
+                    'recaptcha_error': str(e),
+                    'recaptcha_required': True,
+                    'code': 'RECAPTCHA_ERROR'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # ========== FIN VALIDATION reCAPTCHA ==========
+        
+        uidb64 = data.get('uid')
+        token = data.get('token')
+        password = data.get('password')
+        password_confirm = data.get('password_confirm')
+        
+        logger.info(f"uidb64: {uidb64}")
+        logger.info(f"token: {token[:20] if token else None}...")
+        logger.info(f"password présent: {bool(password)}")
+        logger.info(f"password_confirm présent: {bool(password_confirm)}")
+        
+        # Validation des données requises
+        missing_fields = []
+        if not uidb64:
+            missing_fields.append('uid')
+        if not token:
+            missing_fields.append('token')
+        if not password:
+            missing_fields.append('password')
+        if not password_confirm:
+            missing_fields.append('password_confirm')
+        
+        if missing_fields:
+            logger.error(f"Champs manquants: {missing_fields}")
+            return Response({
+                'error': f'Champs requis manquants: {", ".join(missing_fields)}',
+                'code': 'MISSING_FIELDS',
+                'missing_fields': missing_fields
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que les mots de passe correspondent
+        if password != password_confirm:
+            logger.error(f"Les mots de passe ne correspondent pas")
+            return Response({
+                'error': 'Les mots de passe ne correspondent pas.',
+                'code': 'PASSWORD_MISMATCH'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info("Mots de passe correspondent, décodage de l'uid...")
+        
+        # Décoder l'uid et récupérer l'utilisateur
+        try:
+            decoded_bytes = urlsafe_base64_decode(uidb64)
+            logger.info(f"uidb64 décodé en bytes: {decoded_bytes}")
+            uid = force_str(decoded_bytes)
+            logger.info(f"uid décodé (string): {uid}")
+            user = User.objects.get(pk=uid)
+            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+        except TypeError as e:
+            logger.error(f"TypeError lors du décodage: {str(e)}")
+            return Response({
+                'error': 'Lien d\'invitation invalide ou expiré (TypeError)',
+                'code': 'INVALID_LINK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as e:
+            logger.error(f"ValueError lors du décodage: {str(e)}")
+            return Response({
+                'error': 'Lien d\'invitation invalide ou expiré (ValueError)',
+                'code': 'INVALID_LINK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except OverflowError as e:
+            logger.error(f"OverflowError lors du décodage: {str(e)}")
+            return Response({
+                'error': 'Lien d\'invitation invalide ou expiré (OverflowError)',
+                'code': 'INVALID_LINK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            logger.error(f"Utilisateur non trouvé avec uid: {uid}")
+            return Response({
+                'error': 'Lien d\'invitation invalide ou expiré (User not found)',
+                'code': 'INVALID_LINK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Exception inattendue lors du décodage: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                'error': f'Erreur lors du décodage du lien: {str(e)}',
+                'code': 'DECODE_ERROR'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier le token d'invitation
+        logger.info("Vérification du token d'invitation...")
+        token_valid = default_token_generator.check_token(user, token)
+        logger.info(f"Token valide: {token_valid}")
+        
+        if not token_valid:
+            logger.warning(f"Token d'invitation invalide ou expiré pour l'utilisateur {user.username}")
+            # Vérifier si c'est une expiration ou une invalidation
+            from django.conf import settings
+            invitation_timeout = getattr(settings, 'INVITATION_TOKEN_TIMEOUT', 604800)  # 7 jours par défaut
+            
+            # Vérifier si l'utilisateur a été créé récemment (pour déterminer si c'est une expiration)
+            # Note: default_token_generator.check_token() vérifie automatiquement l'expiration
+            # Si le token est invalide, c'est soit qu'il a expiré, soit qu'il est invalide
+            # On ne peut pas distinguer facilement, donc on affiche un message générique
+            error_message = f'Le lien d\'invitation est invalide ou a expiré. Les liens d\'invitation sont valides pendant {invitation_timeout // 86400} jours. Veuillez demander une nouvelle invitation à votre administrateur.'
+            
+            return Response({
+                'error': error_message,
+                'code': 'INVALID_TOKEN'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que l'utilisateur n'a pas déjà un mot de passe défini (sécurité supplémentaire)
+        has_usable = user.has_usable_password()
+        logger.info(f"Utilisateur a un mot de passe utilisable: {has_usable}")
+        
+        if has_usable:
+            logger.warning(f"Tentative d'utilisation d'un lien d'invitation déjà utilisé pour: {user.username}")
+            
+            # Logger cette tentative pour audit de sécurité
+            try:
+                log_activity(
+                    user=user,
+                    action='view',  # Action 'view' pour une tentative d'accès
+                    entity_type='user',
+                    entity_id=str(user.id),
+                    entity_name=user.username,
+                    description=f"Tentative d'utilisation d'un lien d'invitation déjà utilisé pour le compte {user.username}",
+                    ip_address=get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT', '')
+                )
+            except Exception as log_error:
+                logger.warning(f"ERREUR lors du log d'audit (non bloquant): {str(log_error)}")
+            
+            return Response({
+                'error': 'Ce lien d\'invitation a déjà été utilisé. Votre compte est déjà activé. Si vous avez oublié votre mot de passe, utilisez la fonctionnalité de réinitialisation de mot de passe.',
+                'code': 'INVITATION_ALREADY_USED'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider la force du mot de passe
+        logger.info("Validation de la force du mot de passe...")
+        try:
+            validate_password(password, user=user)
+            logger.info("Mot de passe validé avec succès")
+        except ValidationError as e:
+            logger.error(f"Mot de passe invalide: {list(e.messages)}")
+            return Response({
+                'error': 'Mot de passe invalide',
+                'details': list(e.messages),
+                'requirements': [
+                    'Au moins 8 caractères',
+                    'Ne pas être trop commun',
+                    'Ne pas être entièrement numérique',
+                    'Contenir au moins une lettre'
+                ],
+                'code': 'WEAK_PASSWORD'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Définir le mot de passe et activer le compte
+        logger.info("Définition du mot de passe et activation du compte...")
+        user.set_password(password)
+        user.is_active = True
+        user.save()
+        logger.info(f"Compte activé et mot de passe défini pour {user.username}")
+        
+        # Logger l'utilisation réussie de l'invitation dans ActivityLog
+        try:
+            log_activity(
+                user=user,
+                action='update',  # Action 'update' car on met à jour le compte (activation + mot de passe)
+                entity_type='user',
+                entity_id=str(user.id),
+                entity_name=user.username,
+                description=f"Lien d'invitation utilisé avec succès pour activer le compte de {user.username}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            logger.info(f"Log d'activité enregistré pour l'activation du compte de {user.username}")
+        except Exception as log_error:
+            logger.warning(f"ERREUR lors du log d'activité (non bloquant): {str(log_error)}")
+            import traceback
+            logger.warning(f"Traceback log activité: {traceback.format_exc()}")
+            # Ne pas bloquer si le log échoue
+        
+        # Générer les tokens JWT et connecter automatiquement l'utilisateur
+        logger.info("Génération des tokens JWT...")
+        try:
+            access_token, refresh_token = AuthService.create_tokens(user)
+            logger.info("Tokens JWT générés avec succès")
+        except Exception as token_error:
+            logger.error(f"ERREUR lors de la génération des tokens: {str(token_error)}")
+            import traceback
+            logger.error(f"Traceback tokens: {traceback.format_exc()}")
+            raise
+        
+        # Créer la réponse avec les tokens dans les cookies
+        logger.info("Création de la réponse...")
+        try:
+            user_data = UserSerializer(user).data
+            logger.info(f"Données utilisateur sérialisées: {list(user_data.keys())}")
+        except Exception as serializer_error:
+            logger.error(f"ERREUR lors de la sérialisation de l'utilisateur: {str(serializer_error)}")
+            import traceback
+            logger.error(f"Traceback serializer: {traceback.format_exc()}")
+            raise
+        
+        response = Response({
+            'message': 'Mot de passe défini avec succès. Vous êtes maintenant connecté.',
+            'user': user_data,
+            'success': True
+        }, status=status.HTTP_200_OK)
+        
+        # Définir les cookies d'authentification
+        try:
+            AuthService.set_auth_cookies(response, access_token, refresh_token)
+            logger.info("Cookies d'authentification définis")
+        except Exception as cookie_error:
+            logger.error(f"ERREUR lors de la définition des cookies: {str(cookie_error)}")
+            import traceback
+            logger.error(f"Traceback cookies: {traceback.format_exc()}")
+            raise
+        
+        # Logger la connexion automatique après finalisation de l'invitation
+        logger.info("Log de la connexion...")
+        try:
+            log_user_login(
+                user=user,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+        except Exception as log_error:
+            logger.warning(f"ERREUR lors du log de connexion (non bloquant): {str(log_error)}")
+            import traceback
+            logger.warning(f"Traceback log: {traceback.format_exc()}")
+            # Ne pas bloquer si le log échoue
+        
+        logger.info(f"Invitation finalisée avec succès pour {user.username}")
+        logger.info("=" * 60)
+        
+        return response
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Erreur de parsing JSON: {str(e)}")
+        return Response({
+            'error': 'Format de données invalide',
+            'code': 'INVALID_JSON'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error(f"ERREUR EXCEPTION dans complete_invitation: {str(e)}")
+        logger.error(f"Type d'erreur: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("=" * 60)
+        return Response({
+            'error': f'Erreur lors de la finalisation de l\'invitation: {str(e)}',
+            'code': 'COMPLETE_INVITATION_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

@@ -10,6 +10,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+from django.conf import settings
+from django.template.loader import render_to_string
 import json
 import logging
 
@@ -27,8 +33,9 @@ from .serializers import (
     DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
     RisqueSerializer, StatutActionCDRSerializer,
     RoleSerializer, UserProcessusSerializer, UserProcessusRoleSerializer,
-    UserSerializer, UserCreateSerializer
+    UserSerializer, UserCreateSerializer, UserInviteSerializer
 )
+from .utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 
 logger = logging.getLogger(__name__)
 
@@ -3267,6 +3274,179 @@ def users_create(request):
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de l\'utilisateur'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def users_invite(request):
+    """
+    Invite un nouvel utilisateur (is_staff ET is_superuser uniquement).
+    Security by Design :
+    - Vérifie les permissions via can_manage_users
+    - Ne manipule jamais de mot de passe côté admin
+    - Envoie un lien signé et limité dans le temps pour que l'utilisateur définisse son mot de passe
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("DEBUT users_invite")
+        logger.info(f"Utilisateur qui invite: {request.user.username} (is_staff={request.user.is_staff}, is_superuser={request.user.is_superuser})")
+        logger.info(f"IP: {get_client_ip(request)}")
+        
+        # ========== VÉRIFICATION DE SÉCURITÉ ==========
+        from parametre.permissions import can_manage_users
+        can_manage = can_manage_users(request.user)
+        logger.info(f"can_manage_users: {can_manage}")
+        
+        if not can_manage:
+            logger.warning(f"Accès refusé pour {request.user.username}")
+            return Response({
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent inviter des utilisateurs.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
+        # Rate limiting basique pour éviter le spam d'invitations
+        user_limit_ok = EmailRateLimiter.check_user_limit(request.user.id)
+        global_limit_ok = EmailRateLimiter.check_global_limit()
+        logger.info(f"Rate limiting - user_limit: {user_limit_ok}, global_limit: {global_limit_ok}")
+        
+        if not user_limit_ok or not global_limit_ok:
+            SecureEmailLogger.log_security_event('invite_rate_limit_exceeded', {
+                'user': request.user.username,
+                'ip': get_client_ip(request),
+                'type': 'user_invite'
+            })
+            logger.warning(f"Rate limit dépassé pour {request.user.username}")
+            return Response({
+                'success': False,
+                'error': "Trop de tentatives d'invitation, veuillez réessayer plus tard."
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        # Logger les données reçues pour le débogage
+        logger.info(f"Données brutes reçues (request.data): {request.data}")
+        logger.info(f"Type de request.data: {type(request.data)}")
+        logger.info(f"Clés présentes: {list(request.data.keys()) if isinstance(request.data, dict) else 'N/A'}")
+        
+        # Vérifier si l'email existe déjà AVANT la validation du serializer
+        email_received = request.data.get('email', '')
+        logger.info(f"Email reçu: {email_received}")
+        
+        if email_received:
+            from django.contrib.auth.models import User
+            email_exists = User.objects.filter(email=email_received).exists()
+            logger.info(f"Email existe déjà dans la DB: {email_exists}")
+            if email_exists:
+                existing_user = User.objects.filter(email=email_received).first()
+                logger.info(f"Utilisateur existant trouvé: username={existing_user.username}, id={existing_user.id}, is_active={existing_user.is_active}")
+        
+        serializer = UserInviteSerializer(data=request.data)
+        logger.info(f"Serializer créé, validation en cours...")
+        
+        if not serializer.is_valid():
+            logger.error(f"ERREUR: Serializer invalide")
+            logger.error(f"Erreurs de validation détaillées: {serializer.errors}")
+            logger.error(f"Données qui ont causé l'erreur: {request.data}")
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info("Serializer valide, création de l'utilisateur...")
+
+        user = serializer.save()
+        logger.info(f"Utilisateur créé avec succès: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}")
+
+        # Générer un token d'invitation basé sur le système de reset password
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        logger.info(f"Token d'invitation généré: uid={uid}, token={token[:20]}...")
+
+        frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        raw_invite_url = f"{frontend_base}/set-password?uid={uid}&token={token}"
+        invite_url = EmailContentSanitizer.sanitize_url(raw_invite_url)
+
+        # Calculer la date d'expiration pour l'affichage dans l'email
+        from datetime import datetime, timedelta
+        invitation_timeout = getattr(settings, 'INVITATION_TOKEN_TIMEOUT', 604800)  # 7 jours par défaut
+        expiration_date = datetime.now() + timedelta(seconds=invitation_timeout)
+        expiration_str = expiration_date.strftime("%d/%m/%Y à %H:%M")
+
+        # Vérifier l'email du destinataire
+        if not EmailValidator.is_valid_email(user.email):
+            return Response({
+                'success': False,
+                'error': "Adresse email du destinataire invalide."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Préparer le contexte pour le template
+        context = {
+            'user_first_name': user.first_name,
+            'user_username': user.username,
+            'user_email': user.email,
+            'invite_url': invite_url,
+            'expiration_date': expiration_str,
+        }
+
+        # Rendre les templates HTML et texte
+        html_body = render_to_string('emails/user_invitation_email.html', context)
+        text_body = render_to_string('emails/user_invitation_email.txt', context)
+        
+        subject = EmailContentSanitizer.sanitize_subject("KORA – Activation de votre compte")
+
+        # Envoyer l'email via la configuration Django actuelle
+        logger.info(f"Envoi de l'email d'invitation à {user.email}...")
+        logger.info(f"URL d'invitation: {invite_url}")
+        
+        try:
+            send_mail(
+                subject=subject,
+                message=text_body,
+                html_message=html_body,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', user.email),
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            logger.info(f"Email envoyé avec succès à {user.email}")
+        except Exception as email_error:
+            logger.error(f"ERREUR lors de l'envoi de l'email: {str(email_error)}")
+            # Ne pas échouer complètement si l'email échoue, mais logger l'erreur
+            SecureEmailLogger.log_email_sent(user.email, subject, False)
+
+        SecureEmailLogger.log_email_sent(user.email, subject, True)
+
+        # Log de l'activité
+        log_activity(
+            user=request.user,
+            action='create',
+            entity_type='user',
+            entity_id=str(user.id),
+            entity_name=f"{user.username} ({user.email})",
+            description=f"Invitation de l'utilisateur {user.username}",
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+
+        logger.info(f"Invitation terminée avec succès pour {user.email}")
+        logger.info("=" * 60)
+        
+        return Response({
+            'success': True,
+            'message': "Invitation envoyée avec succès. L'utilisateur recevra un email pour définir son mot de passe."
+        }, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error(f"ERREUR EXCEPTION dans users_invite: {str(e)}")
+        logger.error(f"Type d'erreur: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("=" * 60)
+        SecureEmailLogger.log_email_sent(getattr(request, 'user', None) and getattr(request.user, 'email', ''), "KORA – Invitation utilisateur", False)
+        return Response({
+            'success': False,
+            'error': f"Erreur lors de l'invitation de l'utilisateur: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

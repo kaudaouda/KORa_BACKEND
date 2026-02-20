@@ -256,6 +256,14 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'true').lower() == 'true'
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@kora.local')
+
+# ==================== PASSWORD RESET / INVITATION TOKENS ====================
+# Délai d'expiration pour les tokens de réinitialisation de mot de passe et d'invitation
+# Par défaut Django utilise 3 jours (259200 secondes)
+# Pour les invitations, on utilise un délai de 7 jours pour donner plus de temps à l'utilisateur
+PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT', '604800'))  # 7 jours en secondes (7 * 24 * 60 * 60)
+INVITATION_TOKEN_TIMEOUT = int(os.getenv('INVITATION_TOKEN_TIMEOUT', '604800'))  # 7 jours en secondes
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').lower() == 'true'
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'KORA Notifications <noreply@kora.local>')
 

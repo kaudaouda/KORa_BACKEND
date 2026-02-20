@@ -1,0 +1,186 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>KORA - Activation de votre compte</title>
+    <style type="text/css">
+        {% include 'emails/email_styles.css' %}
+    </style>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td {font-family: Arial, sans-serif !important;}
+    </style>
+    <![endif]-->
+</head>
+<body>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" class="email-wrapper">
+        <tr>
+            <td align="center">
+                <!-- Container principal -->
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="email-container">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td class="email-header-dashboard">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <h1 class="email-logo">KORA</h1>
+                                        <p class="email-subtitle email-subtitle-dashboard">Autorité Nationale de l'Aviation Civile</p>
+                                        <div class="email-divider"></div>
+                                        <p class="email-title">Activation de votre compte</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Contenu principal -->
+                    <tr>
+                        <td class="email-content">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td>
+                                        <p class="email-greeting">
+                                            Bonjour <strong class="color-dashboard">{{ user_first_name|default:user_username }}</strong>,
+                                        </p>
+                                        
+                                        <p class="email-text-small">
+                                            Un compte KORA a été créé pour vous. Pour activer votre compte et définir votre mot de passe, cliquez sur le bouton ci-dessous.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Carte d'information -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-card" style="margin-top: 25px;">
+                                <tr>
+                                    <td style="padding: 0;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="6" class="notification-priority-bar" style="background-color: #059669;"></td>
+                                                <td class="notification-card-content" style="padding: 20px;">
+                                                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                                        <tr>
+                                                            <td>
+                                                                <p style="margin: 0 0 12px 0; font-size: 14px; line-height: 1.6; color: #374151; font-family: Arial, sans-serif;">
+                                                                    <strong style="color: #111827;">Informations de connexion :</strong>
+                                                                </p>
+                                                                <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-details-table">
+                                                                    <tr>
+                                                                        <td class="notification-label" style="padding: 6px 0;">
+                                                                            <strong>Nom d'utilisateur:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value" style="padding: 6px 0;">
+                                                                            {{ user_username }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label" style="padding: 6px 0;">
+                                                                            <strong>Email:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value" style="padding: 6px 0;">
+                                                                            {{ user_email }}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Bouton d'action principal -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
+                                <tr>
+                                    <td align="center">
+                                        <table border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td align="center" style="border-radius: 6px; background-color: #059669;">
+                                                    <a href="{{ invite_url|safe }}" target="_blank" style="font-size: 15px; font-family: Arial, sans-serif; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 6px; padding: 14px 32px; display: inline-block;">
+                                                        Activer mon compte
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Lien alternatif -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 20px;">
+                                <tr>
+                                    <td align="center">
+                                        <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #6B7280; font-family: Arial, sans-serif;">
+                                            Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :
+                                        </p>
+                                        <p style="margin: 8px 0 0 0; font-size: 12px; line-height: 1.6; color: #059669; font-family: Arial, sans-serif; word-break: break-all;">
+                                            <a href="{{ invite_url|safe }}" target="_blank" style="color: #059669; text-decoration: underline;">{{ invite_url }}</a>
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Avertissement d'expiration -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
+                                <tr>
+                                    <td>
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; border-radius: 4px;">
+                                            <tr>
+                                                <td style="padding: 16px;">
+                                                    <p style="margin: 0; font-size: 13px; line-height: 1.6; color: #92400E; font-family: Arial, sans-serif;">
+                                                        <strong style="color: #78350F;">⏰ Important :</strong> Ce lien est valide jusqu'au <strong>{{ expiration_date }}</strong>. Après cette date, vous devrez demander une nouvelle invitation à la SDSI.
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Message de sécurité -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 25px;">
+                                <tr>
+                                    <td>
+                                        <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #6B7280; font-family: Arial, sans-serif;">
+                                            Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email en toute sécurité. Votre compte ne sera pas activé sans votre action.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td class="email-footer">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <p class="footer-text">
+                                            <strong>Autorité Nationale de l'Aviation Civile (ANAC)</strong>
+                                        </p>
+                                        <p class="footer-text-small">
+                                            Message automatique envoyé par KORA
+                                        </p>
+                                        <p class="footer-text-small-last">
+                                            Merci de ne pas répondre à cet email
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                </table>
+                <!-- Fin du container principal -->
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
