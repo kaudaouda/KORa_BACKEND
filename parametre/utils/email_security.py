@@ -182,25 +182,38 @@ class EmailContentSanitizer:
     def sanitize_url(url: str) -> str:
         """
         Valide et sécurise une URL
+        Security by Design : Validation stricte sans double encodage
         
         Args:
             url: URL à valider
             
         Returns:
-            URL sécurisée ou chaîne vide
+            URL sécurisée (non échappée car sera utilisée dans href où Django template gère l'encodage)
         """
         if not url:
             return ''
         
         url = str(url).strip()
         
-        # Vérifier que l'URL est sécurisée
+        # Vérifier que l'URL est sécurisée (protocole autorisé uniquement)
         if not url.startswith(('http://', 'https://', '/')):
             logger.warning(f"⚠️ URL suspecte : {url}")
             return ''
         
-        # Échapper les caractères dangereux
-        return html.escape(url)
+        # Ne PAS utiliser html.escape() ici car :
+        # 1. L'URL sera utilisée dans un attribut href où Django template gère l'encodage automatiquement
+        # 2. html.escape() transformerait & en &amp; ce qui créerait une URL invalide
+        # 3. La validation du protocole (http/https) est suffisante pour la sécurité
+        
+        # Vérifier qu'il n'y a pas de caractères dangereux (javascript:, data:, etc.)
+        url_lower = url.lower()
+        dangerous_protocols = ['javascript:', 'data:', 'vbscript:', 'file:']
+        for protocol in dangerous_protocols:
+            if protocol in url_lower:
+                logger.warning(f"⚠️ URL avec protocole dangereux détecté : {url}")
+                return ''
+        
+        return url
     
     @staticmethod
     def sanitize_subject(subject: str, max_length: int = 255) -> str:

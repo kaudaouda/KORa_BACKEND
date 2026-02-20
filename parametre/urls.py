@@ -143,4 +143,5 @@ urlpatterns = [
     # ==================== GESTION DES UTILISATEURS ====================
     path('users/', views.users_list, name='users_list'),
     path('users/create/', views.users_create, name='users_create'),
+    path('users/invite/', views.users_invite, name='users_invite'),
 ]
