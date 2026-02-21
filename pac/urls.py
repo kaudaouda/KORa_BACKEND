@@ -15,6 +15,8 @@ urlpatterns = [
     path('auth/password/change/', views.change_password, name='change_password'),
     path('auth/check-invitation/', views.check_invitation, name='check_invitation'),
     path('auth/complete-invitation/', views.complete_invitation, name='complete_invitation'),
+    path('auth/password-reset-request/', views.password_reset_request, name='password_reset_request'),
+    path('auth/password-reset-confirm/', views.password_reset_confirm, name='password_reset_confirm'),
     path('auth/refresh/', views.refresh_token, name='refresh_token'),
     path('auth/recaptcha-config/', views.recaptcha_config, name='recaptcha_config'),
     

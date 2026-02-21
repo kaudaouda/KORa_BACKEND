@@ -15,12 +15,16 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.utils import timezone
-from django.utils.http import urlsafe_base64_decode
-from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_str, force_bytes
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.conf import settings
 from datetime import datetime, timedelta
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Versions
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip, log_activity
+from parametre.utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 from parametre.permissions import (
     check_permission_or_403,
     user_can_create_objectives_amendements,
@@ -1025,6 +1029,477 @@ def complete_invitation(request):
         return Response({
             'error': f'Erreur lors de la finalisation de l\'invitation: {str(e)}',
             'code': 'COMPLETE_INVITATION_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def password_reset_request(request):
+    """
+    Demande de réinitialisation de mot de passe par un administrateur.
+    Security by Design :
+    - Accessible uniquement aux administrateurs (is_staff ET is_superuser)
+    - Rate limiting pour éviter le spam
+    - Envoie un email avec un lien sécurisé pour réinitialiser le mot de passe
+    - Ne révèle pas si l'email existe ou non (sécurité)
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("DEBUT password_reset_request")
+        logger.info(f"Utilisateur qui demande: {request.user.username} (is_staff={request.user.is_staff}, is_superuser={request.user.is_superuser})")
+        logger.info(f"IP: {get_client_ip(request)}")
+        
+        # ========== VÉRIFICATION DE SÉCURITÉ ==========
+        from parametre.permissions import can_manage_users
+        can_manage = can_manage_users(request.user)
+        logger.info(f"can_manage_users: {can_manage}")
+        
+        if not can_manage:
+            logger.warning(f"Accès refusé pour {request.user.username}")
+            return Response({
+                'success': False,
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent demander une réinitialisation de mot de passe.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Rate limiting pour éviter le spam
+        user_limit_ok = EmailRateLimiter.check_user_limit(request.user.id)
+        global_limit_ok = EmailRateLimiter.check_global_limit()
+        logger.info(f"Rate limiting - user_limit: {user_limit_ok}, global_limit: {global_limit_ok}")
+        
+        if not user_limit_ok or not global_limit_ok:
+            SecureEmailLogger.log_security_event('password_reset_rate_limit_exceeded', {
+                'user': request.user.username,
+                'ip': get_client_ip(request),
+                'type': 'password_reset_request'
+            })
+            logger.warning(f"Rate limit dépassé pour {request.user.username}")
+            return Response({
+                'success': False,
+                'error': "Trop de tentatives de réinitialisation, veuillez réessayer plus tard."
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        
+        # Récupérer l'email depuis les données
+        email = request.data.get('email', '').strip()
+        logger.info(f"Email reçu pour réinitialisation: {email}")
+        
+        if not email:
+            return Response({
+                'success': False,
+                'error': 'L\'email est requis',
+                'code': 'EMAIL_REQUIRED'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider le format de l'email
+        if not EmailValidator.is_valid_email(email):
+            return Response({
+                'success': False,
+                'error': 'Format d\'email invalide',
+                'code': 'INVALID_EMAIL'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Chercher l'utilisateur par email
+        try:
+            user = User.objects.get(email=email)
+            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}")
+        except User.DoesNotExist:
+            # Security by Design : Ne pas révéler si l'email existe ou non
+            # Retourner un succès générique pour éviter l'énumération d'emails
+            logger.warning(f"Email non trouvé pour réinitialisation: {email}")
+            return Response({
+                'success': True,
+                'message': 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé.'
+            }, status=status.HTTP_200_OK)
+        
+        # Vérifier que l'utilisateur a un mot de passe utilisable (sinon c'est une invitation, pas une réinitialisation)
+        if not user.has_usable_password():
+            logger.warning(f"Tentative de réinitialisation pour un utilisateur sans mot de passe: {user.username}")
+            return Response({
+                'success': False,
+                'error': 'Cet utilisateur n\'a pas encore défini de mot de passe. Utilisez la fonctionnalité d\'invitation.',
+                'code': 'NO_PASSWORD_SET'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Générer un token de réinitialisation
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        logger.info(f"Token de réinitialisation généré: uid={uid}, token={token[:20]}...")
+        
+        frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        raw_reset_url = f"{frontend_base}/reset-password?uid={uid}&token={token}"
+        reset_url = EmailContentSanitizer.sanitize_url(raw_reset_url)
+        
+        # Calculer la date d'expiration
+        password_reset_timeout = getattr(settings, 'PASSWORD_RESET_TIMEOUT', 604800)  # 7 jours par défaut
+        expiration_date = datetime.now() + timedelta(seconds=password_reset_timeout)
+        expiration_str = expiration_date.strftime("%d/%m/%Y à %H:%M")
+        
+        # Préparer le contexte pour le template
+        context = {
+            'user_first_name': user.first_name,
+            'user_username': user.username,
+            'user_email': user.email,
+            'reset_url': reset_url,
+            'expiration_date': expiration_str,
+        }
+        
+        # Rendre les templates HTML et texte
+        html_body = render_to_string('emails/password_reset_email.html', context)
+        text_body = render_to_string('emails/password_reset_email.txt', context)
+        
+        subject = EmailContentSanitizer.sanitize_subject("KORA – Réinitialisation de votre mot de passe")
+        
+        # Envoyer l'email
+        logger.info(f"Envoi de l'email de réinitialisation à {user.email}...")
+        logger.info(f"URL de réinitialisation: {reset_url}")
+        
+        try:
+            send_mail(
+                subject=subject,
+                message=text_body,
+                html_message=html_body,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', user.email),
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            logger.info(f"Email envoyé avec succès à {user.email}")
+        except Exception as email_error:
+            logger.error(f"ERREUR lors de l'envoi de l'email: {str(email_error)}")
+            SecureEmailLogger.log_email_sent(user.email, subject, False)
+            return Response({
+                'success': False,
+                'error': 'Erreur lors de l\'envoi de l\'email de réinitialisation',
+                'code': 'EMAIL_SEND_FAILED'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        SecureEmailLogger.log_email_sent(user.email, subject, True)
+        
+        # Log de l'activité
+        log_activity(
+            user=request.user,
+            action='update',
+            entity_type='user',
+            entity_id=str(user.id),
+            entity_name=f"{user.username} ({user.email})",
+            description=f"Demande de réinitialisation de mot de passe pour {user.username}",
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+        
+        logger.info(f"Demande de réinitialisation terminée avec succès pour {user.email}")
+        logger.info("=" * 60)
+        
+        return Response({
+            'success': True,
+            'message': f"Email de réinitialisation envoyé avec succès à {user.email}."
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error(f"ERREUR EXCEPTION dans password_reset_request: {str(e)}")
+        logger.error(f"Type d'erreur: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("=" * 60)
+        return Response({
+            'success': False,
+            'error': f"Erreur lors de la demande de réinitialisation: {str(e)}",
+            'code': 'PASSWORD_RESET_REQUEST_FAILED'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_confirm(request):
+    """
+    Finalise la réinitialisation du mot de passe.
+    Security by Design :
+    - Rate limiting pour prévenir les attaques par force brute
+    - Vérifie le token de réinitialisation signé (uid + token)
+    - Valide la force du mot de passe avec les validateurs Django
+    - Connecte automatiquement l'utilisateur après réinitialisation
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("DEBUT password_reset_confirm")
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Method: {request.method}")
+        logger.info(f"IP: {get_client_ip(request)}")
+        
+        # ========== RATE LIMITING (Security by Design) ==========
+        from django.core.cache import cache
+        
+        client_ip = get_client_ip(request)
+        rate_limit_key = f'password_reset_confirm_rate_limit_{client_ip}'
+        attempts = cache.get(rate_limit_key, 0)
+        max_attempts = 5  # Maximum 5 tentatives par IP par heure
+        rate_limit_window = 3600  # 1 heure
+        
+        if attempts >= max_attempts:
+            logger.warning(f"Rate limit dépassé pour password_reset_confirm depuis IP: {client_ip}")
+            return Response({
+                'error': 'Trop de tentatives. Veuillez réessayer dans 1 heure.',
+                'code': 'RATE_LIMIT_EXCEEDED'
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        
+        # Incrémenter le compteur
+        cache.set(rate_limit_key, attempts + 1, rate_limit_window)
+        # ========== FIN RATE LIMITING ==========
+        
+        logger.info(f"request.data type: {type(request.data)}")
+        logger.info(f"request.data: {request.data}")
+        
+        data = request.data
+        
+        # ========== VALIDATION reCAPTCHA (Security by Design) ==========
+        if recaptcha_service.is_enabled():
+            recaptcha_token = data.get('recaptcha_token')
+            if not recaptcha_token:
+                logger.warning(f"reCAPTCHA token manquant pour password_reset_confirm depuis IP: {client_ip}")
+                return Response({
+                    'error': 'Vérification de sécurité requise',
+                    'recaptcha_required': True,
+                    'code': 'RECAPTCHA_REQUIRED'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                remote_ip = get_client_ip(request)
+                is_valid, recaptcha_data = recaptcha_service.verify_token(
+                    recaptcha_token, 
+                    remote_ip
+                )
+                
+                if not is_valid:
+                    logger.warning(f"reCAPTCHA validation échouée pour password_reset_confirm: {recaptcha_data}")
+                    return Response({
+                        'error': 'Vérification de sécurité échouée',
+                        'recaptcha_error': recaptcha_data.get('error'),
+                        'recaptcha_required': True,
+                        'code': 'RECAPTCHA_FAILED'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                logger.info(f"reCAPTCHA validé pour password_reset_confirm: score={recaptcha_data.get('score')}")
+                
+            except RecaptchaValidationError as e:
+                logger.error(f"Erreur reCAPTCHA lors de la réinitialisation: {str(e)}")
+                return Response({
+                    'error': 'Problème de vérification de sécurité',
+                    'recaptcha_error': str(e),
+                    'recaptcha_required': True,
+                    'code': 'RECAPTCHA_ERROR'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # ========== FIN VALIDATION reCAPTCHA ==========
+        
+        uidb64 = data.get('uid')
+        token = data.get('token')
+        password = data.get('password')
+        password_confirm = data.get('password_confirm')
+        
+        logger.info(f"uidb64: {uidb64}")
+        logger.info(f"token: {token[:20] if token else None}...")
+        logger.info(f"password présent: {bool(password)}")
+        logger.info(f"password_confirm présent: {bool(password_confirm)}")
+        
+        # Validation des données requises
+        missing_fields = []
+        if not uidb64:
+            missing_fields.append('uid')
+        if not token:
+            missing_fields.append('token')
+        if not password:
+            missing_fields.append('password')
+        if not password_confirm:
+            missing_fields.append('password_confirm')
+        
+        if missing_fields:
+            logger.error(f"Champs manquants: {missing_fields}")
+            return Response({
+                'error': f'Champs requis manquants: {", ".join(missing_fields)}',
+                'code': 'MISSING_FIELDS',
+                'missing_fields': missing_fields
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que les mots de passe correspondent
+        if password != password_confirm:
+            logger.error(f"Les mots de passe ne correspondent pas")
+            return Response({
+                'error': 'Les mots de passe ne correspondent pas.',
+                'code': 'PASSWORD_MISMATCH'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info("Mots de passe correspondent, décodage de l'uid...")
+        
+        # Décoder l'uid et récupérer l'utilisateur
+        try:
+            decoded_bytes = urlsafe_base64_decode(uidb64)
+            logger.info(f"uidb64 décodé en bytes: {decoded_bytes}")
+            uid = force_str(decoded_bytes)
+            logger.info(f"uid décodé (string): {uid}")
+            user = User.objects.get(pk=uid)
+            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
+            logger.error(f"Erreur lors du décodage ou utilisateur non trouvé: {type(e).__name__}: {str(e)}")
+            return Response({
+                'error': 'Lien de réinitialisation invalide ou expiré',
+                'code': 'INVALID_LINK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier le token de réinitialisation
+        logger.info("Vérification du token de réinitialisation...")
+        token_valid = default_token_generator.check_token(user, token)
+        logger.info(f"Token valide: {token_valid}")
+        
+        if not token_valid:
+            logger.warning(f"Token de réinitialisation invalide ou expiré pour l'utilisateur {user.username}")
+            password_reset_timeout = getattr(settings, 'PASSWORD_RESET_TIMEOUT', 604800)  # 7 jours par défaut
+            error_message = f'Le lien de réinitialisation est invalide ou a expiré. Les liens sont valides pendant {password_reset_timeout // 86400} jours. Veuillez demander une nouvelle réinitialisation.'
+            
+            return Response({
+                'error': error_message,
+                'code': 'INVALID_TOKEN'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que l'utilisateur a un mot de passe utilisable (doit être True pour une réinitialisation)
+        has_usable = user.has_usable_password()
+        logger.info(f"Utilisateur a un mot de passe utilisable: {has_usable}")
+        
+        if not has_usable:
+            logger.warning(f"Tentative de réinitialisation pour un utilisateur sans mot de passe: {user.username}")
+            return Response({
+                'error': 'Cet utilisateur n\'a pas encore défini de mot de passe. Utilisez la fonctionnalité d\'invitation.',
+                'code': 'NO_PASSWORD_SET'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider la force du mot de passe
+        logger.info("Validation de la force du mot de passe...")
+        try:
+            validate_password(password, user=user)
+            logger.info("Mot de passe validé avec succès")
+        except ValidationError as e:
+            logger.error(f"Mot de passe invalide: {list(e.messages)}")
+            
+            # Traduire les messages d'erreur Django en français
+            translated_messages = []
+            for msg in e.messages:
+                if 'too common' in msg.lower():
+                    translated_messages.append('Ce mot de passe est trop commun. Veuillez utiliser un mot de passe plus unique.')
+                elif 'too short' in msg.lower():
+                    translated_messages.append('Le mot de passe est trop court. Il doit contenir au moins 8 caractères.')
+                elif 'too similar' in msg.lower():
+                    translated_messages.append('Le mot de passe est trop similaire à vos informations personnelles.')
+                elif 'entirely numeric' in msg.lower():
+                    translated_messages.append('Le mot de passe ne peut pas être entièrement numérique.')
+                else:
+                    # Garder le message original si on ne le reconnaît pas
+                    translated_messages.append(msg)
+            
+            return Response({
+                'error': 'Mot de passe invalide',
+                'details': translated_messages,
+                'requirements': [
+                    'Au moins 8 caractères',
+                    'Ne pas être trop commun',
+                    'Ne pas être entièrement numérique',
+                    'Contenir au moins une lettre'
+                ],
+                'code': 'WEAK_PASSWORD'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Définir le nouveau mot de passe
+        logger.info("Définition du nouveau mot de passe...")
+        user.set_password(password)
+        user.save()
+        logger.info(f"Mot de passe réinitialisé pour {user.username}")
+        
+        # Générer les tokens JWT et connecter automatiquement l'utilisateur
+        logger.info("Génération des tokens JWT...")
+        try:
+            access_token, refresh_token = AuthService.create_tokens(user)
+            logger.info("Tokens JWT générés avec succès")
+        except Exception as token_error:
+            logger.error(f"ERREUR lors de la génération des tokens: {str(token_error)}")
+            import traceback
+            logger.error(f"Traceback tokens: {traceback.format_exc()}")
+            raise
+        
+        # Créer la réponse avec les tokens dans les cookies
+        logger.info("Création de la réponse...")
+        try:
+            user_data = UserSerializer(user).data
+            logger.info(f"Données utilisateur sérialisées: {list(user_data.keys())}")
+        except Exception as serializer_error:
+            logger.error(f"ERREUR lors de la sérialisation de l'utilisateur: {str(serializer_error)}")
+            import traceback
+            logger.error(f"Traceback serializer: {traceback.format_exc()}")
+            raise
+        
+        response = Response({
+            'message': 'Mot de passe réinitialisé avec succès. Vous êtes maintenant connecté.',
+            'user': user_data,
+            'success': True
+        }, status=status.HTTP_200_OK)
+        
+        # Définir les cookies d'authentification
+        try:
+            AuthService.set_auth_cookies(response, access_token, refresh_token)
+            logger.info("Cookies d'authentification définis")
+        except Exception as cookie_error:
+            logger.error(f"ERREUR lors de la définition des cookies: {str(cookie_error)}")
+            import traceback
+            logger.error(f"Traceback cookies: {traceback.format_exc()}")
+            raise
+        
+        # Logger la connexion automatique après réinitialisation
+        logger.info("Log de la connexion...")
+        try:
+            log_user_login(
+                user=user,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+        except Exception as log_error:
+            logger.warning(f"ERREUR lors du log de connexion (non bloquant): {str(log_error)}")
+            import traceback
+            logger.warning(f"Traceback log: {traceback.format_exc()}")
+        
+        # Logger l'activité de réinitialisation
+        try:
+            log_activity(
+                user=user,
+                action='update',
+                entity_type='user',
+                entity_id=str(user.id),
+                entity_name=user.username,
+                description=f"Mot de passe réinitialisé avec succès pour {user.username}",
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            logger.info(f"Log d'activité enregistré pour la réinitialisation du mot de passe de {user.username}")
+        except Exception as log_error:
+            logger.warning(f"ERREUR lors du log d'activité (non bloquant): {str(log_error)}")
+        
+        logger.info(f"Réinitialisation finalisée avec succès pour {user.username}")
+        logger.info("=" * 60)
+        
+        return response
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Erreur de parsing JSON: {str(e)}")
+        return Response({
+            'error': 'Format de données invalide',
+            'code': 'INVALID_JSON'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error(f"ERREUR EXCEPTION dans password_reset_confirm: {str(e)}")
+        logger.error(f"Type d'erreur: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("=" * 60)
+        return Response({
+            'error': f'Erreur lors de la réinitialisation du mot de passe: {str(e)}',
+            'code': 'PASSWORD_RESET_CONFIRM_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

@@ -3074,6 +3074,28 @@ def user_processus_role_create(request):
         data = request.data.copy()
         data['attribue_par'] = request.user.id
         
+        # Vérifier si l'attribution existe déjà (contrainte UNIQUE)
+        from parametre.models import UserProcessusRole
+        user_id = data.get('user')
+        processus_id = data.get('processus')
+        role_id = data.get('role')
+        
+        if user_id and processus_id and role_id:
+            existing = UserProcessusRole.objects.filter(
+                user_id=user_id,
+                processus_id=processus_id,
+                role_id=role_id,
+                is_active=True
+            ).first()
+            
+            if existing:
+                # Retourner une réponse 400 avec un message clair au lieu d'une erreur 500
+                return Response({
+                    'error': 'Ce rôle est déjà attribué à cet utilisateur pour ce processus.',
+                    'code': 'ALREADY_EXISTS',
+                    'existing_uuid': str(existing.uuid)
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = UserProcessusRoleSerializer(data=data)
         if serializer.is_valid():
             user_processus_role = serializer.save()
@@ -3091,6 +3113,17 @@ def user_processus_role_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Erreur lors de la création de l'attribution de rôle: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Vérifier si c'est une erreur de contrainte UNIQUE
+        error_str = str(e)
+        if 'UNIQUE constraint' in error_str or 'unique constraint' in error_str.lower():
+            return Response({
+                'error': 'Ce rôle est déjà attribué à cet utilisateur pour ce processus.',
+                'code': 'ALREADY_EXISTS'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         return Response({'error': 'Impossible de créer l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
