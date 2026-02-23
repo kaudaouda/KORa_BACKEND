@@ -9,6 +9,10 @@ class Pac(models.Model):
     Modèle pour les PAC (Plan d'Action Corrective)
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text='Date de création du PAC'
+    )
     cree_par = models.ForeignKey(
         User, 
         on_delete=models.CASCADE, 
@@ -67,8 +71,8 @@ class Pac(models.Model):
         verbose_name_plural = 'PACs'
         constraints = [
             models.UniqueConstraint(
-                fields=['processus', 'annee', 'type_tableau', 'cree_par'],
-                name='unique_pac_per_processus_annee_type_tableau_user'
+                fields=['processus', 'annee', 'type_tableau'],
+                name='unique_pac_per_processus_annee_type_tableau'
             )
         ]
 
@@ -258,6 +262,10 @@ class PacSuivi(models.Model):
         db_table = 'suivi'
         verbose_name = 'Suivi PAC'
         verbose_name_plural = 'Suivis PAC'
+
+    def __str__(self):
+        return f"Suivi PAC {self.uuid} - {self.etat_mise_en_oeuvre.nom}"
+
 
     def __str__(self):
         return f"Suivi PAC {self.uuid} - {self.etat_mise_en_oeuvre.nom}"
