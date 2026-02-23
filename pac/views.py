@@ -70,15 +70,15 @@ logger = logging.getLogger(__name__)
 
 def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
     """
-    Retourne l'instance Versions à utiliser automatiquement pour (annee, processus) d'un user.
+    Retourne l'instance Versions à utiliser automatiquement pour (annee, processus).
     Ordre: INITIAL -> AMENDEMENT_1 -> AMENDEMENT_2. Si tous existent déjà, retourne AMENDEMENT_2.
+    Unicité globale (comme dashboard): on vérifie les types existants sans filtrer par utilisateur.
     """
     try:
-        logger.info(f"[_get_next_type_tableau_for_context] user={user}, annee_uuid={annee_uuid}, processus_uuid={processus_uuid}")
+        logger.info(f"[_get_next_type_tableau_for_context] annee_uuid={annee_uuid}, processus_uuid={processus_uuid}")
         codes_order = ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
         existing_types = set(
             Pac.objects.filter(
-                cree_par=user,
                 annee_id=annee_uuid,
                 processus_id=processus_uuid
             ).values_list('type_tableau__code', flat=True)
@@ -309,13 +309,13 @@ def login(request):
             user_agent=request.META.get('HTTP_USER_AGENT')
         )
 
-        # Créer la réponse
+        # Créer la réponse (Security by Design: tokens uniquement dans cookies httpOnly, pas en JSON)
         response = Response({
             'message': 'Connexion réussie',
             'user': UserSerializer(user).data
         }, status=status.HTTP_200_OK)
 
-        # Définir les cookies
+        # Définir les cookies (httponly=True = protection XSS)
         return AuthService.set_auth_cookies(response, access_token, refresh_token)
 
     except json.JSONDecodeError:
@@ -378,7 +378,7 @@ def refresh_token(request):
             refresh = RefreshToken(refresh_token_value)
             new_access_token = refresh.access_token
 
-            # Créer la réponse avec le nouveau token
+            # Créer la réponse (Security by Design: token uniquement dans cookie httpOnly)
             response = Response({
                 'message': 'Token rafraîchi avec succès'
             }, status=status.HTTP_200_OK)
@@ -1662,64 +1662,240 @@ def pac_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, PACCreatePermission])
 def pac_create(request):
-    """Créer un nouveau PAC (nouvelle ligne)"""
+    """
+    Créer un nouveau PAC (même logique que tableaux_bord_list_create).
+    Validation stricte: un seul PAC par (processus, annee, type_tableau).
+    Retourne 400 si doublon.
+    """
     try:
-        logger.info(f"Données reçues pour la création de PAC: {request.data}")
-        data = request.data
+        logger.info(f"[pac_create] Données reçues: {request.data}")
+        data = request.data.copy()
+        clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
 
         annee_uuid = data.get('annee')
         processus_uuid = data.get('processus')
-        type_tableau_uuid = data.get('type_tableau')
+        type_tableau_value = data.get('type_tableau')
 
-        # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
-        # La permission est déjà vérifiée par le décorateur @permission_classes([PACCreatePermission])
-        # Mais on vérifie explicitement ici aussi pour être sûr
-        # Note: Le décorateur devrait normalement bloquer avant d'arriver ici, mais on garde cette vérification pour sécurité
-        if processus_uuid:
-            try:
-                pac_create_permission = PACCreatePermission()
-                pac_create_permission.has_permission(request, None)
-            except PermissionDenied as e:
+        if not annee_uuid or not processus_uuid:
+            return Response({
+                'success': False,
+                'error': "Les champs 'annee' et 'processus' sont requis."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not type_tableau_value:
+            return Response({
+                'success': False,
+                'error': "Le champ 'type_tableau' est requis."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus_uuid):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas accès à ce processus. Vous n'avez pas de rôle actif pour ce processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
+        # ========== VALIDATION STRICTE (comme dashboard) ==========
+        try:
+            if type_tableau_value in ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']:
+                type_tableau_obj = Versions.objects.get(code=type_tableau_value)
+            else:
+                type_tableau_obj = Versions.objects.get(uuid=type_tableau_value)
+            data['type_tableau'] = type_tableau_obj.uuid
+        except Versions.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': f"Type de tableau introuvable: {type_tableau_value}"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        type_code = type_tableau_obj.code
+
+        # VALIDATION 1 : Si INITIAL, vérifier qu'il n'existe pas déjà
+        if type_code == 'INITIAL':
+            existing = Pac.objects.filter(
+                annee_id=annee_uuid,
+                processus_id=processus_uuid,
+                type_tableau__code='INITIAL'
+            ).exists()
+            if existing:
                 return Response({
                     'success': False,
-                    'error': str(e) or "Vous n'avez pas les permissions nécessaires pour créer un PAC."
-                }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
+                    'error': "Un PAC INITIAL existe déjà pour cette année et ce processus. Vous ne pouvez créer que des amendements."
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Si type_tableau manque mais annee + processus sont fournis, déterminer automatiquement le type
-        if annee_uuid and processus_uuid and not type_tableau_uuid:
-            auto_tt = _get_next_type_tableau_for_context(request.user, annee_uuid, processus_uuid)
-            if auto_tt:
-                # Copier les données pour mutation sûre
-                data = data.copy()
-                data['type_tableau'] = str(auto_tt.uuid)
+        # VALIDATION 2 : Si AMENDEMENT_1
+        elif type_code == 'AMENDEMENT_1':
+            try:
+                pac_initial = Pac.objects.get(
+                    annee_id=annee_uuid,
+                    processus_id=processus_uuid,
+                    type_tableau__code='INITIAL'
+                )
+            except Pac.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': "Impossible de créer AMENDEMENT_1 : aucun PAC INITIAL n'existe pour cette année et ce processus."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            if not pac_initial.is_validated:
+                return Response({
+                    'success': False,
+                    'error': "Impossible de créer AMENDEMENT_1 : le PAC initial doit être validé avant de pouvoir créer un amendement."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            existing_a1 = Pac.objects.filter(
+                annee_id=annee_uuid,
+                processus_id=processus_uuid,
+                type_tableau__code='AMENDEMENT_1'
+            ).exists()
+            if existing_a1:
+                return Response({
+                    'success': False,
+                    'error': "AMENDEMENT_1 existe déjà pour cette année et ce processus. Vous pouvez créer AMENDEMENT_2."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            data['initial_ref'] = str(pac_initial.uuid)
 
-        # Toujours créer un nouveau PAC (nouvelle ligne)
-        # Plusieurs lignes peuvent avoir le même (processus, année, type_tableau)
-        serializer = PacCreateSerializer(data=data, context={'request': request})
-        
-        if serializer.is_valid():
-            logger.info(f"Serializer valide, données validées: {serializer.validated_data}")
-            pac = serializer.save()
-            
-            # Log de l'activité
-            log_pac_creation(
-                user=request.user,
-                pac=pac,
-                ip_address=get_client_ip(request),
-                user_agent=request.META.get('HTTP_USER_AGENT')
+        # VALIDATION 3 : Si AMENDEMENT_2
+        elif type_code == 'AMENDEMENT_2':
+            try:
+                pac_a1 = Pac.objects.get(
+                    annee_id=annee_uuid,
+                    processus_id=processus_uuid,
+                    type_tableau__code='AMENDEMENT_1'
+                )
+            except Pac.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': "Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 n'existe pas. Créez d'abord AMENDEMENT_1."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            if not pac_a1.is_validated:
+                return Response({
+                    'success': False,
+                    'error': "Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 doit être validé avant de pouvoir créer AMENDEMENT_2."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            existing_a2 = Pac.objects.filter(
+                annee_id=annee_uuid,
+                processus_id=processus_uuid,
+                type_tableau__code='AMENDEMENT_2'
+            ).exists()
+            if existing_a2:
+                return Response({
+                    'success': False,
+                    'error': "AMENDEMENT_2 existe déjà pour cette année et ce processus. Maximum 2 amendements autorisés."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            # initial_ref pour AMENDEMENT_2 = le PAC initial
+            pac_initial_for_a2 = Pac.objects.get(
+                annee_id=annee_uuid,
+                processus_id=processus_uuid,
+                type_tableau__code='INITIAL'
             )
-            
-            return Response(PacSerializer(pac).data, status=status.HTTP_201_CREATED)
-        
-        logger.error(f"Erreurs de validation: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+            data['initial_ref'] = str(pac_initial_for_a2.uuid)
+
+        # ========== CRÉATION ==========
+        serializer = PacCreateSerializer(data=data, context={'request': request})
+        if not serializer.is_valid():
+            logger.error(f"[pac_create] Erreurs de validation: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        pac = serializer.save()
+        logger.info(f"[pac_create] PAC créé: {pac.uuid}")
+
+        log_pac_creation(
+            user=request.user,
+            pac=pac,
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT')
+        )
+
+        # Clone des détails si amendement et clone demandé
+        if type_code in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone:
+            source_pac = None
+            if type_code == 'AMENDEMENT_1':
+                source_pac = Pac.objects.filter(
+                    annee_id=annee_uuid,
+                    processus_id=processus_uuid,
+                    type_tableau__code='INITIAL'
+                ).first()
+            elif type_code == 'AMENDEMENT_2':
+                source_pac = Pac.objects.filter(
+                    annee_id=annee_uuid,
+                    processus_id=processus_uuid,
+                    type_tableau__code='AMENDEMENT_1'
+                ).first()
+            if source_pac:
+                details_with_suivi = source_pac.details.select_related(
+                    'traitement', 'traitement__suivi',
+                    'traitement__suivi__etat_mise_en_oeuvre', 'traitement__suivi__appreciation',
+                    'traitement__suivi__preuve', 'traitement__suivi__statut'
+                ).all()
+                clone_count = 0
+                for detail in details_with_suivi:
+                    new_detail = DetailsPac.objects.create(
+                        pac=pac,
+                        numero_pac=detail.numero_pac,
+                        libelle=detail.libelle,
+                        dysfonctionnement_recommandation=detail.dysfonctionnement_recommandation,
+                        nature=detail.nature,
+                        categorie=detail.categorie,
+                        source=detail.source,
+                        periode_de_realisation=detail.periode_de_realisation,
+                    )
+                    if hasattr(detail, 'traitement') and detail.traitement:
+                        t = detail.traitement
+                        new_traitement = TraitementPac.objects.create(
+                            details_pac=new_detail,
+                            action=t.action,
+                            type_action=t.type_action,
+                            delai_realisation=t.delai_realisation,
+                            responsable_direction=t.responsable_direction,
+                            responsable_sous_direction=t.responsable_sous_direction,
+                        )
+                        if hasattr(t, 'responsables_directions'):
+                            new_traitement.responsables_directions.set(t.responsables_directions.all())
+                        if hasattr(t, 'responsables_sous_directions'):
+                            new_traitement.responsables_sous_directions.set(t.responsables_sous_directions.all())
+                        # Copier le suivi si présent
+                        if hasattr(t, 'suivi') and t.suivi:
+                            s = t.suivi
+                            if s.etat_mise_en_oeuvre and s.appreciation:
+                                PacSuivi.objects.create(
+                                    traitement=new_traitement,
+                                    etat_mise_en_oeuvre=s.etat_mise_en_oeuvre,
+                                    resultat=s.resultat,
+                                    appreciation=s.appreciation,
+                                    preuve=s.preuve,
+                                    statut=s.statut,
+                                    date_mise_en_oeuvre_effective=s.date_mise_en_oeuvre_effective,
+                                    date_cloture=s.date_cloture,
+                                    cree_par=request.user,
+                                )
+                    clone_count += 1
+                # Audit: log du clonage (Security by Design)
+                if clone_count > 0:
+                    try:
+                        log_activity(
+                            user=request.user,
+                            action='clone',
+                            entity_type='pac',
+                            entity_id=str(pac.uuid),
+                            entity_name=f"PAC {pac.uuid}",
+                            description=f"Clonage d'amendement depuis {source_pac.uuid} ({type_code}) - {clone_count} détails copiés",
+                            ip_address=get_client_ip(request),
+                            user_agent=request.META.get('HTTP_USER_AGENT')
+                        )
+                    except Exception as log_err:
+                        logger.warning(f"[pac_create] Erreur log clonage: {log_err}")
+
+        return Response({
+            'success': True,
+            'message': 'PAC créé avec succès',
+            'data': PacSerializer(pac).data
+        }, status=status.HTTP_201_CREATED)
+
     except Exception as e:
         import traceback
-        logger.error(f"Erreur lors de la création du PAC: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"[pac_create] Erreur: {str(e)}\n{traceback.format_exc()}")
         return Response({
+            'success': False,
             'error': 'Impossible de créer le PAC',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1804,14 +1980,25 @@ def pac_get_or_create(request):
     try:
         logger.info(f"[pac_get_or_create] Début - données reçues: {request.data}")
         data = request.data
-        annee_uuid = data.get('annee')
-        processus_uuid = data.get('processus')
-        type_tableau_uuid = data.get('type_tableau')
+        # Extraire et normaliser les UUIDs (peuvent venir comme str ou dict avec .uuid)
+        def _to_uuid(val):
+            if val is None:
+                return None
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+            if hasattr(val, 'uuid'):
+                return str(getattr(val, 'uuid'))
+            if isinstance(val, dict) and val.get('uuid'):
+                return str(val['uuid'])
+            return str(val) if val else None
+        annee_uuid = _to_uuid(data.get('annee'))
+        processus_uuid = _to_uuid(data.get('processus'))
+        type_tableau_uuid = _to_uuid(data.get('type_tableau'))
+        initial_ref_uuid = _to_uuid(data.get('initial_ref'))
 
-        logger.info(f"[pac_get_or_create] annee_uuid={annee_uuid}, processus_uuid={processus_uuid}, type_tableau_uuid={type_tableau_uuid}")
+        logger.info(f"[pac_get_or_create] annee_uuid={annee_uuid}, processus_uuid={processus_uuid}, type_tableau_uuid={type_tableau_uuid}, initial_ref_uuid={initial_ref_uuid}")
 
         # Si type_tableau est absent mais annee + processus sont fournis, l'attribuer automatiquement
-        initial_ref_uuid = data.get('initial_ref')  # Utiliser celui fourni si présent
         if annee_uuid and processus_uuid and not type_tableau_uuid:
             logger.info("[pac_get_or_create] type_tableau absent, appel à _get_next_type_tableau_for_context")
             try:
@@ -1827,9 +2014,8 @@ def pac_get_or_create(request):
                     if auto_tt.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
                         if not initial_ref_uuid:
                             try:
-                                # Trouver le PAC initial pour ce processus/année
+                                # Trouver le PAC initial pour ce processus/année (unicité globale)
                                 pac_initial = Pac.objects.filter(
-                                    cree_par=request.user,
                                     annee_id=annee_uuid,
                                     processus_id=processus_uuid,
                                     type_tableau__code='INITIAL'
@@ -1875,6 +2061,20 @@ def pac_get_or_create(request):
                 'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        if not type_tableau_uuid:
+            logger.error("[pac_get_or_create] type_tableau non déterminé après la phase automatique")
+            return Response({
+                'error': "Impossible de déterminer le type de tableau. Vérifiez que les types (INITIAL, AMENDEMENT_1, AMENDEMENT_2) existent dans la configuration."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, processus_uuid):
+            return Response({
+                'success': False,
+                'error': "Vous n'avez pas accès à ce processus. Vous n'avez pas de rôle actif pour ce processus."
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
         # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
         # Détecter si on crée un amendement (après la détermination automatique du type)
         is_creating_amendement = False
@@ -1884,7 +2084,6 @@ def pac_get_or_create(request):
         elif type_tableau_uuid:
             # Vérifier le type_tableau pour déterminer si c'est un amendement
             try:
-                from parametre.models import Versions
                 type_tableau_obj = Versions.objects.get(uuid=type_tableau_uuid)
                 if type_tableau_obj.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
                     is_creating_amendement = True
@@ -1912,25 +2111,30 @@ def pac_get_or_create(request):
         # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
 
         # Vérifier si un PAC existe déjà avec ce (processus, annee, type_tableau)
+        # Unicité globale (comme dashboard): un seul PAC par combinaison, quel que soit l'utilisateur
         try:
             pac = Pac.objects.get(
                 processus__uuid=processus_uuid,
                 annee__uuid=annee_uuid,
                 type_tableau__uuid=type_tableau_uuid,
-                cree_par=request.user
             )
             logger.info(f"[pac_get_or_create] PAC existant trouvé: {pac.uuid}")
             
             # Sérialiser le PAC existant pour la réponse
             serializer = PacSerializer(pac)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            response_data = dict(serializer.data)
+            response_data['created'] = False
+            return Response(response_data, status=status.HTTP_200_OK)
             
         except Pac.DoesNotExist:
             logger.info(f"[pac_get_or_create] Aucun PAC existant, création d'un nouveau PAC")
             
-            # S'assurer que data est un dictionnaire mutable
-            if not isinstance(data, dict):
-                data = data.copy() if hasattr(data, 'copy') else dict(data)
+            # S'assurer que data est un dictionnaire mutable (QueryDict est immutable)
+            from django.http import QueryDict
+            if isinstance(data, QueryDict):
+                data = data.copy()
+            elif not isinstance(data, dict):
+                data = dict(data) if hasattr(data, 'items') else {}
             
             # Si initial_ref n'est pas dans data mais qu'on doit créer un amendement, le trouver
             if 'initial_ref' not in data or not data.get('initial_ref'):
@@ -1939,9 +2143,8 @@ def pac_get_or_create(request):
                     try:
                         type_tableau_obj = Versions.objects.get(uuid=type_tableau_uuid)
                         if type_tableau_obj.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
-                            # Trouver le PAC initial
+                            # Trouver le PAC initial (unicité globale)
                             pac_initial = Pac.objects.filter(
-                                cree_par=request.user,
                                 annee_id=annee_uuid,
                                 processus_id=processus_uuid,
                                 type_tableau__code='INITIAL'
@@ -1975,7 +2178,7 @@ def pac_get_or_create(request):
                 initial_ref_uuid = data.get('initial_ref')
                 if initial_ref_uuid:
                     try:
-                        pac_initial = Pac.objects.get(uuid=initial_ref_uuid, cree_par=request.user)
+                        pac_initial = Pac.objects.get(uuid=initial_ref_uuid)
                         if not pac_initial.is_validated:
                             logger.warning(f"[pac_get_or_create] ⚠️ Le PAC initial {initial_ref_uuid} n'est pas validé. Impossible de créer un amendement.")
                             return Response({
@@ -2002,8 +2205,18 @@ def pac_get_or_create(request):
                 except Versions.DoesNotExist:
                     pass  # Type tableau non trouvé, laisser le serializer gérer l'erreur
             
-            # Créer un nouveau PAC
-            create_serializer = PacCreateSerializer(data=data, context={'request': request})
+            # Construire un payload propre pour le serializer (UUIDs normalisés)
+            create_payload = {
+                'processus': processus_uuid,
+                'annee': annee_uuid,
+                'type_tableau': type_tableau_uuid,
+                'initial_ref': data.get('initial_ref') or initial_ref_uuid,
+            }
+            # Retirer initial_ref si null/empty
+            if not create_payload['initial_ref']:
+                create_payload.pop('initial_ref', None)
+            logger.info(f"[pac_get_or_create] Payload création: {create_payload}")
+            create_serializer = PacCreateSerializer(data=create_payload, context={'request': request})
 
             if create_serializer.is_valid():
                 logger.info("[pac_get_or_create] Serializer valide, sauvegarde...")
@@ -2015,18 +2228,19 @@ def pac_get_or_create(request):
                     import traceback
                     logger.error(traceback.format_exc())
                     # Si c'est une erreur de contrainte unique, c'est qu'un autre utilisateur a créé le PAC entre temps
-                    if 'unique_pac_per_processus_annee_type_tableau' in str(save_error) or 'unique_pac_per_processus_annee_type_tableau_user' in str(save_error) or 'UNIQUE constraint' in str(save_error):
+                    if 'unique_pac_per_processus_annee_type_tableau' in str(save_error) or 'UNIQUE constraint' in str(save_error):
                         try:
-                            # Essayer de récupérer le PAC existant
+                            # Essayer de récupérer le PAC existant (recherche globale, sans cree_par)
                             pac = Pac.objects.get(
                                 processus__uuid=processus_uuid,
                                 annee__uuid=annee_uuid,
                                 type_tableau__uuid=type_tableau_uuid,
-                                cree_par=request.user
                             )
                             logger.info(f"[pac_get_or_create] PAC existant récupéré après erreur de contrainte: {pac.uuid}")
                             serializer = PacSerializer(pac)
-                            return Response(serializer.data, status=status.HTTP_200_OK)
+                            response_data = dict(serializer.data)
+                            response_data['created'] = False
+                            return Response(response_data, status=status.HTTP_200_OK)
                         except Pac.DoesNotExist:
                             pass
                     
@@ -2055,7 +2269,9 @@ def pac_get_or_create(request):
                     serializer = PacSerializer(pac)
                     logger.info(f"[pac_get_or_create] Sérialisation du PAC pour la réponse...")
                     logger.info(f"[pac_get_or_create] Sérialisation réussie, envoi de la réponse")
-                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+                    response_data = dict(serializer.data)
+                    response_data['created'] = True
+                    return Response(response_data, status=status.HTTP_201_CREATED)
                 except Exception as serializer_error:
                     logger.error(f"[pac_get_or_create] Erreur lors de la sérialisation du PAC: {serializer_error}")
                     import traceback
@@ -2075,10 +2291,11 @@ def pac_get_or_create(request):
                 processus__uuid=processus_uuid,
                 annee__uuid=annee_uuid,
                 type_tableau__uuid=type_tableau_uuid,
-                cree_par=request.user
             ).first()
             serializer = PacSerializer(pac)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            response_data = dict(serializer.data)
+            response_data['created'] = False
+            return Response(response_data, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.error(f"[pac_get_or_create] Erreur exception non gérée: {str(e)}")
@@ -3165,8 +3382,16 @@ def pac_stats(request):
         
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
         if user_processus_uuids is None:
-            # Super admin : voir tous les PACs sans filtre
+            # Super admin : voir tous les PACs, avec filtre processus optionnel (?processus=UUID)
             pacs_base = Pac.objects.all()
+            processus_filter = request.query_params.get('processus')
+            if processus_filter and str(processus_filter).upper() != 'ALL':
+                try:
+                    from uuid import UUID
+                    UUID(str(processus_filter))
+                    pacs_base = pacs_base.filter(processus__uuid=processus_filter)
+                except (ValueError, TypeError):
+                    pass
         elif not user_processus_uuids:
             return Response({
                 'success': True,
@@ -3459,8 +3684,9 @@ def get_last_pac_previous_year(request):
             logger.info(f"[get_last_pac_previous_year] Année précédente {annee_precedente_valeur if 'annee_precedente_valeur' in locals() else 'N/A'} non trouvée")
             return Response({
                 'message': f'Aucune année {annee_precedente_valeur if "annee_precedente_valeur" in locals() else "précédente"} trouvée dans le système',
-                'found': False
-            }, status=status.HTTP_404_NOT_FOUND)
+                'found': False,
+                'data': None
+            }, status=status.HTTP_200_OK)
 
         logger.info(f"[get_last_pac_previous_year] Recherche du dernier PAC pour processus={processus_uuid}, année={annee_precedente.annee}")
 
@@ -3488,12 +3714,13 @@ def get_last_pac_previous_year(request):
                 serializer = PacSerializer(pac)
                 return Response(serializer.data, status=status.HTTP_200_OK)
 
-        # Aucun PAC trouvé pour l'année précédente
+        # Aucun PAC trouvé pour l'année précédente (200 pour que le frontend ne voit pas 404)
         logger.info(f"[get_last_pac_previous_year] Aucun PAC trouvé pour l'année {annee_precedente.annee}")
         return Response({
             'message': f'Aucun Plan d\'Action de Conformité trouvé pour l\'année {annee_precedente.annee}',
-            'found': False
-        }, status=status.HTTP_404_NOT_FOUND)
+            'found': False,
+            'data': None
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.error(f"Erreur lors de la récupération du dernier PAC de l'année précédente: {str(e)}")
