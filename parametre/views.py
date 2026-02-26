@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q
 from django.contrib.auth.tokens import default_token_generator
+from django.utils import timezone
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
@@ -25,7 +26,7 @@ from .models import (
     SousDirection, Service, Processus, Preuve, ActivityLog, StatutActionCDR,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque,
-    Role, UserProcessus, UserProcessusRole
+    Role, UserProcessus, UserProcessusRole, Notification
 )
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
@@ -1524,6 +1525,7 @@ def upcoming_notifications(request):
     try:
         from datetime import datetime, timedelta
         from django.utils import timezone
+        from django.contrib.contenttypes.models import ContentType
         from pac.models import TraitementPac
         from .permissions import get_user_processus_list
         
@@ -1606,27 +1608,81 @@ def upcoming_notifications(request):
 
             # Libellé de délai + jours restants entre parenthèses
             delai_label = f"{traitement.delai_realisation.strftime('%d/%m/%Y')} ({days_until_due} jour{'s' if days_until_due > 1 else ''})"
-
+            
             # Récupérer le numéro PAC depuis DetailsPac (numero_pac est sur DetailsPac, pas sur Pac)
             numero_pac = 'N/A'
             if traitement.details_pac:
                 numero_pac = traitement.details_pac.numero_pac or 'N/A'
 
+            # Titre et message utilisés à la fois pour l'API et pour le modèle Notification
+            title = f"{numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}"
+            message = f"Délai de réalisation dans {days_until_due} jour{'s' if days_until_due > 1 else ''}"
+            action_url = f'/pac/traitement/{traitement.uuid}/show'
+            
             notifications.append({
                 'id': f'traitement_{traitement.uuid}',
                 'type': 'traitement',
-                'title': f"{numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}",
-                'message': f"Délai de réalisation dans {days_until_due} jour{'s' if days_until_due > 1 else ''}",
+                'title': title,
+                'message': message,
                 'due_date': traitement.delai_realisation.isoformat(),
                 'priority': priority,
-                'action_url': f'/pac/traitement/{traitement.uuid}/show',
+                'action_url': action_url,
                 'entity_id': str(traitement.uuid),
+                'notification_uuid': None,
+                'read_at': None,
                 # Champs ajoutés pour l'affichage
                 'nature_label': nature_label,
                 'type_action': type_action,
                 'days_remaining': days_until_due,
                 'delai_label': delai_label,
             })
+
+            # Enregistrer/mettre à jour la notification côté serveur pour l'utilisateur
+            try:
+                content_type = ContentType.objects.get_for_model(TraitementPac)
+                notif, created = Notification.objects.get_or_create(
+                    user=request.user,
+                    content_type=content_type,
+                    object_id=traitement.uuid,
+                    source_app='pac',
+                    notification_type='traitement',
+                    defaults={
+                        'title': title,
+                        'message': message,
+                        'action_url': action_url,
+                        'priority': priority,
+                        'due_date': traitement.delai_realisation,
+                    },
+                )
+
+                # Si la notification existait déjà, mettre à jour les champs dynamiques si nécessaire
+                if not created:
+                    updated_fields = []
+                    if notif.title != title:
+                        notif.title = title
+                        updated_fields.append('title')
+                    if notif.message != message:
+                        notif.message = message
+                        updated_fields.append('message')
+                    if notif.action_url != action_url:
+                        notif.action_url = action_url
+                        updated_fields.append('action_url')
+                    if notif.priority != priority:
+                        notif.priority = priority
+                        updated_fields.append('priority')
+                    if notif.due_date != traitement.delai_realisation:
+                        notif.due_date = traitement.delai_realisation
+                        updated_fields.append('due_date')
+
+                    if updated_fields:
+                        notif.save(update_fields=updated_fields + ['updated_at'])
+
+                # Exposer l'état lu et l'uuid pour le frontend
+                notifications[-1]['notification_uuid'] = str(notif.uuid)
+                notifications[-1]['read_at'] = notif.read_at.isoformat() if notif.read_at else None
+
+            except Exception as e:
+                logger.error(f"Erreur lors de la création/mise à jour de Notification pour TraitementPac {traitement.uuid}: {e}")
         
         # Trier par priorité et date d'échéance
         priority_order = {'high': 0, 'medium': 1, 'low': 2}
@@ -1646,6 +1702,129 @@ def upcoming_notifications(request):
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': 'Impossible de récupérer les échéances'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notifications_list(request):
+    """
+    Liste générique des notifications pour l'utilisateur connecté.
+    Permet d'exploiter la table parametre.Notification pour toutes les apps.
+    Filtres possibles (query params) :
+    - is_read=true|false
+    - include_dismissed=true pour inclure les notifications masquées
+    - source_app=pac|dashboard|...
+    - notification_type=traitement|suivi|...
+    - limit, offset pour la pagination simple
+    """
+    try:
+        qs = Notification.objects.filter(user=request.user)
+
+        # Filtre masquées
+        include_dismissed = request.query_params.get('include_dismissed')
+        if not (include_dismissed and include_dismissed.lower() in ('1', 'true', 'yes')):
+            qs = qs.filter(dismissed_at__isnull=True)
+
+        # Filtre lu / non lu
+        is_read = request.query_params.get('is_read')
+        if is_read is not None:
+            is_read = is_read.lower()
+            if is_read in ('1', 'true', 'yes'):
+                qs = qs.filter(read_at__isnull=False)
+            elif is_read in ('0', 'false', 'no'):
+                qs = qs.filter(read_at__isnull=True)
+
+        # Filtre source_app
+        source_app = request.query_params.get('source_app')
+        if source_app:
+            qs = qs.filter(source_app=source_app)
+
+        # Filtre type métier
+        notif_type = request.query_params.get('notification_type')
+        if notif_type:
+            qs = qs.filter(notification_type=notif_type)
+
+        qs = qs.order_by('-created_at')
+
+        # Pagination simple
+        try:
+            limit = int(request.query_params.get('limit', '100'))
+        except ValueError:
+            limit = 100
+        try:
+            offset = int(request.query_params.get('offset', '0'))
+        except ValueError:
+            offset = 0
+
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+
+        total = qs.count()
+        notifications_qs = qs[offset:offset + limit]
+
+        notifications_data = []
+        for n in notifications_qs:
+            notifications_data.append({
+                'notification_uuid': str(n.uuid),
+                'title': n.title,
+                'message': n.message,
+                'source_app': n.source_app,
+                'notification_type': n.notification_type,
+                'action_url': n.action_url,
+                'priority': n.priority,
+                'due_date': n.due_date.isoformat() if n.due_date else None,
+                'read_at': n.read_at.isoformat() if n.read_at else None,
+                'dismissed_at': n.dismissed_at.isoformat() if n.dismissed_at else None,
+                'sent_by_email_at': n.sent_by_email_at.isoformat() if n.sent_by_email_at else None,
+                'shown_in_ui_at': n.shown_in_ui_at.isoformat() if n.shown_in_ui_at else None,
+                'content_type': n.content_type.model if n.content_type else None,
+                'object_id': str(n.object_id) if n.object_id is not None else None,
+                'created_at': n.created_at.isoformat() if n.created_at else None,
+                'updated_at': n.updated_at.isoformat() if n.updated_at else None,
+                'is_read': bool(n.read_at),
+            })
+
+        return Response({
+            'notifications': notifications_data,
+            'total': total,
+            'limit': limit,
+            'offset': offset,
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de la liste des notifications: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({'error': 'Impossible de récupérer les notifications'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PATCH', 'POST'])
+@permission_classes([IsAuthenticated])
+def notification_mark_read(request, uuid):
+    """
+    Marquer une notification comme lue (read_at) pour l'utilisateur connecté.
+    """
+    try:
+        notif = Notification.objects.filter(uuid=uuid, user=request.user).first()
+        if not notif:
+            return Response(
+                {'error': 'Notification introuvable ou accès refusé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if not notif.read_at:
+            notif.read_at = timezone.now()
+            notif.save(update_fields=['read_at', 'updated_at'])
+        return Response({
+            'success': True,
+            'notification_uuid': str(notif.uuid),
+            'read_at': notif.read_at.isoformat(),
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors du marquage lu de la notification {uuid}: {e}")
+        return Response(
+            {'error': 'Impossible de marquer la notification comme lue'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # ==================== EMAIL SETTINGS ====================

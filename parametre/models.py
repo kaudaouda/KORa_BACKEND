@@ -875,6 +875,82 @@ class ReminderEmailLog(models.Model):
         return f"{status} {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
 
 
+class Notification(models.Model):
+    """
+    Notification utilisateur : historique, état lu/masqué, traçabilité email et UI.
+    Utilisable par toutes les apps (PAC, dashboard, activité périodique, etc.).
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='notifications',
+        help_text='Destinataire de la notification'
+    )
+    source_app = models.CharField(
+        max_length=64,
+        help_text="App d'origine : pac, dashboard, activite_periodique, etc."
+    )
+    notification_type = models.CharField(
+        max_length=64,
+        help_text="Type métier : traitement, suivi, objective, etc."
+    )
+    # Référence générique à l'objet concerné (TraitementPac, objectif indicateur, etc.)
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Type du modèle lié (ex: TraitementPac)"
+    )
+    object_id = models.UUIDField(null=True, blank=True, help_text="PK de l'objet lié")
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    title = models.CharField(max_length=255)
+    message = models.TextField(blank=True, default='')
+    action_url = models.CharField(max_length=512, blank=True, null=True)
+    priority = models.CharField(
+        max_length=16,
+        default='medium',
+        choices=(('low', 'Basse'), ('medium', 'Moyenne'), ('high', 'Haute'))
+    )
+    due_date = models.DateField(null=True, blank=True, help_text="Date d'échéance si applicable")
+
+    # États côté serveur
+    read_at = models.DateTimeField(null=True, blank=True, help_text="Date/heure de lecture")
+    dismissed_at = models.DateTimeField(null=True, blank=True, help_text="Date/heure de masquage")
+
+    # Traçabilité
+    sent_by_email_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date/heure d'envoi par email (si inclus dans un rappel)"
+    )
+    shown_in_ui_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date/heure de première affichage dans l'interface"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'notification'
+        verbose_name = 'Notification'
+        verbose_name_plural = 'Notifications'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'read_at', 'created_at']),
+            models.Index(fields=['user', 'source_app']),
+            models.Index(fields=['content_type', 'object_id']),
+            models.Index(fields=['user', 'dismissed_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.title[:50]} -> {self.user.username} ({self.created_at:%Y-%m-%d})"
+
+
 class Mois(models.Model):
     """
     Modèle de référence pour les mois de l'année

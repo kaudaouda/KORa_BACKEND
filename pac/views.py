@@ -22,7 +22,7 @@ from django.template.loader import render_to_string
 from django.conf import settings
 from datetime import datetime, timedelta
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
-from parametre.models import Processus, Media, Preuve, Versions
+from parametre.models import Processus, Media, Preuve, Versions, Notification
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip, log_activity
 from parametre.utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 from parametre.permissions import (
@@ -3223,7 +3223,8 @@ def pac_upcoming_notifications(request):
     """Récupérer les traitements bientôt à terme pour les notifications"""
     try:
         from datetime import datetime as dt_class
-        
+        from django.contrib.contenttypes.models import ContentType
+
         today = timezone.now().date()
         
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
@@ -3319,6 +3320,7 @@ def pac_upcoming_notifications(request):
                     
                     # Construire l'URL d'action
                     action_url = f'/pac/{pac.uuid}'
+                    message = f'Délai de réalisation {delai_label}'
                     
                     # Récupérer les informations supplémentaires
                     nature_label = traitement.details_pac.nature.nom if traitement.details_pac.nature else None
@@ -3328,7 +3330,9 @@ def pac_upcoming_notifications(request):
                         'id': str(traitement.uuid),
                         'type': 'traitement',
                         'title': title,
-                        'message': f'Délai de réalisation {delai_label}',
+                        'numero_pac': numero_pac,
+                        'action': (traitement.action or 'Action non spécifiée')[:80],
+                        'message': message,
                         'due_date': delai_date.isoformat() if hasattr(delai_date, 'isoformat') else str(delai_date),
                         'priority': priority,
                         'action_url': action_url,
@@ -3336,8 +3340,51 @@ def pac_upcoming_notifications(request):
                         'type_action': type_action,
                         'delai_label': delai_label,
                         'pac_uuid': str(pac.uuid),
-                        'traitement_uuid': str(traitement.uuid)
+                        'traitement_uuid': str(traitement.uuid),
+                        'notification_uuid': None,
+                        'read_at': None,
                     })
+
+                    # Enregistrer/mettre à jour la notification côté serveur (table parametre.Notification)
+                    try:
+                        content_type = ContentType.objects.get_for_model(TraitementPac)
+                        notif, created = Notification.objects.get_or_create(
+                            user=request.user,
+                            content_type=content_type,
+                            object_id=traitement.uuid,
+                            source_app='pac',
+                            notification_type='traitement',
+                            defaults={
+                                'title': title,
+                                'message': message,
+                                'action_url': action_url,
+                                'priority': priority,
+                                'due_date': delai_date,
+                            },
+                        )
+                        if not created:
+                            updated_fields = []
+                            if notif.title != title:
+                                notif.title = title
+                                updated_fields.append('title')
+                            if notif.message != message:
+                                notif.message = message
+                                updated_fields.append('message')
+                            if notif.action_url != action_url:
+                                notif.action_url = action_url
+                                updated_fields.append('action_url')
+                            if notif.priority != priority:
+                                notif.priority = priority
+                                updated_fields.append('priority')
+                            if notif.due_date != delai_date:
+                                notif.due_date = delai_date
+                                updated_fields.append('due_date')
+                            if updated_fields:
+                                notif.save(update_fields=updated_fields + ['updated_at'])
+                        notifications[-1]['notification_uuid'] = str(notif.uuid)
+                        notifications[-1]['read_at'] = notif.read_at.isoformat() if notif.read_at else None
+                    except Exception as notif_err:
+                        logger.warning(f"[pac_upcoming_notifications] Notification get_or_create: {notif_err}")
             except Exception as e:
                 logger.error(f"[pac_upcoming_notifications] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
                 import traceback
