@@ -300,10 +300,10 @@ class Command(BaseCommand):
         #     return None
 
         # ===== VÉRIFICATION DE LA FRÉQUENCE DES RAPPELS =====
-        # Récupérer les paramètres de notification pour respecter la fréquence
-        from parametre.models import NotificationSettings
-        global_settings = NotificationSettings.get_solo()
-        reminder_frequency = global_settings.traitement_reminder_frequency_days
+        # Récupérer la politique de notification pour respecter la fréquence
+        from parametre.models import NotificationPolicy
+        policy = NotificationPolicy.get_for_scope(NotificationPolicy.SCOPE_PAC)
+        reminder_frequency = policy.reminder_frequency_days
 
         # Chercher le dernier email envoyé avec succès pour cet utilisateur
         last_sent = ReminderEmailLog.objects.filter(
