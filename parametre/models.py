@@ -686,6 +686,76 @@ class DashboardNotificationSettings(models.Model):
 
 
 
+class NotificationPolicy(models.Model):
+    """
+    Politique de notification générique par domaine (scope).
+    Permet de définir de manière uniforme :
+    - jours avant l'échéance (days_before)
+    - jours après l'échéance avant la première relance (days_after)
+    - fréquence des relances après échéance (reminder_frequency_days)
+    """
+    SCOPE_PAC = 'pac'
+    SCOPE_DASHBOARD = 'dashboard'
+    SCOPE_AP = 'activite_periodique'
+
+    SCOPE_CHOICES = [
+        (SCOPE_PAC, "Plans d'action de conformité (PAC)"),
+        (SCOPE_DASHBOARD, 'Tableaux de bord'),
+        (SCOPE_AP, 'Activités périodiques'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    scope = models.CharField(
+        max_length=64,
+        choices=SCOPE_CHOICES,
+        unique=True,
+        help_text="Domaine concerné par cette politique (ex: pac, dashboard, activite_periodique)."
+    )
+
+    days_before = models.PositiveIntegerField(
+        default=7,
+        help_text="Nombre de jours avant l'échéance pour commencer à envoyer des notifications."
+    )
+
+    days_after = models.PositiveIntegerField(
+        default=0,
+        help_text="Nombre de jours après l'échéance avant la première relance."
+    )
+
+    reminder_frequency_days = models.PositiveIntegerField(
+        default=1,
+        help_text="Fréquence des relances après échéance (en jours). 1 = chaque jour, 7 = chaque semaine."
+    )
+
+    description = models.TextField(
+        blank=True,
+        default='',
+        help_text="Description fonctionnelle de cette politique (visible dans l'admin)."
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'notification_policy'
+        verbose_name = 'Politique de notification'
+        verbose_name_plural = 'Politiques de notification'
+        ordering = ['scope']
+
+    def __str__(self):
+        return f"Politique notifications ({self.scope})"
+
+    @classmethod
+    def get_for_scope(cls, scope: str):
+        """
+        Retourne la politique pour un scope donné.
+        Si elle n'existe pas, la crée avec les valeurs par défaut.
+        """
+        instance, _ = cls.objects.get_or_create(scope=scope)
+        return instance
+
+
 # ==================== LOG D'ENVOI DE RELANCES ====================
 class EmailSettings(models.Model):
     """

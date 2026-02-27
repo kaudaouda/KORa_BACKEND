@@ -8,11 +8,11 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Preuve, StatutActionCDR,
     Direction, SousDirection, Service, Processus,
-    ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog, Notification,
+    ActivityLog, EmailSettings, ReminderEmailLog, Notification,
     DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
-    Role, UserProcessus, UserProcessusRole, ApplicationConfig
+    Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy
 )
 
 
@@ -180,44 +180,27 @@ class ActivityLogAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
 
 
-@admin.register(NotificationSettings)
-class NotificationSettingsAdmin(admin.ModelAdmin):
+@admin.register(NotificationPolicy)
+class NotificationPolicyAdmin(admin.ModelAdmin):
     list_display = (
-        'traitement_delai_notice_days',
-        'traitement_reminder_frequency_days',
-        'updated_at',
-    )
-    fieldsets = (
-        ('Paramètres de notification', {
-            'fields': ('traitement_delai_notice_days', 'traitement_reminder_frequency_days')
-        }),
-        ('Métadonnées', {
-            'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
-            'classes': ('collapse',)
-        }),
-    )
-    readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
-
-
-@admin.register(DashboardNotificationSettings)
-class DashboardNotificationSettingsAdmin(admin.ModelAdmin):
-    list_display = (
-        'days_before_period_end',
-        'days_after_period_end',
+        'scope',
+        'days_before',
+        'days_after',
         'reminder_frequency_days',
         'updated_at',
     )
+    list_filter = ('scope',)
+    search_fields = ('scope', 'description')
     fieldsets = (
-        ('Paramètres de notification tableau de bord', {
-            'fields': ('days_before_period_end', 'days_after_period_end', 'reminder_frequency_days')
+        ('Politique de notification', {
+            'fields': ('scope', 'days_before', 'days_after', 'reminder_frequency_days', 'description')
         }),
         ('Métadonnées', {
-            'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
+            'fields': ('uuid', 'created_at', 'updated_at'),
             'classes': ('collapse',)
         }),
     )
-    readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
-
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 @admin.register(EmailSettings)
 class EmailSettingsAdmin(admin.ModelAdmin):

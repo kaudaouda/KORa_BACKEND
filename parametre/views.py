@@ -26,8 +26,9 @@ from .models import (
     SousDirection, Service, Processus, Preuve, ActivityLog, StatutActionCDR,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque,
-    Role, UserProcessus, UserProcessusRole, Notification
+    Role, UserProcessus, UserProcessusRole, Notification, NotificationPolicy
 )
+from .utils.notification_policy import should_notify_pac
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
     SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
@@ -1532,23 +1533,18 @@ def upcoming_notifications(request):
         today = timezone.now().date()
         notifications = []
         
-        # Récupérer les paramètres de notification globaux
-        global_settings = NotificationSettings.get_solo()
-        
-        # Traitements avec délais proches uniquement
-        traitement_delai_days = global_settings.traitement_delai_notice_days
-        traitement_cutoff_date = today + timedelta(days=traitement_delai_days)
+        # Récupérer la politique de notification pour le scope PAC
+        policy = NotificationPolicy.get_for_scope(NotificationPolicy.SCOPE_PAC)
         
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
         if user_processus_uuids is None:
-            # Super admin : voir tous les traitements sans filtre
+            # Super admin : voir tous les traitements avec un délai de réalisation défini
             upcoming_traitements = TraitementPac.objects.filter(
                 details_pac__isnull=False,
-                delai_realisation__lte=traitement_cutoff_date,
-                delai_realisation__gte=today
+                delai_realisation__isnull=False
             ).select_related(
                 'details_pac',
                 'details_pac__pac',
@@ -1564,8 +1560,7 @@ def upcoming_notifications(request):
             upcoming_traitements = TraitementPac.objects.filter(
                 details_pac__isnull=False,
                 details_pac__pac__processus__uuid__in=user_processus_uuids,
-                delai_realisation__lte=traitement_cutoff_date,
-                delai_realisation__gte=today
+                delai_realisation__isnull=False
             ).select_related(
                 'details_pac',
                 'details_pac__pac',
@@ -1579,7 +1574,11 @@ def upcoming_notifications(request):
             # Vérifier que le traitement a bien un details_pac et un pac
             if not traitement.details_pac or not traitement.details_pac.pac:
                 continue
-                
+
+            # Appliquer la politique de notification (avant/après échéance + fréquence)
+            if not should_notify_pac(traitement, today, policy):
+                continue
+
             days_until_due = (traitement.delai_realisation - today).days
             priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
 
@@ -1692,8 +1691,9 @@ def upcoming_notifications(request):
             'notifications': notifications,
             'total': len(notifications),
             'settings': {
-                'traitement_delai_notice_days': traitement_delai_days,
-                'traitement_reminder_frequency_days': global_settings.traitement_reminder_frequency_days
+                'traitement_delai_notice_days': policy.days_before,
+                'traitement_reminder_frequency_days': policy.reminder_frequency_days,
+                'traitement_days_after_deadline': policy.days_after,
             }
         }, status=status.HTTP_200_OK)
         

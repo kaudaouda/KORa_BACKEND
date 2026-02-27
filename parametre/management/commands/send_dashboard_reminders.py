@@ -6,7 +6,8 @@ from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
 from django.conf import settings
 
-from parametre.models import ReminderEmailLog, EmailSettings, DashboardNotificationSettings
+from parametre.models import ReminderEmailLog, EmailSettings, DashboardNotificationSettings, NotificationPolicy
+from parametre.utils.notification_policy import should_notify_dashboard
 from dashboard.models import Indicateur
 from django.contrib.auth import get_user_model
 
@@ -32,13 +33,15 @@ class Command(BaseCommand):
         # Appliquer la configuration email
         self.apply_email_config(email_settings)
 
-        # Récupérer les paramètres de notification
-        dashboard_settings = DashboardNotificationSettings.get_solo()
+        # Récupérer la politique de notification pour les tableaux de bord
+        dashboard_policy = NotificationPolicy.get_for_scope(NotificationPolicy.SCOPE_DASHBOARD)
 
         # Récupérer les indicateurs avec leurs fréquences
         indicateurs = Indicateur.objects.select_related('frequence_id', 'objective_id', 'objective_id__tableau_bord').all()
 
         total_notifications = 0
+        recipients = set()
+        eligible_users = set()
 
         for indicateur in indicateurs:
             if not indicateur.frequence_id:
@@ -53,7 +56,7 @@ class Command(BaseCommand):
                     indicateur,
                     periode_date,
                     periode_name,
-                    dashboard_settings
+                    dashboard_policy
                 )
 
                 if notification_type:
@@ -61,6 +64,7 @@ class Command(BaseCommand):
                     users_to_notify = self.get_users_to_notify(indicateur)
                     
                     for user in users_to_notify:
+                        eligible_users.add(user.email)
                         sent = self.send_notification_email(
                             user,
                             indicateur,
@@ -73,11 +77,32 @@ class Command(BaseCommand):
                         )
                         if sent:
                             total_notifications += 1
+                            recipients.add(user.email)
 
         if dry_run:
             self.stdout.write(self.style.SUCCESS(f"Mode dry-run: {total_notifications} emails seraient envoyés"))
         else:
             self.stdout.write(self.style.SUCCESS(f"{total_notifications} emails envoyés avec succès"))
+
+        # Logs supplémentaires sur les destinataires et l'éligibilité
+        if eligible_users:
+            self.stdout.write(self.style.SUCCESS(
+                f"Utilisateurs éligibles (au moins un indicateur à notifier): {len(eligible_users)}"
+            ))
+        else:
+            self.stdout.write(self.style.WARNING(
+                "Aucun utilisateur éligible trouvé pour les rappels de tableaux de bord."
+            ))
+
+        if recipients:
+            sorted_recipients = ", ".join(sorted(recipients))
+            self.stdout.write(self.style.SUCCESS(
+                f"Destinataires des rappels: {sorted_recipients}"
+            ))
+        else:
+            self.stdout.write(self.style.WARNING(
+                "Aucun email de rappel n'a été (ou ne serait) envoyé pour ce lancement."
+            ))
 
     def get_periods_to_check(self, frequence_nom):
         """
@@ -107,33 +132,13 @@ class Command(BaseCommand):
 
         return periods
 
-    def check_and_get_notification(self, indicateur, periode_end_date, periode_name, dashboard_settings):
+    def check_and_get_notification(self, indicateur, periode_end_date, periode_name, dashboard_policy):
         """
-        Vérifie si on doit envoyer une notification et retourne le type et le message
+        Délègue à la fonction générique should_notify_dashboard basée sur NotificationPolicy.
         Retourne: (type, message) ou (None, None)
         """
         today = timezone.now().date()
-        
-        # Calculer les dates importantes
-        alert_start = periode_end_date - timedelta(days=dashboard_settings.days_before_period_end)
-        reminder_start = periode_end_date + timedelta(days=dashboard_settings.days_after_period_end)
-        
-        # Vérifier si on est dans la période d'alerte avant la fin
-        if alert_start <= today <= periode_end_date:
-            days_until_end = (periode_end_date - today).days
-            return ('before', f"La période se termine dans {days_until_end} jour(s)")
-        
-        # Vérifier si on est après la période de fin (relance)
-        elif today > periode_end_date:
-            # Vérifier si on doit envoyer une relance
-            days_since_end = (today - periode_end_date).days
-            if days_since_end >= dashboard_settings.days_after_period_end:
-                # Vérifier si on doit encore relancer selon la fréquence
-                reminder_frequency = dashboard_settings.reminder_frequency_days
-                if days_since_end % reminder_frequency == 0:
-                    return ('after', f"La période est terminée depuis {days_since_end} jour(s)")
-        
-        return (None, None)
+        return should_notify_dashboard(periode_end_date, today, dashboard_policy)
 
     def get_users_to_notify(self, indicateur):
         """
