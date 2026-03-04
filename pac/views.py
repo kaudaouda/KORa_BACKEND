@@ -25,6 +25,7 @@ from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Versions, Notification
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip, log_activity
 from parametre.utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
+from parametre.utils.email_config import load_email_settings_into_django
 from parametre.permissions import (
     check_permission_or_403,
     user_can_create_objectives_amendements,
@@ -1130,8 +1131,8 @@ def password_reset_request(request):
         raw_reset_url = f"{frontend_base}/reset-password?uid={uid}&token={token}"
         reset_url = EmailContentSanitizer.sanitize_url(raw_reset_url)
         
-        # Calculer la date d'expiration
-        password_reset_timeout = getattr(settings, 'PASSWORD_RESET_TIMEOUT', 604800)  # 7 jours par défaut
+        # Calculer la date d'expiration (4h par défaut via settings.PASSWORD_RESET_TIMEOUT)
+        password_reset_timeout = getattr(settings, 'PASSWORD_RESET_TIMEOUT', 14400)
         expiration_date = datetime.now() + timedelta(seconds=password_reset_timeout)
         expiration_str = expiration_date.strftime("%d/%m/%Y à %H:%M")
         
@@ -1150,6 +1151,11 @@ def password_reset_request(request):
         
         subject = EmailContentSanitizer.sanitize_subject("KORA – Réinitialisation de votre mot de passe")
         
+        # Charger la configuration SMTP depuis EmailSettings (source unique)
+        config_ok = load_email_settings_into_django()
+        if not config_ok:
+            logger.warning("Configuration EmailSettings incomplète, utilisation de la configuration actuelle des settings.")
+
         # Envoyer l'email
         logger.info(f"Envoi de l'email de réinitialisation à {user.email}...")
         logger.info(f"URL de réinitialisation: {reset_url}")

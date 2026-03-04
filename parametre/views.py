@@ -38,6 +38,7 @@ from .serializers import (
     UserSerializer, UserCreateSerializer, UserInviteSerializer
 )
 from .utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
+from .utils.email_config import load_email_settings_into_django
 
 logger = logging.getLogger(__name__)
 
@@ -1551,7 +1552,7 @@ def upcoming_notifications(request):
                 'details_pac__pac__processus',
                 'details_pac__nature',
                 'type_action'
-            ).order_by('delai_realisation')
+            ).order_by('delai_realisation')     
         elif not user_processus_uuids:
             # Aucun processus assigné
             upcoming_traitements = TraitementPac.objects.none()
@@ -3607,7 +3608,12 @@ def users_invite(request):
         
         subject = EmailContentSanitizer.sanitize_subject("KORA – Activation de votre compte")
 
-        # Envoyer l'email via la configuration Django actuelle
+        # Charger la configuration SMTP depuis EmailSettings
+        config_ok = load_email_settings_into_django()
+        if not config_ok:
+            logger.warning("Configuration EmailSettings incomplète, utilisation de la configuration actuelle des settings.")
+
+        # Envoyer l'email via la configuration courante
         logger.info(f"Envoi de l'email d'invitation à {user.email}...")
         logger.info(f"URL d'invitation: {invite_url}")
         
