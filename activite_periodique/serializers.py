@@ -37,11 +37,14 @@ class ActivitePeriodiqueSerializer(serializers.ModelSerializer):
             'uuid', 'numero_ap', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
-            'initial_ref', 'initial_ref_uuid',
+            'initial_ref', 'initial_ref_uuid', 'raison_amendement',
             'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
             'cree_par', 'createur_nom', 'has_amendements', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'numero_ap', 'is_validated', 'validated_at', 'validated_by', 'cree_par', 'createur_nom', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'raison_amendement': {'required': False, 'allow_blank': True, 'allow_null': True},
+        }
 
     def get_numero_ap(self, obj):
         """Retourner le numéro du premier détail AP associé, ou None"""
@@ -582,7 +585,7 @@ class ActivitePeriodiqueCompletSerializer(serializers.ModelSerializer):
             'uuid', 'numero_ap', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
-            'initial_ref', 'initial_ref_uuid',
+            'initial_ref', 'initial_ref_uuid', 'raison_amendement',
             'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by', 'has_amendements', 'details',
             'created_at', 'updated_at'
         ]
