@@ -344,7 +344,30 @@ class Command(BaseCommand):
                     'admin': {'granted': True, 'priority': 8},
                 }
             },
-            
+            {
+                'code': 'update_plan_action',
+                'nom': 'Modifier un plan d\'action',
+                'description': 'Permet de modifier un plan d\'action CDR',
+                'category': 'plans_action',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
+                    'lecteur': {'granted': False, 'priority': 0},
+                    'admin': {'granted': True, 'priority': 8},
+                }
+            },
+            {
+                'code': 'delete_plan_action',
+                'nom': 'Supprimer un plan d\'action',
+                'description': 'Permet de supprimer un plan d\'action CDR',
+                'category': 'plans_action',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'admin': {'granted': True, 'priority': 8},
+                    'contributeur': {'granted': False, 'priority': 0},
+                    'lecteur': {'granted': False, 'priority': 0},
+                }
+            },
             {
                 'code': 'create_suivi_action',
                 'nom': 'Créer un suivi d\'action',
