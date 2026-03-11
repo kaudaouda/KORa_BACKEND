@@ -1255,8 +1255,16 @@ def activite_periodique_stats(request):
         
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
         if user_processus_uuids is None:
-            # Super admin : voir toutes les Activités Périodiques sans filtre
+            # Super admin : voir toutes les AP, avec filtre processus optionnel (?processus=UUID)
             aps_base = ActivitePeriodique.objects.all()
+            processus_filter = request.query_params.get('processus')
+            if processus_filter and str(processus_filter).upper() != 'ALL':
+                try:
+                    from uuid import UUID
+                    UUID(str(processus_filter))
+                    aps_base = aps_base.filter(processus__uuid=processus_filter)
+                except (ValueError, TypeError):
+                    pass
         elif not user_processus_uuids:
             # Aucun processus assigné
             logger.info(f"[activite_periodique_stats] Aucun processus assigné pour l'utilisateur {request.user.username}")
