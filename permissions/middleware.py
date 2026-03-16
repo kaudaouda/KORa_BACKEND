@@ -8,7 +8,7 @@ import logging
 
 from permissions.services.permission_service import PermissionService
 from parametre.models import UserProcessusRole
-from permissions.models import RolePermissionMapping, PermissionOverride
+from permissions.models import RolePermissionMapping, PermissionOverride     
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def invalidate_cache_on_user_processus_role_change(sender, instance, **kwargs):
             )
     except Exception as e:
         logger.error(
-            f"[PermissionCache] Erreur lors de l'invalidation du cache "
+            f"[PermissionCache] Erreur lors de l'invalidation du cache"
             f"pour UserProcessusRole: {str(e)}"
         )
 
