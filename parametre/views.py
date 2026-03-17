@@ -3075,18 +3075,34 @@ def role_delete(request, uuid):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_processus_list(request):
-    """Liste des attributions processus-utilisateur"""
+    """
+    Liste des attributions processus-utilisateur.
+    - Utilisateurs avec is_staff ET is_superuser (can_manage_users=True) : peuvent voir toutes les attributions, avec filtres optionnels.
+    - Autres utilisateurs : ne voient que leurs propres attributions, sans filtres arbitraires.
+    Security by Design : évite qu'un utilisateur normal liste les attributions d'autres utilisateurs.
+    """
     try:
+        from parametre.permissions import can_manage_users
+
         user_id = request.GET.get('user_id')
         processus_id = request.GET.get('processus_id')
-        
-        queryset = UserProcessus.objects.select_related('user', 'processus', 'attribue_par').filter(is_active=True)
-        
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-        if processus_id:
-            queryset = queryset.filter(processus_id=processus_id)
-        
+
+        # Utilisateur avec droits de gestion : accès complet avec filtres
+        if can_manage_users(request.user):
+            queryset = UserProcessus.objects.select_related(
+                'user', 'processus', 'attribue_par'
+            ).filter(is_active=True)
+
+            if user_id:
+                queryset = queryset.filter(user_id=user_id)
+            if processus_id:
+                queryset = queryset.filter(processus_id=processus_id)
+        else:
+            # Utilisateur normal : uniquement ses propres attributions actives
+            queryset = UserProcessus.objects.select_related(
+                'user', 'processus', 'attribue_par'
+            ).filter(is_active=True, user=request.user)
+
         serializer = UserProcessusSerializer(queryset.order_by('-date_attribution'), many=True)
         return Response({
             'success': True,
@@ -3104,8 +3120,21 @@ def user_processus_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def user_processus_create(request):
-    """Créer une nouvelle attribution processus-utilisateur"""
+    """
+    Créer une nouvelle attribution processus-utilisateur.
+    Security by Design : réservé aux super administrateurs (can_manage_users).
+    """
     try:
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response(
+                {
+                    'error': 'Accès refusé. Seuls les super administrateurs peuvent attribuer des processus.',
+                    'code': 'PERMISSION_DENIED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         data = request.data.copy()
         data['attribue_par'] = request.user.id
         
@@ -3132,8 +3161,21 @@ def user_processus_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def user_processus_update(request, uuid):
-    """Mettre à jour une attribution processus-utilisateur"""
+    """
+    Mettre à jour une attribution processus-utilisateur.
+    Security by Design : réservé aux super administrateurs (can_manage_users).
+    """
     try:
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response(
+                {
+                    'error': 'Accès refusé. Seuls les super administrateurs peuvent modifier des attributions processus.',
+                    'code': 'PERMISSION_DENIED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         user_processus = UserProcessus.objects.get(uuid=uuid)
         serializer = UserProcessusSerializer(user_processus, data=request.data, partial=True)
         if serializer.is_valid():
@@ -3160,8 +3202,21 @@ def user_processus_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def user_processus_delete(request, uuid):
-    """Supprimer une attribution processus-utilisateur"""
+    """
+    Supprimer une attribution processus-utilisateur.
+    Security by Design : réservé aux super administrateurs (can_manage_users).
+    """
     try:
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response(
+                {
+                    'error': 'Accès refusé. Seuls les super administrateurs peuvent supprimer des attributions processus.',
+                    'code': 'PERMISSION_DENIED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         user_processus = UserProcessus.objects.get(uuid=uuid)
         user_processus.delete()
         log_activity(
