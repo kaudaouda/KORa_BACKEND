@@ -12,20 +12,40 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement depuis un fichier .env (si présent)
+load_dotenv()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# ==================== ENVIRONNEMENT ====================
+# DJANGO_ENV peut être: "development", "staging", "production", etc.
+DJANGO_ENV = os.getenv('DJANGO_ENV', 'development').lower()
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
+# ==================== SECRET KEY ====================
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-*foe8k7(-je5&p!2wgqiyjr^s3m2!3@fzqz$unr&7=d=nsk+d*'
+# Priorité à DJANGO_SECRET_KEY, puis SECRET_KEY (compat .env existant). Pas de clé en dur.
+SECRET_KEY = (
+    os.getenv('SECRET_KEY')
+)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# ==================== DEBUG ====================
+# En production, on force DEBUG à False
+if DJANGO_ENV == 'production':
+    DEBUG = False
+else:
+    # Par défaut, DEBUG reste True en développement si non spécifié
+    DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+# ==================== ALLOWED HOSTS ====================
+# En prod, configure DJANGO_ALLOWED_HOSTS="kora.mondomaine.com,api.mondomaine.com"
+_allowed_hosts_env = os.getenv('DJANGO_ALLOWED_HOSTS')
+if _allowed_hosts_env:
+    ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()]
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 
 # Application definition
@@ -88,13 +108,31 @@ WSGI_APPLICATION = 'KORA.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+#
+# Par défaut: SQLite en développement.
+# En production: configurez les variables d'environnement pour utiliser Postgres (ou autre SGBD).
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite').lower()
+
+if DB_ENGINE == 'postgres':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'kora'),
+            'USER': os.getenv('DB_USER', 'kora'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+        }
     }
-}
+else:
+    # Fallback SQLite (développement)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -167,15 +205,16 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
-# Configuration des cookies pour le développement
+# Configuration des cookies
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE = False  # True en production avec HTTPS
+# En production (DJANGO_ENV=production), forcer les cookies sécurisés
+SESSION_COOKIE_SECURE = not DEBUG
 
 # Configuration CSRF
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE = False  # True en production avec HTTPS
+CSRF_COOKIE_SECURE = not DEBUG
 
 # Configuration X-Frame-Options pour permettre l'affichage en iframe des fichiers média
 # Le middleware MediaFrameOptionsMiddleware gère spécifiquement les fichiers /medias/
@@ -232,11 +271,6 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
-
-# reCAPTCHA Configuration
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Configuration reCAPTCHA
 RECAPTCHA_SECRET_KEY = os.getenv('RECAPTCHA_SECRET_KEY', None)  
