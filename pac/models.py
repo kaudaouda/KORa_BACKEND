@@ -64,6 +64,11 @@ class Pac(models.Model):
         blank=True,
         help_text='Référence au PAC initial (pour les amendements)'
     )
+    raison_amendement = models.TextField(
+        null=True,
+        blank=True,
+        help_text='Raison ou motif de la création de cet amendement'
+    )
 
     class Meta:
         db_table = 'pac'
