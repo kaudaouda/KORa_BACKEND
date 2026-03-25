@@ -2399,6 +2399,60 @@ def pac_delete(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _check_pac_completude(pac, numero_pac_display=None):
+    """
+    Vérifie que tous les champs obligatoires du PAC, de ses détails et de leurs
+    traitements sont renseignés avant validation.
+    Retourne None si tout est OK, sinon un message d'erreur (str).
+    """
+    details = pac.details.select_related(
+        'dysfonctionnement_recommandation', 'nature', 'categorie', 'source',
+        'traitement', 'traitement__type_action', 'traitement__responsable_direction',
+    ).prefetch_related('traitement__responsables_directions').all()
+
+    if not details.exists():
+        return "Le tableau doit avoir au moins une ligne avant d'être validé."
+
+    for detail in details:
+        # ── Champs DetailsPac ──────────────────────────────────────────
+        if not detail.libelle or not detail.libelle.strip():
+            return "Le champ « Libellé » est obligatoire pour toutes les lignes."
+        if not detail.dysfonctionnement_recommandation_id:
+            return "Le champ « Dysfonctionnement / Recommandation » est obligatoire pour toutes les lignes."
+        if not detail.nature_id:
+            return "Le champ « Nature » est obligatoire pour toutes les lignes."
+        if not detail.categorie_id:
+            return "Le champ « Catégorie » est obligatoire pour toutes les lignes."
+        if not detail.source_id:
+            return "Le champ « Source » est obligatoire pour toutes les lignes."
+        if not detail.periode_de_realisation:
+            return "Le champ « Période de réalisation » est obligatoire pour toutes les lignes."
+
+        # ── Traitement ────────────────────────────────────────────────
+        if not hasattr(detail, 'traitement') or not detail.traitement:
+            return "Toutes les lignes doivent avoir un traitement (Actions) avant validation."
+
+        t = detail.traitement
+        if not t.action or not t.action.strip():
+            return "Le champ « Actions » est obligatoire pour tous les traitements."
+        if not t.type_action_id:
+            return "Le champ « Type d'action » est obligatoire pour tous les traitements."
+
+        has_responsable = (
+            t.responsable_direction_id
+            or t.responsable_sous_direction_id
+            or t.responsables_directions.exists()
+            or t.responsables_sous_directions.exists()
+        )
+        if not has_responsable:
+            return "Au moins un « Responsable » est obligatoire pour tous les traitements."
+
+        if not t.delai_realisation:
+            return "Le champ « Délai de réalisation » est obligatoire pour tous les traitements."
+
+    return None  # Tout est complet
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, PACValidatePermission])
 def pac_validate(request, uuid):
@@ -2414,25 +2468,11 @@ def pac_validate(request, uuid):
                 'validated_by': f"{pac.validated_by.first_name} {pac.validated_by.last_name}".strip() or pac.validated_by.username if pac.validated_by else None
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Vérifier que tous les détails et traitements sont renseignés
-        details = pac.details.all()
-        if not details.exists():
-            return Response({
-                'error': 'Le PAC doit avoir au moins un détail avant d\'être validé'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        for detail in details:
-            if not hasattr(detail, 'traitement') or not detail.traitement:
-                return Response({
-                    'error': f'Le détail {detail.uuid} n\'a pas de traitement. Tous les détails doivent avoir un traitement avant validation.'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            traitement = detail.traitement
-            if not traitement.action:
-                return Response({
-                    'error': f'Le traitement du détail {detail.uuid} n\'a pas d\'action. Tous les traitements doivent être complets avant validation.'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        
+        # Vérifier que tous les champs obligatoires sont renseignés
+        error_msg = _check_pac_completude(pac)
+        if error_msg:
+            return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
+
         # Valider le PAC
         from django.utils import timezone
         pac.is_validated = True
@@ -2491,26 +2531,13 @@ def pac_validate_by_type(request):
         for pac in pacs_to_validate:
             if pac.is_validated:
                 continue  # Déjà validé, on continue
-            
-            # Récupérer le numero_pac depuis le premier détail (comme dans le serializer)
-            # Le modèle Pac n'a pas d'attribut numero_pac, il faut le récupérer depuis DetailsPac
+
             first_detail = pac.details.first()
             numero_pac_display = first_detail.numero_pac if first_detail and first_detail.numero_pac else str(pac.uuid)
-            
-            details = pac.details.all()
-            if not details.exists():
-                errors.append(f'Le PAC {numero_pac_display} doit avoir au moins un détail')
-                continue
-            
-            for detail in details:
-                if not hasattr(detail, 'traitement') or not detail.traitement:
-                    errors.append(f'Le détail du PAC {numero_pac_display} n\'a pas de traitement')
-                    break
-                
-                traitement = detail.traitement
-                if not traitement.action:
-                    errors.append(f'Le traitement du PAC {numero_pac_display} n\'a pas d\'action')
-                    break
+
+            error_msg = _check_pac_completude(pac, numero_pac_display)
+            if error_msg:
+                errors.append(error_msg)
         
         if errors:
             return Response({

@@ -82,6 +82,7 @@ class PacSerializer(serializers.ModelSerializer):
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'initial_ref', 'initial_ref_uuid',
+            'raison_amendement',
             'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
             'cree_par', 'createur_nom', 'created_at'
         ]
@@ -110,16 +111,17 @@ class PacSerializer(serializers.ModelSerializer):
 
 class PacCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de PACs"""
-    
+
     class Meta:
         model = Pac
         fields = [
-            'processus', 'annee', 'type_tableau', 'initial_ref'
+            'processus', 'annee', 'type_tableau', 'initial_ref', 'raison_amendement'
         ]
         extra_kwargs = {
             'annee': {'required': False, 'allow_null': True},
             'type_tableau': {'required': False, 'allow_null': True},
             'initial_ref': {'required': False, 'allow_null': True},
+            'raison_amendement': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
     
     def validate(self, data):
@@ -165,15 +167,16 @@ class PacCreateSerializer(serializers.ModelSerializer):
 
 class PacUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour la mise à jour de PACs"""
-    
+
     class Meta:
         model = Pac
         fields = [
-            'processus', 'annee', 'type_tableau'
+            'processus', 'annee', 'type_tableau', 'raison_amendement'
         ]
         extra_kwargs = {
             'annee': {'required': False, 'allow_null': True},
             'type_tableau': {'required': False, 'allow_null': True},
+            'raison_amendement': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
     
     def validate_processus(self, value):
@@ -616,6 +619,7 @@ class PacCompletSerializer(serializers.ModelSerializer):
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'initial_ref', 'initial_ref_uuid',
+            'raison_amendement',
             'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by',
             'created_at', 'details'
         ]
