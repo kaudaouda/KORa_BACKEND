@@ -189,6 +189,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:5174",  # Vite dev server (port alternatif)
     "http://127.0.0.1:5174",
+    "https://sapiential-tommy-unelaborate.ngrok-free.dev",  # ngrok tunnel
 ]
 
 CORS_ALLOW_CREDENTIALS = True

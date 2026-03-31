@@ -245,7 +245,18 @@ class Command(BaseCommand):
                     'contributeur': {'granted': False, 'priority': 0},
                     'lecteur': {'granted': False, 'priority': 0},
                     'admin': {'granted': True, 'priority': 8},
-
+                }
+            },
+            {
+                'code': 'unvalidate_cdr',
+                'nom': 'Dévalider une Cartographie des Risques',
+                'description': 'Permet de dévalider un CDR (retour en brouillon)',
+                'category': 'main',
+                'role_mappings': {
+                    'validateur': {'granted': True, 'priority': 10},
+                    'contributeur': {'granted': False, 'priority': 0},
+                    'lecteur': {'granted': False, 'priority': 0},
+                    'admin': {'granted': True, 'priority': 8},
                 }
             },
             {

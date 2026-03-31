@@ -14,6 +14,7 @@ urlpatterns = [
     path('cdrs/get-or-create/', views.cdr_get_or_create, name='cdr_get_or_create'),
     path('cdrs/<uuid:uuid>/', views.cdr_detail, name='cdr_detail'),
     path('cdrs/<uuid:uuid>/validate/', views.validate_cdr, name='validate_cdr'),
+    path('cdrs/<uuid:uuid>/unvalidate/', views.unvalidate_cdr, name='unvalidate_cdr'),
     
     # Details CDR endpoints
     path('details-cdr/cdr/<uuid:cdr_uuid>/', views.details_cdr_by_cdr, name='details_cdr_by_cdr'),

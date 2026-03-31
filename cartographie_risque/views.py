@@ -1379,6 +1379,90 @@ def validate_cdr(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def unvalidate_cdr(request, uuid):
+    """Dévalider une CDR (retour en brouillon)"""
+    try:
+        cdr = CDR.objects.select_related('processus', 'type_tableau').get(uuid=uuid)
+
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, cdr.processus.uuid):
+            return Response({'error': CDR_403_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
+        # ========== PERMISSION DÉVALIDATION CDR (Security by Design) ==========
+        has_permission, error_response = check_cdr_action_or_403(
+            user=request.user,
+            processus_uuid=cdr.processus.uuid,
+            action='unvalidate_cdr',
+        )
+        if not has_permission:
+            return error_response
+        # ========== FIN PERMISSION ==========
+
+        if not cdr.is_validated:
+            return Response({
+                'success': False,
+                'error': 'Cette CDR n\'est pas validée'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Vérifier qu'aucun amendement validé ne dépend de cette CDR
+        code = cdr.type_tableau.code if cdr.type_tableau else None
+        if code == 'INITIAL':
+            amendements_valides = CDR.objects.filter(
+                initial_ref=cdr,
+                is_validated=True
+            ).exists()
+            if amendements_valides:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de dévalider cette CDR : il existe des amendements validés qui en dépendent'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        elif code == 'AMENDEMENT_1':
+            amendement_2_valide = CDR.objects.filter(
+                annee=cdr.annee,
+                processus=cdr.processus,
+                type_tableau__code='AMENDEMENT_2',
+                is_validated=True
+            ).exists()
+            if amendement_2_valide:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de dévalider cet amendement : l\'amendement 2 est validé'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Dévalider la CDR
+        cdr.is_validated = False
+        cdr.date_validation = None
+        cdr.valide_par = None
+        cdr.save()
+
+        logger.info(f"CDR {cdr.uuid} dévalidée par {request.user.username}")
+
+        return Response({
+            'success': True,
+            'message': 'CDR dévalidée avec succès',
+            'data': CDRSerializer(cdr).data
+        }, status=status.HTTP_200_OK)
+
+    except CDR.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Cartographie des risques non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur dévalidation CDR: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        from django.conf import settings
+        return Response({
+            'success': False,
+            'error': CDR_500_MESSAGE,
+            **({'details': str(e)} if settings.DEBUG else {})
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # ==================== ENDPOINTS VERSIONS ÉVALUATION CDR ====================
 
 @api_view(['GET'])
@@ -1561,7 +1645,7 @@ def get_last_cdr_previous_year(request):
         return Response({
             'message': f'Aucune cartographie trouvée pour l\'année {annee_precedente}',
             'found': False
-        }, status=status.HTTP_404_NOT_FOUND)
+        }, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.error(f"Erreur lors de la récupération du dernier CDR de l'année précédente: {str(e)}")
