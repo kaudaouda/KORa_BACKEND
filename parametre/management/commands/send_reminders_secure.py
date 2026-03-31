@@ -18,15 +18,13 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from parametre.models import ReminderEmailLog, EmailSettings, UserProcessusRole, Role
-from parametre.views import upcoming_notifications, get_client_ip
-from pac.models import TraitementPac
+from parametre.services.pac_notification_service import get_pac_notifications
 from parametre.utils.email_security import (
     EmailValidator,
     EmailContentSanitizer,
     EmailRateLimiter,
     SecureEmailLogger
 )
-from rest_framework.test import APIRequestFactory, force_authenticate
 
 import logging
 
@@ -147,12 +145,10 @@ class Command(BaseCommand):
             return
         
         # ===== ÉTAPE 4 : Récupération et envoi des notifications =====
-        factory = APIRequestFactory()
-        
         total_emails = 0
         total_errors = 0
         total_skipped = 0
-        
+
         # Collecter toutes les notifications pour l'alerte admin globale
         all_notifications_for_admin = []
 
@@ -165,19 +161,7 @@ class Command(BaseCommand):
                 total_skipped += 1
                 continue
 
-            # Construire une requête authentifiée
-            request = factory.get('/api/parametre/upcoming-notifications/')
-            force_authenticate(request, user=user)
-            response = upcoming_notifications(request)
-
-            if response.status_code != 200:
-                if dry_run:
-                    self.stdout.write(self.style.WARNING(
-                        f"Erreur API pour {user.username}: status {response.status_code}"
-                    ))
-                continue
-
-            data = response.data or {}
+            data = get_pac_notifications(user)
             notifications = data.get('notifications', [])
             
             if dry_run:
