@@ -263,63 +263,22 @@ class Command(BaseCommand):
         context_hash = hashlib.sha256(context_key.encode('utf-8')).hexdigest()
 
         # ===== DÉDUPLICATION PAR CONTENU (éviter les doublons le même jour) =====
-        # TEMPORAIREMENT DÉSACTIVÉ POUR LES TESTS - À REMETTRE APRÈS LES TESTS
-        # Vérifier si un email avec le même contenu a déjà été envoyé aujourd'hui
-        # already_sent_today = ReminderEmailLog.objects.filter(
-        #     recipient=user.email,
-        #     context_hash=context_hash,
-        #     sent_at__date=date.today()
-        # ).exists()
-        #
-        # if already_sent_today:
-        #     if dry_run:
-        #         self.stdout.write(self.style.WARNING(
-        #             f"⏭️ [DRY-RUN] Email identique déjà envoyé aujourd'hui à {user.username} "
-        #             f"(serait ignoré en mode réel)"
-        #         ))
-        #     else:
-        #         self.stdout.write(self.style.WARNING(
-        #             f"⏭️ Email identique déjà envoyé aujourd'hui à {user.username}"
-        #         ))
-        #     return None
-
-        # ===== VÉRIFICATION DE LA FRÉQUENCE DES RAPPELS =====
-        # Récupérer la politique de notification pour respecter la fréquence
-        from parametre.models import NotificationPolicy
-        policy = NotificationPolicy.get_for_scope(NotificationPolicy.SCOPE_PAC)
-        reminder_frequency = policy.reminder_frequency_days
-
-        # Chercher le dernier email envoyé avec succès pour cet utilisateur
-        last_sent = ReminderEmailLog.objects.filter(
+        already_sent_today = ReminderEmailLog.objects.filter(
             recipient=user.email,
-            success=True
-        ).order_by('-sent_at').first()
+            context_hash=context_hash,
+            sent_at__date=date.today()
+        ).exists()
 
-        if last_sent:
-            days_since_last = (date.today() - last_sent.sent_at.date()).days
-            
-            # Si un email a été envoyé récemment (moins de X jours), on vérifie si le contenu a changé
-            # Pour cela, on compare le hash du contenu actuel avec celui du dernier email
-            # Le context_hash du dernier email contient le hash du contenu de l'époque
-            # On ne peut pas directement comparer car le context_hash inclut aussi email+date
-            # Mais si on arrive ici (pas de doublon aujourd'hui), c'est que soit :
-            # 1. Le contenu a changé (nouveaux traitements ou échéances modifiées)
-            # 2. C'est un nouveau jour et le contenu est différent
-            # 3. Le contenu est identique mais on respecte la fréquence
-            
-            # Pour simplifier et être sûr d'envoyer les notifications importantes :
-            # Si le dernier email était aujourd'hui mais avec un contenu différent, on envoie
-            # Si le dernier email était récemment (moins de X jours), on envoie aussi
-            # car on ne peut pas facilement comparer le contenu exact sans modifier le modèle
-            
-            # IMPORTANT: Si on arrive ici, c'est qu'aucun email identique n'a été envoyé aujourd'hui
-            # Donc soit le contenu a changé, soit c'est le premier envoi du jour
-            # On envoie donc toujours pour être sûr de ne pas manquer de notifications importantes
-            if days_since_last < reminder_frequency:
-                self.stdout.write(self.style.SUCCESS(
-                    f"Envoi pour {user.username} (dernier email il y a {days_since_last} jour(s), "
-                    f"contenu probablement modifié ou premier envoi du jour)"
+        if already_sent_today:
+            if dry_run:
+                self.stdout.write(self.style.WARNING(
+                    f"[DRY-RUN] Email identique deja envoye aujourd'hui a {user.username} (serait ignore)"
                 ))
+            else:
+                self.stdout.write(self.style.WARNING(
+                    f"Email identique deja envoye aujourd'hui a {user.username}, ignore"
+                ))
+            return None
 
         if dry_run:
             self.stdout.write(self.style.SUCCESS(
