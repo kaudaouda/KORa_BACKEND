@@ -19,6 +19,7 @@ from django.db import transaction
 
 from parametre.models import ReminderEmailLog, EmailSettings, UserProcessusRole, Role
 from parametre.services.pac_notification_service import get_pac_notifications
+from pac.models import TraitementPac
 from parametre.utils.email_security import (
     EmailValidator,
     EmailContentSanitizer,
@@ -171,7 +172,7 @@ class Command(BaseCommand):
                     ))
                 else:
                     self.stdout.write(self.style.WARNING(
-                        f"ℹ️  {user.username}: Aucune notification trouvée (pas d'échéances dans les prochains jours)"
+                        f"{user.username}: Aucune notification trouvee (pas d'echeances dans les prochains jours)"
                     ))
             
             if not notifications:
