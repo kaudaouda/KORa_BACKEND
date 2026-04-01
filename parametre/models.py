@@ -697,11 +697,13 @@ class NotificationPolicy(models.Model):
     SCOPE_PAC = 'pac'
     SCOPE_DASHBOARD = 'dashboard'
     SCOPE_AP = 'activite_periodique'
+    SCOPE_CDR = 'cartographie_risque'
 
     SCOPE_CHOICES = [
         (SCOPE_PAC, "Plans d'action de conformité (PAC)"),
         (SCOPE_DASHBOARD, 'Tableaux de bord'),
         (SCOPE_AP, 'Activités périodiques'),
+        (SCOPE_CDR, 'Cartographie des risques'),
     ]
 
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
