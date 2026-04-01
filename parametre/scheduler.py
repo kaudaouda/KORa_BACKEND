@@ -125,6 +125,16 @@ def send_dashboard_reminders_job():
         logger.error("SCHEDULER — erreur rappels dashboard: %s", e, exc_info=True)
 
 
+def send_cdr_reminders_job():
+    """Job pour envoyer les rappels de plans d'action CDR."""
+    try:
+        logger.info("SCHEDULER — demarrage envoi rappels CDR")
+        call_command('send_cdr_reminders')
+        logger.info("SCHEDULER — envoi rappels CDR termine")
+    except Exception as e:
+        logger.error("SCHEDULER — erreur rappels CDR: %s", e, exc_info=True)
+
+
 # ─────────────────────────────────────────────
 # Démarrage / arrêt
 # ─────────────────────────────────────────────
@@ -163,6 +173,7 @@ def start_scheduler():
 
         job_id_reminders = 'send_reminders_daily'
         job_id_dashboard = 'send_dashboard_reminders_daily'
+        job_id_cdr       = 'send_cdr_reminders_daily'
 
         from django_apscheduler.models import DjangoJob
 
@@ -197,6 +208,22 @@ def start_scheduler():
                 logger.info("Job %s present en DB, DjangoJobStore doit le charger", job_id_dashboard)
         else:
             logger.info("Job %s deja charge depuis la DB", job_id_dashboard)
+
+        if job_id_cdr not in existing_jobs:
+            if not DjangoJob.objects.filter(id=job_id_cdr).exists():
+                scheduler.add_job(
+                    send_cdr_reminders_job,
+                    trigger='cron', hour=9, minute=0,
+                    id=job_id_cdr,
+                    name='Envoi quotidien des rappels de plans d action CDR',
+                    replace_existing=False,
+                    max_instances=1, coalesce=True, misfire_grace_time=3600,
+                )
+                logger.info("Job %s cree (defaut 9h00)", job_id_cdr)
+            else:
+                logger.info("Job %s present en DB, DjangoJobStore doit le charger", job_id_cdr)
+        else:
+            logger.info("Job %s deja charge depuis la DB", job_id_cdr)
 
         if not scheduler.running:
             raise RuntimeError("Le scheduler n'est pas actif apres le demarrage")

@@ -23,16 +23,17 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
         return
     
     try:
-        from .scheduler import scheduler, send_reminders_job, send_dashboard_reminders_job
-        
+        from .scheduler import scheduler, send_reminders_job, send_dashboard_reminders_job, send_cdr_reminders_job
+
         if not scheduler or not scheduler.running:
             logger.warning("Scheduler non actif, impossible de recharger le job")
             return
-        
+
         # Mapping des IDs de jobs vers leurs fonctions
         job_functions = {
             'send_reminders_daily': send_reminders_job,
             'send_dashboard_reminders_daily': send_dashboard_reminders_job,
+            'send_cdr_reminders_daily': send_cdr_reminders_job,
         }
         
         # Si c'est une suppression, supprimer le job du scheduler
