@@ -270,17 +270,20 @@ class ParametreConfig(AppConfig):
             import threading
             from .scheduler import start_scheduler
 
-            def _wait_for_db(max_attempts=10, delay=0.3):
-                """Attend que la DB soit disponible au lieu d'un sleep aveugle."""
+            def _wait_for_db(max_attempts=20, delay=0.5):
+                """Attend que la DB soit disponible ET que les tables django_apscheduler existent."""
                 import time
                 from django.db import connection
                 for attempt in range(max_attempts):
                     try:
                         connection.ensure_connection()
-                        return True
+                        tables = connection.introspection.table_names()
+                        if 'django_apscheduler_djangojob' in tables:
+                            return True
                     except Exception:
-                        if attempt < max_attempts - 1:
-                            time.sleep(delay)
+                        pass
+                    if attempt < max_attempts - 1:
+                        time.sleep(delay)
                 return False
 
             def start_scheduler_delayed():
