@@ -318,8 +318,7 @@ class Command(BaseCommand):
                     }
                 )
                 self.stdout.write(f'  {"+" if created else "o"} CDR Initial {annee}')
-                if created:
-                    self._seed_details_cdr(cdr_initial, processus.nom, annee, user)
+                self._seed_details_cdr(cdr_initial, processus.nom, annee, user)
 
                 # CDR Amendement 1
                 cdr_amend, created_a = CDR.objects.get_or_create(
@@ -336,10 +335,7 @@ class Command(BaseCommand):
                     }
                 )
                 self.stdout.write(f'  {"+" if created_a else "o"} CDR Amendement 1 {annee}')
-                if created_a:
-                    details_data = DETAILS_PAR_PROCESSUS.get(processus.nom, [])
-                    # Pour l'amendement, on prend les details existants et on ajoute de nouvelles evaluations
-                    self._seed_reevaluations(cdr_amend, processus.nom, annee, user)
+                self._seed_reevaluations(cdr_amend, processus.nom, annee, user)
 
     def _seed_details_cdr(self, cdr, processus_nom, annee, user):
         """Crée les DetailsCDR avec evaluations et plans d'action pour un CDR."""
@@ -424,8 +420,16 @@ class Command(BaseCommand):
                         (s for s in statuts if s.nom == statut_cycle[i % len(statut_cycle)]),
                         statuts[0]
                     )
-                    date_real = datetime.date(annee, min((i + 1) * 3, 12), 15) if statut.nom == 'Termine' else None
-                    date_clo = datetime.date(annee, min((i + 1) * 3, 12), 28) if statut.nom == 'Termine' else None
+                    is_done = statut.nom == 'Termine'
+                    date_real = datetime.date(annee, min((i + 1) * 3, 12), 15) if is_done else datetime.date(annee, min((i + 1) * 3 + 1, 12), 10)
+                    date_clo = datetime.date(annee, min((i + 1) * 3, 12), 28) if is_done else None
+
+                    resultats_map = {
+                        'Termine': 'Action realisee avec succes. Les criteres d efficacite sont satisfaits et la conformite a ete verifiee par inspection.',
+                        'En cours': 'Action en cours de realisation. Les premieres etapes ont ete franchies avec succes. Finalisation prevue dans les delais.',
+                        'Suspendu': 'Action temporairement suspendue en attente de ressources complementaires. Reprise prevue apres validation budgetaire.',
+                        'Annule': 'Action annulee suite a un changement de contexte reglementaire. Une nouvelle action de remplacement a ete definie.',
+                    }
 
                     suivi, s_created = SuiviAction.objects.get_or_create(
                         plan_action=plan,
@@ -435,13 +439,9 @@ class Command(BaseCommand):
                             'date_cloture': date_clo,
                             'element_preuve': preuve,
                             'critere_efficacite_objectif_vise': (
-                                f'Critere: {data["objectifs"][:80]}'
+                                f'{data["objectifs"]} — Verification par audit interne et revue documentaire.'
                             ),
-                            'resultats_mise_en_oeuvre': (
-                                'Action realisee avec succes. Conformite verifiee.'
-                                if statut.nom == 'Termine'
-                                else 'Action en cours. Des progres sont notes.'
-                            ),
+                            'resultats_mise_en_oeuvre': resultats_map.get(statut.nom, 'Action en cours.'),
                         }
                     )
                     if s_created:
@@ -467,7 +467,14 @@ class Command(BaseCommand):
         if not version_reeval:
             version_reeval = VersionEvaluationCDR.objects.exclude(nom='Evaluation Initiale').first()
 
-        count_details = count_evals = count_plans = 0
+        count_details = count_evals = count_plans = count_suivis = 0
+
+        resultats_map = {
+            'Termine': 'Action realisee avec succes apres reevaluation. Criticite reduite, conformite verifiee.',
+            'En cours': 'Action d amendement en cours. Les mesures correctives montrent des resultats positifs.',
+            'Suspendu': 'Action suspendue temporairement. Reevaluation du plan d action en cours.',
+            'Annule': 'Action annulee. Une approche alternative a ete retenue.',
+        }
 
         for i, data in enumerate(details_data):
             detail, created = DetailsCDR.objects.get_or_create(
@@ -486,7 +493,6 @@ class Command(BaseCommand):
 
             # Réévaluation — criticité généralement réduite après les actions
             if version_reeval and frequences and gravites and criticites and risques:
-                # Utiliser une criticité inférieure pour montrer l'amélioration
                 crit_idx = max(0, (i % len(criticites)) - 1)
                 freq = frequences[max(0, (i % len(frequences)) - 1)]
                 grav = gravites[max(0, (i % len(gravites)) - 1)]
@@ -529,8 +535,36 @@ class Command(BaseCommand):
                         object_id=direction.uuid,
                     )
 
+            # Suivi de l'action d'amendement
+            if statuts:
+                statut_cycle = ['Termine', 'Termine', 'En cours', 'Termine']
+                statut = next(
+                    (s for s in statuts if s.nom == statut_cycle[i % len(statut_cycle)]),
+                    statuts[0]
+                )
+                is_done = statut.nom == 'Termine'
+                date_real = datetime.date(annee, min((i + 1) * 3, 12), 20) if is_done else datetime.date(annee, min((i + 1) * 3 + 1, 12), 10)
+                date_clo = datetime.date(annee, min((i + 1) * 3, 12), 28) if is_done else None
+
+                suivi, s_created = SuiviAction.objects.get_or_create(
+                    plan_action=plan,
+                    defaults={
+                        'statut_action': statut,
+                        'date_realisation': date_real,
+                        'date_cloture': date_clo,
+                        'element_preuve': preuve,
+                        'critere_efficacite_objectif_vise': (
+                            f'{data["objectifs"]} — Reevaluation apres amendement et verification sur site.'
+                        ),
+                        'resultats_mise_en_oeuvre': resultats_map.get(statut.nom, 'Action en cours.'),
+                    }
+                )
+                if s_created:
+                    count_suivis += 1
+
         self.stdout.write(
-            f'    -> {count_details} details amend, {count_evals} reevaluations, {count_plans} plans action'
+            f'    -> {count_details} details amend, {count_evals} reevaluations, '
+            f'{count_plans} plans action, {count_suivis} suivis'
         )
 
     # -----------------------------------------------------------------------
