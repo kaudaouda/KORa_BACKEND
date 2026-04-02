@@ -7,14 +7,39 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import ActivitePeriodique, DetailsAP, SuivisAP
+from permissions.permissions import (
+    ActivitePeriodiqueListPermission,
+    ActivitePeriodiqueCreatePermission,
+    ActivitePeriodiqueUpdatePermission,
+    ActivitePeriodiqueDeletePermission,
+    ActivitePeriodiqueValidatePermission,
+    ActivitePeriodiqueUnvalidatePermission,
+    ActivitePeriodiqueReadPermission,
+    ActivitePeriodiqueDetailPermission,
+    ActivitePeriodiqueAmendementCreatePermission,
+    ActivitePeriodiqueDetailCreatePermission,
+    ActivitePeriodiqueDetailUpdatePermission,
+    ActivitePeriodiqueDetailDeletePermission,
+    ActivitePeriodiqueSuiviCreatePermission,
+    ActivitePeriodiqueSuiviUpdatePermission,
+    ActivitePeriodiqueSuiviDeletePermission,
+)
 from .serializers import (
     ActivitePeriodiqueSerializer,
     ActivitePeriodiqueCompletSerializer,
     DetailsAPSerializer,
     DetailsAPCreateSerializer,
     SuivisAPSerializer,
-    SuivisAPCreateSerializer
+    SuivisAPCreateSerializer,
+    MediaLivrableSerializer,
+    MediaLivrableCreateSerializer,
+    MediaLivrableUpdateSerializer
 )
+from parametre.models import Media
+try:
+    from parametre.models import MediaLivrable
+except (ImportError, AttributeError):
+    MediaLivrable = None
 from parametre.models import Processus, Annee, Versions
 from parametre.views import (
     log_activite_periodique_creation,
@@ -127,25 +152,33 @@ def activite_periodique_home(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueListPermission])
 def activites_periodiques_list(request):
     """Liste toutes les Activités Périodiques de l'utilisateur connecté"""
     try:
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les Activités Périodiques sans filtre
+            aps = ActivitePeriodique.objects.all().select_related(
+                'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
+            ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
+        elif not user_processus_uuids:
+            # Aucun processus assigné
+            logger.info(f"[activites_periodiques_list] Aucun processus assigné pour l'utilisateur {request.user.username}")
             return Response({
                 'success': True,
                 'data': [],
                 'count': 0,
                 'message': 'Aucune Activité Périodique trouvée pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        # Filtrer les Activités Périodiques par les processus où l'utilisateur a un rôle actif
-        aps = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
-            'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
-        ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
+        else:
+            # Filtrer les Activités Périodiques par les processus où l'utilisateur a un rôle actif
+            aps = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
+                'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
+            ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
         # ========== FIN FILTRAGE ==========
         
         serializer = ActivitePeriodiqueSerializer(aps, many=True)
@@ -166,7 +199,7 @@ def activites_periodiques_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueDetailPermission])
 def activite_periodique_detail(request, uuid):
     """Détails d'une Activité Périodique spécifique"""
     try:
@@ -181,13 +214,8 @@ def activite_periodique_detail(request, uuid):
             'details__responsables_services'
         ).get(uuid=uuid)
         
-        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
-        if not user_has_access_to_processus(request.user, ap.processus.uuid):
-            return Response({
-                'success': False,
-                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
-            }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN VÉRIFICATION ==========
+        # Security by Design : La vérification d'accès au processus est gérée par ActivitePeriodiqueDetailPermission
+        # via le décorateur @permission_classes (gère automatiquement les super admins)
         
         serializer = ActivitePeriodiqueCompletSerializer(ap)
         return Response({
@@ -209,7 +237,7 @@ def activite_periodique_detail(request, uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueCreatePermission])
 def activite_periodique_get_or_create(request):
     """
     Récupérer ou créer une Activité Périodique unique pour (processus, annee, type_tableau).
@@ -252,15 +280,8 @@ def activite_periodique_get_or_create(request):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
-        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=processus_uuid,
-            role_code='ecrire',
-            error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer une Activité Périodique pour ce processus."
-        )
-        if not has_permission:
-            return error_response
+        # Note: La permission DRF ActivitePeriodiqueCreatePermission vérifie déjà
+        # la permission create_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
 
         # Récupérer l'objet Annee
@@ -337,7 +358,7 @@ def activite_periodique_get_or_create(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueCreatePermission])
 def activite_periodique_create(request):
     """Créer une nouvelle Activité Périodique"""
     try:
@@ -345,16 +366,8 @@ def activite_periodique_create(request):
         processus_uuid = data.get('processus')
         
         # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
-        # Vérifier que l'utilisateur a le rôle "écrire" pour ce processus
-        if processus_uuid:
-            has_permission, error_response = check_permission_or_403(
-                user=request.user,
-                processus_uuid=processus_uuid,
-                role_code='ecrire',
-                error_message=f"Vous n'avez pas les permissions nécessaires (écrire) pour créer une Activité Périodique pour ce processus."
-            )
-            if not has_permission:
-                return error_response
+        # Note: La permission DRF ActivitePeriodiqueCreatePermission vérifie déjà
+        # la permission create_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
         
         # Ne pas passer cree_par dans data, le serializer le gère via le contexte
@@ -386,7 +399,7 @@ def activite_periodique_create(request):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueUpdatePermission])
 def activite_periodique_update(request, uuid):
     """Mettre à jour une Activité Périodique"""
     try:
@@ -401,14 +414,8 @@ def activite_periodique_update(request, uuid):
         # ========== FIN VÉRIFICATION ==========
         
         # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=ap.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier cette Activité Périodique."
-        )
-        if not has_permission:
-            return error_response
+        # Note: La permission DRF ActivitePeriodiqueUpdatePermission vérifie déjà
+        # la permission update_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP n'a pas d'amendements suivants (les tableaux précédents ne peuvent plus être modifiés)
@@ -448,7 +455,7 @@ def activite_periodique_update(request, uuid):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueDeletePermission])
 def activite_periodique_delete(request, uuid):
     """Supprimer une Activité Périodique"""
     try:
@@ -463,14 +470,8 @@ def activite_periodique_delete(request, uuid):
         # ========== FIN VÉRIFICATION ==========
         
         # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=ap.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer cette Activité Périodique."
-        )
-        if not has_permission:
-            return error_response
+        # Note: La permission DRF ActivitePeriodiqueDeletePermission vérifie déjà
+        # la permission delete_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
         
         ap.delete()
@@ -493,7 +494,7 @@ def activite_periodique_delete(request, uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueValidatePermission])
 def activite_periodique_validate(request, uuid):
     """Valider une Activité Périodique"""
     try:
@@ -505,22 +506,13 @@ def activite_periodique_validate(request, uuid):
         ).get(uuid=uuid)
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        # Note: La permission DRF ActivitePeriodiqueValidatePermission vérifie déjà
+        # la permission validate_activite_periodique, donc pas besoin de vérifier ici
         if not user_has_access_to_processus(request.user, ap.processus.uuid):
             return Response({
                 'success': False,
                 'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN VÉRIFICATION ==========
-        
-        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=ap.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour valider cette Activité Périodique."
-        )
-        if not has_permission:
-            return error_response
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier qu'il y a au moins un détail
@@ -600,10 +592,70 @@ def activite_periodique_validate(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueUnvalidatePermission])
+def activite_periodique_unvalidate(request, uuid):
+    """Dévalider une Activité Périodique (déverrouille les champs)"""
+    try:
+        ap = ActivitePeriodique.objects.select_related('validated_by', 'cree_par', 'processus', 'annee', 'type_tableau').get(uuid=uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        # Note: La permission DRF ActivitePeriodiqueUnvalidatePermission vérifie déjà
+        # la permission unvalidate_activite_periodique, donc pas besoin de vérifier ici
+        if not user_has_access_to_processus(request.user, ap.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Vérifier si l'AP n'est pas validée
+        if not ap.is_validated:
+            return Response({
+                'error': 'Cette Activité Périodique n\'est pas validée'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Dévalider l'AP (même s'il y a des suivis, l'utilisateur avec la permission peut dévalider)
+        ap.is_validated = False
+        ap.validated_at = None
+        ap.validated_by = None
+        ap.save()
+        
+        # Log de l'activité
+        try:
+            ip_address = get_client_ip(request)
+            user_agent = request.META.get('HTTP_USER_AGENT', '')
+            logger.info(
+                f"Dévalidation AP - User: {request.user.email}, "
+                f"AP: {ap.numero_ap or ap.uuid}, UUID: {ap.uuid}, "
+                f"Processus: {ap.processus.nom if ap.processus else None}, "
+                f"IP: {ip_address}, User-Agent: {user_agent}"
+            )
+        except Exception as log_error:
+            logger.error(f"Erreur lors du logging de la dévalidation de l'AP: {log_error}")
+        
+        serializer = ActivitePeriodiqueSerializer(ap)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    except ActivitePeriodique.DoesNotExist:
+        logger.error(f"Tentative de dévalidation d'une AP inexistante: {uuid} par {request.user.username}")
+        return Response({
+            'error': 'Activité Périodique non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans activite_periodique_unvalidate: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': 'Erreur lors de la dévalidation de l\'Activité Périodique',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # ==================== ENDPOINTS API DETAILS AP ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueListPermission])
 def details_ap_list(request):
     """Liste tous les détails AP de l'utilisateur connecté"""
     try:
@@ -642,13 +694,15 @@ def details_ap_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueReadPermission])
 def details_ap_by_activite_periodique(request, ap_uuid):
     """Récupérer tous les détails AP pour une Activité Périodique spécifique"""
     try:
-        ap = ActivitePeriodique.objects.get(uuid=ap_uuid)
+        ap = ActivitePeriodique.objects.select_related('processus').get(uuid=ap_uuid)
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        # La permission ActivitePeriodiqueReadPermission vérifie déjà l'accès au processus
+        # Mais on garde cette vérification pour cohérence
         if not user_has_access_to_processus(request.user, ap.processus.uuid):
             return Response({
                 'success': False,
@@ -682,7 +736,7 @@ def details_ap_by_activite_periodique(request, ap_uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueDetailCreatePermission])
 def details_ap_create(request):
     """Créer un nouveau détail AP"""
     try:
@@ -699,22 +753,13 @@ def details_ap_create(request):
             }, status=status.HTTP_404_NOT_FOUND)
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        # Note: La permission DRF ActivitePeriodiqueDetailCreatePermission vérifie déjà
+        # la permission create_detail_activite_periodique, donc pas besoin de vérifier ici
         if not user_has_access_to_processus(request.user, ap.processus.uuid):
             return Response({
                 'success': False,
                 'error': 'Vous n\'avez pas accès à cette Activité Périodique. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN VÉRIFICATION ==========
-        
-        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=ap.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un détail AP."
-        )
-        if not has_permission:
-            return error_response
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP n'est pas validée
@@ -750,7 +795,7 @@ def details_ap_create(request):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueDetailUpdatePermission])
 def details_ap_update(request, uuid):
     """Mettre à jour un détail AP"""
     try:
@@ -759,22 +804,13 @@ def details_ap_update(request, uuid):
         )
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        # Note: La permission DRF ActivitePeriodiqueDetailUpdatePermission vérifie déjà
+        # la permission update_detail_activite_periodique, donc pas besoin de vérifier ici
         if not user_has_access_to_processus(request.user, detail.activite_periodique.processus.uuid):
             return Response({
                 'success': False,
                 'error': 'Vous n\'avez pas accès à ce détail. Vous n\'avez pas de rôle actif pour ce processus.'
             }, status=status.HTTP_403_FORBIDDEN)
-        # ========== FIN VÉRIFICATION ==========
-        
-        # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=detail.activite_periodique.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce détail AP."
-        )
-        if not has_permission:
-            return error_response
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP n'est pas validée
@@ -811,7 +847,7 @@ def details_ap_update(request, uuid):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueDetailDeletePermission])
 def details_ap_delete(request, uuid):
     """Supprimer un détail AP"""
     try:
@@ -828,24 +864,22 @@ def details_ap_delete(request, uuid):
         # ========== FIN VÉRIFICATION ==========
         
         # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=detail.activite_periodique.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce détail AP."
-        )
-        if not has_permission:
-            return error_response
+        # Note: La permission DRF ActivitePeriodiqueDetailDeletePermission vérifie déjà
+        # la permission delete_detail_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
         
-        # Vérifier que l'AP n'est pas validée
-        if detail.activite_periodique.is_validated:
+        # Vérifier si l'utilisateur est super admin
+        from parametre.permissions import is_super_admin, can_manage_users
+        is_super = can_manage_users(request.user) or is_super_admin(request.user)
+        
+        # Vérifier que l'AP n'est pas validée (sauf pour super admin)
+        if detail.activite_periodique.is_validated and not is_super:
             return Response({
                 'error': 'Impossible de supprimer un détail d\'une Activité Périodique validée'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Vérifier que l'AP n'a pas d'amendements suivants (les tableaux précédents ne peuvent plus être modifiés)
-        if _has_amendements_following(detail.activite_periodique):
+        # Vérifier que l'AP n'a pas d'amendements suivants (sauf pour super admin)
+        if _has_amendements_following(detail.activite_periodique) and not is_super:
             return Response({
                 'error': 'Impossible de modifier ce tableau : un amendement a déjà été créé. Veuillez modifier l\'amendement correspondant.'
             }, status=status.HTTP_400_BAD_REQUEST)
@@ -872,7 +906,7 @@ def details_ap_delete(request, uuid):
 # ==================== ENDPOINTS API SUIVIS AP ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueListPermission])
 def suivis_ap_list(request):
     """Liste tous les suivis AP de l'utilisateur connecté"""
     try:
@@ -909,7 +943,7 @@ def suivis_ap_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueReadPermission])
 def suivis_ap_by_detail_ap(request, detail_ap_uuid):
     """Récupérer tous les suivis AP pour un détail AP spécifique"""
     try:
@@ -918,6 +952,8 @@ def suivis_ap_by_detail_ap(request, detail_ap_uuid):
         )
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        # La permission ActivitePeriodiqueReadPermission vérifie déjà l'accès au processus via l'AP
+        # Mais on garde cette vérification pour cohérence
         if not user_has_access_to_processus(request.user, detail_ap.activite_periodique.processus.uuid):
             return Response({
                 'success': False,
@@ -949,7 +985,7 @@ def suivis_ap_by_detail_ap(request, detail_ap_uuid):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviCreatePermission])
 def suivi_ap_create(request):
     """Créer un nouveau suivi AP"""
     try:
@@ -976,20 +1012,17 @@ def suivi_ap_create(request):
         # ========== FIN VÉRIFICATION ==========
         
         # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=detail_ap.activite_periodique.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour créer un suivi AP."
-        )
-        if not has_permission:
-            return error_response
+        # Note: La permission DRF ActivitePeriodiqueSuiviCreatePermission vérifie déjà
+        # la permission create_suivi_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP est validée (les suivis ne peuvent être renseignés que si l'AP est validée)
-        # Exception : permettre la création lors de la copie d'amendement
+        # Exception : permettre la création lors de la copie d'amendement ou pour les super admins
         from_amendment_copy = data.get('from_amendment_copy', False)
-        if not detail_ap.activite_periodique.is_validated and not from_amendment_copy:
+        from parametre.permissions import can_manage_users, is_super_admin
+        is_super = can_manage_users(request.user) or is_super_admin(request.user)
+        
+        if not detail_ap.activite_periodique.is_validated and not from_amendment_copy and not is_super:
             return Response({
                 'error': 'Impossible d\'ajouter un suivi: l\'Activité Périodique doit être validée d\'abord. Veuillez remplir tous les champs requis des détails et valider le tableau.'
             }, status=status.HTTP_400_BAD_REQUEST)
@@ -1019,7 +1052,7 @@ def suivi_ap_create(request):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviUpdatePermission])
 def suivi_ap_update(request, uuid):
     """Mettre à jour un suivi AP"""
     try:
@@ -1038,14 +1071,8 @@ def suivi_ap_update(request, uuid):
         # ========== FIN VÉRIFICATION ==========
         
         # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=suivi.details_ap.activite_periodique.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour modifier ce suivi AP."
-        )
-        if not has_permission:
-            return error_response
+        # Note: La permission DRF ActivitePeriodiqueSuiviUpdatePermission vérifie déjà
+        # la permission update_suivi_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP est validée (les suivis ne peuvent être modifiés que si l'AP est validée)
@@ -1082,7 +1109,7 @@ def suivi_ap_update(request, uuid):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviDeletePermission])
 def suivi_ap_delete(request, uuid):
     """Supprimer un suivi AP"""
     try:
@@ -1100,14 +1127,8 @@ def suivi_ap_delete(request, uuid):
         # ========== FIN VÉRIFICATION ==========
         
         # ========== VÉRIFICATION PERMISSION ÉCRIRE (Security by Design) ==========
-        has_permission, error_response = check_permission_or_403(
-            user=request.user,
-            processus_uuid=suivi.details_ap.activite_periodique.processus.uuid,
-            role_code='ecrire',
-            error_message="Vous n'avez pas les permissions nécessaires (écrire) pour supprimer ce suivi AP."
-        )
-        if not has_permission:
-            return error_response
+        # Note: La permission DRF ActivitePeriodiqueSuiviDeletePermission vérifie déjà
+        # la permission delete_suivi_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
 
         # Vérifier que l'AP n'a pas d'amendements (verrouillée)
@@ -1223,7 +1244,7 @@ def get_last_ap_previous_year(request):
 # ==================== STATISTIQUES ACTIVITE PERIODIQUE ====================
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueListPermission])
 def activite_periodique_stats(request):
     """Statistiques des Activités Périodiques de l'utilisateur connecté"""
     try:
@@ -1232,7 +1253,21 @@ def activite_periodique_stats(request):
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
         
-        if not user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir toutes les AP, avec filtre processus optionnel (?processus=UUID)
+            aps_base = ActivitePeriodique.objects.all()
+            processus_filter = request.query_params.get('processus')
+            if processus_filter and str(processus_filter).upper() != 'ALL':
+                try:
+                    from uuid import UUID
+                    UUID(str(processus_filter))
+                    aps_base = aps_base.filter(processus__uuid=processus_filter)
+                except (ValueError, TypeError):
+                    pass
+        elif not user_processus_uuids:
+            # Aucun processus assigné
+            logger.info(f"[activite_periodique_stats] Aucun processus assigné pour l'utilisateur {request.user.username}")
             return Response({
                 'success': True,
                 'data': {
@@ -1241,9 +1276,9 @@ def activite_periodique_stats(request):
                 },
                 'message': 'Aucune donnée d\'Activité Périodique trouvée pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
-
-        # Récupérer toutes les Activités Périodiques des processus de l'utilisateur
-        aps_base = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids)
+        else:
+            # Récupérer toutes les Activités Périodiques des processus de l'utilisateur
+            aps_base = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids)
         logger.info(f"[activite_periodique_stats] Nombre total d'APs: {aps_base.count()}")
         # ========== FIN FILTRAGE ==========
 
@@ -1295,4 +1330,214 @@ def activite_periodique_stats(request):
         return Response({
             'error': 'Erreur lors de la récupération des statistiques',
             'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== MEDIA LIVRABLE ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def media_livrables_by_suivi(request, suivi_uuid):
+    """Récupérer tous les MediaLivrable d'un suivi AP"""
+    try:
+        if MediaLivrable is None:
+            return Response({
+                'success': True,
+                'data': [],
+                'count': 0,
+                'message': 'MediaLivrable non disponible (migration non appliquée)'
+            }, status=status.HTTP_200_OK)
+        
+        suivi = SuivisAP.objects.select_related(
+            'details_ap__activite_periodique__processus'
+        ).get(uuid=suivi_uuid)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        media_livrables = MediaLivrable.objects.filter(suivi_ap=suivi).prefetch_related('medias').order_by('-created_at')
+        serializer = MediaLivrableSerializer(media_livrables, many=True)
+        return Response({
+            'success': True,
+            'data': serializer.data,
+            'count': media_livrables.count()
+        }, status=status.HTTP_200_OK)
+    except SuivisAP.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Suivi AP non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f'Erreur dans media_livrables_by_suivi: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la récupération des MediaLivrable'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviUpdatePermission])
+def media_livrable_create(request):
+    """Créer un nouveau MediaLivrable"""
+    try:
+        suivi_uuid = request.data.get('suivi_ap')
+        if not suivi_uuid:
+            return Response({
+                'success': False,
+                'error': 'Le suivi AP est requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            suivi = SuivisAP.objects.select_related(
+                'details_ap__activite_periodique__processus'
+            ).get(uuid=suivi_uuid)
+        except SuivisAP.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Suivi AP non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce suivi. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Vérifier que l'AP n'a pas d'amendements (verrouillée)
+        ap = suivi.details_ap.activite_periodique
+        if _has_amendements_following(ap):
+            return Response({
+                'success': False,
+                'error': 'Ce tableau ne peut plus être modifié car un amendement a été créé. Veuillez modifier l\'amendement correspondant.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = MediaLivrableCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            media_livrable = serializer.save()
+            response_serializer = MediaLivrableSerializer(media_livrable)
+            return Response({
+                'success': True,
+                'data': response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f'Erreur lors de la création du MediaLivrable: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la création du MediaLivrable'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviUpdatePermission])
+def media_livrable_update(request, uuid):
+    """Mettre à jour un MediaLivrable"""
+    try:
+        try:
+            media_livrable = MediaLivrable.objects.select_related(
+                'suivi_ap__details_ap__activite_periodique__processus'
+            ).get(uuid=uuid)
+        except MediaLivrable.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'MediaLivrable non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        suivi = media_livrable.suivi_ap
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce MediaLivrable. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Vérifier que l'AP n'a pas d'amendements (verrouillée)
+        ap = suivi.details_ap.activite_periodique
+        if _has_amendements_following(ap):
+            return Response({
+                'success': False,
+                'error': 'Ce tableau ne peut plus être modifié car un amendement a été créé. Veuillez modifier l\'amendement correspondant.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = MediaLivrableUpdateSerializer(media_livrable, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            media_livrable = serializer.save()
+            response_serializer = MediaLivrableSerializer(media_livrable)
+            return Response({
+                'success': True,
+                'data': response_serializer.data
+            }, status=status.HTTP_200_OK)
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f'Erreur lors de la mise à jour du MediaLivrable: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la mise à jour du MediaLivrable'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, ActivitePeriodiqueSuiviUpdatePermission])
+def media_livrable_delete(request, uuid):
+    """Supprimer un MediaLivrable"""
+    try:
+        try:
+            media_livrable = MediaLivrable.objects.select_related(
+                'suivi_ap__details_ap__activite_periodique__processus'
+            ).get(uuid=uuid)
+        except MediaLivrable.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'MediaLivrable non trouvé'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        suivi = media_livrable.suivi_ap
+        if not user_has_access_to_processus(request.user, suivi.details_ap.activite_periodique.processus.uuid):
+            return Response({
+                'success': False,
+                'error': 'Vous n\'avez pas accès à ce MediaLivrable. Vous n\'avez pas de rôle actif pour ce processus.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+        
+        # Vérifier que l'AP n'a pas d'amendements (verrouillée)
+        ap = suivi.details_ap.activite_periodique
+        if _has_amendements_following(ap):
+            return Response({
+                'success': False,
+                'error': 'Ce tableau ne peut plus être modifié car un amendement a été créé. Veuillez modifier l\'amendement correspondant.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        media_livrable.delete()
+        return Response({
+            'success': True,
+            'message': 'MediaLivrable supprimé avec succès'
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f'Erreur lors de la suppression du MediaLivrable: {str(e)}')
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la suppression du MediaLivrable'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

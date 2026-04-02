@@ -427,6 +427,46 @@ class Preuve(models.Model):
         return f"Preuve {self.uuid} - {self.description[:50]}..."
 
 
+class MediaLivrable(models.Model):
+    """
+    Modèle pour les livrables avec médias des activités périodiques
+    Similaire à Preuve mais spécifique aux livrables des suivis AP
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    titre_document = models.CharField(
+        max_length=255,
+        help_text="Titre du document/livrable"
+    )
+    autre_livrable = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description ou autres informations sur le livrable"
+    )
+    medias = models.ManyToManyField(
+        Media,
+        related_name='media_livrables',
+        blank=True,
+        help_text="Médias associés à ce livrable"
+    )
+    suivi_ap = models.ForeignKey(
+        'activite_periodique.SuivisAP',
+        on_delete=models.CASCADE,
+        related_name='media_livrables',
+        help_text="Suivi AP associé à ce livrable"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'media_livrable'
+        verbose_name = 'Média Livrable'
+        verbose_name_plural = 'Médias Livrables'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Livrable {self.titre_document} - {self.suivi_ap}"
+
+
 class ActivityLog(models.Model):
     """
     Modèle pour tracer les activités des utilisateurs
@@ -646,10 +686,83 @@ class DashboardNotificationSettings(models.Model):
 
 
 
+class NotificationPolicy(models.Model):
+    """
+    Politique de notification générique par domaine (scope).
+    Permet de définir de manière uniforme :
+    - jours avant l'échéance (days_before)
+    - jours après l'échéance avant la première relance (days_after)
+    - fréquence des relances après échéance (reminder_frequency_days)
+    """
+    SCOPE_PAC = 'pac'
+    SCOPE_DASHBOARD = 'dashboard'
+    SCOPE_AP = 'activite_periodique'
+    SCOPE_CDR = 'cartographie_risque'
+
+    SCOPE_CHOICES = [
+        (SCOPE_PAC, "Plans d'action de conformité (PAC)"),
+        (SCOPE_DASHBOARD, 'Tableaux de bord'),
+        (SCOPE_AP, 'Activités périodiques'),
+        (SCOPE_CDR, 'Cartographie des risques'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    scope = models.CharField(
+        max_length=64,
+        choices=SCOPE_CHOICES,
+        unique=True,
+        help_text="Domaine concerné par cette politique (ex: pac, dashboard, activite_periodique)."
+    )
+
+    days_before = models.PositiveIntegerField(
+        default=7,
+        help_text="Nombre de jours avant l'échéance pour commencer à envoyer des notifications."
+    )
+
+    days_after = models.PositiveIntegerField(
+        default=0,
+        help_text="Nombre de jours après l'échéance avant la première relance."
+    )
+
+    reminder_frequency_days = models.PositiveIntegerField(
+        default=1,
+        help_text="Fréquence des relances après échéance (en jours). 1 = chaque jour, 7 = chaque semaine."
+    )
+
+    description = models.TextField(
+        blank=True,
+        default='',
+        help_text="Description fonctionnelle de cette politique (visible dans l'admin)."
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'notification_policy'
+        verbose_name = 'Politique de notification'
+        verbose_name_plural = 'Politiques de notification'
+        ordering = ['scope']
+
+    def __str__(self):
+        return f"Politique notifications ({self.scope})"
+
+    @classmethod
+    def get_for_scope(cls, scope: str):
+        """
+        Retourne la politique pour un scope donné.
+        Si elle n'existe pas, la crée avec les valeurs par défaut.
+        """
+        instance, _ = cls.objects.get_or_create(scope=scope)
+        return instance
+
+
 # ==================== LOG D'ENVOI DE RELANCES ====================
 class EmailSettings(models.Model):
     """
     Paramètres de configuration email pour l'envoi de notifications
+    Security by Design : Mot de passe chiffré, validation stricte
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
@@ -657,13 +770,28 @@ class EmailSettings(models.Model):
     email_host = models.CharField(max_length=255, default='smtp.gmail.com', help_text='Serveur SMTP (ex: smtp.gmail.com)')
     email_port = models.PositiveIntegerField(default=587, help_text='Port SMTP (587 pour TLS, 465 pour SSL)')
     email_host_user = models.EmailField(help_text='Adresse email pour l\'authentification SMTP')
-    email_host_password = models.CharField(max_length=255, help_text='Mot de passe pour l\'authentification SMTP')
+    
+    # Ancien champ (gardé pour compatibilité)
+    email_host_password = models.CharField(max_length=255, blank=True, default='', help_text='Mot de passe SMTP (sera chiffré automatiquement)')
+    
+    # ✅ NOUVEAU CHAMP SÉCURISÉ : Mot de passe chiffré
+    email_host_password_encrypted = models.TextField(blank=True, default='', help_text='Mot de passe chiffré pour l\'authentification SMTP')
+    
     email_use_tls = models.BooleanField(default=True, help_text='Utiliser TLS (recommandé)')
     email_use_ssl = models.BooleanField(default=False, help_text='Utiliser SSL')
     
     # Paramètres d'envoi
     email_from_name = models.CharField(max_length=100, default='KORA', help_text='Nom affiché dans l\'expéditeur')
-    email_timeout = models.PositiveIntegerField(default=30, help_text='Timeout en secondes pour l\'envoi')
+    email_timeout = models.PositiveIntegerField(default=10, help_text='Timeout en secondes pour l\'envoi (max 15 recommandé)')
+    
+    # Paramètres de sécurité
+    max_emails_per_hour = models.PositiveIntegerField(default=100, help_text='Nombre maximum d\'emails par heure')
+    max_recipients_per_email = models.PositiveIntegerField(default=50, help_text='Nombre maximum de destinataires par email')
+    enable_rate_limiting = models.BooleanField(default=True, help_text='Activer la limitation du taux d\'envoi')
+    
+    # Audit trail
+    last_test_success = models.DateTimeField(null=True, blank=True, help_text='Date du dernier test réussi')
+    last_modified_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='email_settings_modifications')
     
     # Enforce singleton
     singleton_enforcer = models.BooleanField(default=True, unique=True, editable=False)
@@ -687,46 +815,212 @@ class EmailSettings(models.Model):
             'email_port': 587,
             'email_host_user': '',
             'email_host_password': '',
+            'email_host_password_encrypted': '',
             'email_use_tls': True,
             'email_use_ssl': False,
             'email_from_name': 'KORA',
-            'email_timeout': 30
+            'email_timeout': 10,
+            'max_emails_per_hour': 100,
+            'max_recipients_per_email': 50,
+            'enable_rate_limiting': True
         })
         return instance
+
+    def set_password(self, password):
+        """
+        Définit le mot de passe SMTP (chiffré automatiquement)
+        Security by Design : Chiffrement automatique
+        """
+        if not password:
+            self.email_host_password_encrypted = ''
+            return
+        
+        try:
+            from .utils.email_security import EmailPasswordEncryption
+            self.email_host_password_encrypted = EmailPasswordEncryption.encrypt_password(password)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Erreur lors du chiffrement du mot de passe : {str(e)}")
+            raise
+
+    def get_password(self):
+        """
+        Récupère le mot de passe SMTP déchiffré
+        Security by Design : Déchiffrement sécurisé
+        """
+        # Si le nouveau champ chiffré existe, l'utiliser
+        if self.email_host_password_encrypted:
+            try:
+                from .utils.email_security import EmailPasswordEncryption
+                return EmailPasswordEncryption.decrypt_password(self.email_host_password_encrypted)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error("❌ Erreur lors du déchiffrement du mot de passe")
+                raise
+        
+        # Sinon, utiliser l'ancien champ (compatibilité)
+        return self.email_host_password
 
     def get_email_config(self):
         """
         Retourne la configuration email au format Django
+        Security by Design : Mot de passe déchiffré seulement pour l'envoi
         """
         return {
             'EMAIL_HOST': self.email_host,
             'EMAIL_PORT': self.email_port,
             'EMAIL_HOST_USER': self.email_host_user,
-            'EMAIL_HOST_PASSWORD': self.email_host_password,
+            'EMAIL_HOST_PASSWORD': self.get_password(),  # Déchiffré automatiquement
             'EMAIL_USE_TLS': self.email_use_tls,
             'EMAIL_USE_SSL': self.email_use_ssl,
             'EMAIL_TIMEOUT': self.email_timeout,
             'DEFAULT_FROM_EMAIL': f'{self.email_from_name} <{self.email_host_user}>',
         }
+    
+    def test_smtp_connection(self):
+        """
+        Test la connexion SMTP
+        Security by Design : Validation de la configuration
+        """
+        try:
+            from django.core.mail import get_connection
+            
+            config = self.get_email_config()
+            connection = get_connection(
+                host=config['EMAIL_HOST'],
+                port=config['EMAIL_PORT'],
+                username=config['EMAIL_HOST_USER'],
+                password=config['EMAIL_HOST_PASSWORD'],
+                use_tls=config['EMAIL_USE_TLS'],
+                use_ssl=config['EMAIL_USE_SSL'],
+                timeout=config['EMAIL_TIMEOUT']
+            )
+            
+            connection.open()
+            connection.close()
+            
+            # Enregistrer le succès
+            from django.utils import timezone
+            self.last_test_success = timezone.now()
+            self.save(update_fields=['last_test_success'])
+            
+            return True, "Connexion SMTP établie avec succès"
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Test de connexion SMTP échoué : {str(e)}")
+            return False, f"Échec de la connexion : {str(e)}"
 
 
 class ReminderEmailLog(models.Model):
+    """
+    Log des emails de relance
+    Security by Design : Audit trail complet
+    """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient = models.EmailField()
     subject = models.CharField(max_length=255)
     context_hash = models.CharField(max_length=64)
     sent_at = models.DateTimeField(auto_now_add=True)
+    
+    # Champs de sécurité ajoutés
+    success = models.BooleanField(default=True, help_text='Si l\'envoi a réussi')
+    error_message = models.TextField(blank=True, default='', help_text='Message d\'erreur si échec')
+    ip_address = models.GenericIPAddressField(null=True, blank=True, help_text='IP de l\'émetteur')
+    user = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL, help_text='Utilisateur qui a déclenché l\'envoi')
 
     class Meta:
         db_table = 'reminder_email_log'
         indexes = [
-            models.Index(fields=['recipient', 'context_hash', 'sent_at'])
+            models.Index(fields=['recipient', 'context_hash', 'sent_at']),
+            models.Index(fields=['success', 'sent_at']),
+            models.Index(fields=['user', 'sent_at']),
         ]
         verbose_name = 'Log email de relance'
         verbose_name_plural = 'Logs emails de relance'
 
     def __str__(self):
-        return f"Relance {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
+        status = "✅" if self.success else "❌"
+        return f"{status} {self.subject} -> {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
+
+
+class Notification(models.Model):
+    """
+    Notification utilisateur : historique, état lu/masqué, traçabilité email et UI.
+    Utilisable par toutes les apps (PAC, dashboard, activité périodique, etc.).
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='notifications',
+        help_text='Destinataire de la notification'
+    )
+    source_app = models.CharField(
+        max_length=64,
+        help_text="App d'origine : pac, dashboard, activite_periodique, etc."
+    )
+    notification_type = models.CharField(
+        max_length=64,
+        help_text="Type métier : traitement, suivi, objective, etc."
+    )
+    # Référence générique à l'objet concerné (TraitementPac, objectif indicateur, etc.)
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Type du modèle lié (ex: TraitementPac)"
+    )
+    object_id = models.UUIDField(null=True, blank=True, help_text="PK de l'objet lié")
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    title = models.CharField(max_length=255)
+    message = models.TextField(blank=True, default='')
+    action_url = models.CharField(max_length=512, blank=True, null=True)
+    priority = models.CharField(
+        max_length=16,
+        default='medium',
+        choices=(('low', 'Basse'), ('medium', 'Moyenne'), ('high', 'Haute'))
+    )
+    due_date = models.DateField(null=True, blank=True, help_text="Date d'échéance si applicable")
+
+    # États côté serveur
+    read_at = models.DateTimeField(null=True, blank=True, help_text="Date/heure de lecture")
+    dismissed_at = models.DateTimeField(null=True, blank=True, help_text="Date/heure de masquage")
+
+    # Traçabilité
+    sent_by_email_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date/heure d'envoi par email (si inclus dans un rappel)"
+    )
+    shown_in_ui_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date/heure de première affichage dans l'interface"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'notification'
+        verbose_name = 'Notification'
+        verbose_name_plural = 'Notifications'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'read_at', 'created_at']),
+            models.Index(fields=['user', 'source_app']),
+            models.Index(fields=['content_type', 'object_id']),
+            models.Index(fields=['user', 'dismissed_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.title[:50]} -> {self.user.username} ({self.created_at:%Y-%m-%d})"
 
 
 class Mois(models.Model):
@@ -829,6 +1123,14 @@ class Periodicite(models.Model):
         decimal_places=2,
         default=0,
         help_text="Taux de réalisation en pourcentage"
+    )
+    preuve = models.ForeignKey(
+        'parametre.Preuve',
+        on_delete=models.SET_NULL,
+        related_name='periodicites',
+        blank=True,
+        null=True,
+        help_text='Preuve justifiant la réalisation ou non de cette périodicité'
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1496,5 +1798,5 @@ class ApplicationConfig(models.Model):
         ordering = ['app_name']
 
     def __str__(self):
-        status = "✅ Activée" if self.is_enabled else "🔧 En maintenance"
+        status = "Activée" if self.is_enabled else "En maintenance"
         return f"{self.get_app_name_display()} - {status}"

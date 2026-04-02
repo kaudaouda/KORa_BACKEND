@@ -8,11 +8,11 @@ from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Preuve, StatutActionCDR,
     Direction, SousDirection, Service, Processus,
-    ActivityLog, NotificationSettings, DashboardNotificationSettings, EmailSettings, ReminderEmailLog,
+    ActivityLog, EmailSettings, ReminderEmailLog, Notification,
     DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
-    Role, UserProcessus, UserProcessusRole, ApplicationConfig
+    Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy
 )
 
 
@@ -180,44 +180,27 @@ class ActivityLogAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
 
 
-@admin.register(NotificationSettings)
-class NotificationSettingsAdmin(admin.ModelAdmin):
+@admin.register(NotificationPolicy)
+class NotificationPolicyAdmin(admin.ModelAdmin):
     list_display = (
-        'traitement_delai_notice_days',
-        'traitement_reminder_frequency_days',
-        'updated_at',
-    )
-    fieldsets = (
-        ('Paramètres de notification', {
-            'fields': ('traitement_delai_notice_days', 'traitement_reminder_frequency_days')
-        }),
-        ('Métadonnées', {
-            'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
-            'classes': ('collapse',)
-        }),
-    )
-    readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
-
-
-@admin.register(DashboardNotificationSettings)
-class DashboardNotificationSettingsAdmin(admin.ModelAdmin):
-    list_display = (
-        'days_before_period_end',
-        'days_after_period_end',
+        'scope',
+        'days_before',
+        'days_after',
         'reminder_frequency_days',
         'updated_at',
     )
+    list_filter = ('scope',)
+    search_fields = ('scope', 'description')
     fieldsets = (
-        ('Paramètres de notification tableau de bord', {
-            'fields': ('days_before_period_end', 'days_after_period_end', 'reminder_frequency_days')
+        ('Politique de notification', {
+            'fields': ('scope', 'days_before', 'days_after', 'reminder_frequency_days', 'description')
         }),
         ('Métadonnées', {
-            'fields': ('uuid', 'created_at', 'updated_at', 'singleton_enforcer'),
+            'fields': ('uuid', 'created_at', 'updated_at'),
             'classes': ('collapse',)
         }),
     )
-    readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
-
+    readonly_fields = ('uuid', 'created_at', 'updated_at')
 
 @admin.register(EmailSettings)
 class EmailSettingsAdmin(admin.ModelAdmin):
@@ -259,6 +242,20 @@ class ReminderEmailLogAdmin(admin.ModelAdmin):
     search_fields = ('recipient', 'subject', 'context_hash')
     list_filter = ('sent_at',)
     readonly_fields = ('uuid', 'recipient', 'subject', 'context_hash', 'sent_at')
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ('title_short', 'user', 'source_app', 'notification_type', 'priority', 'read_at', 'dismissed_at', 'created_at')
+    list_filter = ('source_app', 'notification_type', 'priority', 'read_at', 'dismissed_at', 'created_at')
+    search_fields = ('title', 'message', 'user__username', 'user__email')
+    readonly_fields = ('uuid', 'created_at', 'updated_at', 'read_at', 'dismissed_at', 'sent_by_email_at', 'shown_in_ui_at')
+    raw_id_fields = ('user', 'content_type')
+    date_hierarchy = 'created_at'
+
+    def title_short(self, obj):
+        return (obj.title[:60] + '...') if obj.title and len(obj.title) > 60 else (obj.title or '-')
+    title_short.short_description = 'Titre'
 
 
 @admin.register(Mois)
@@ -318,7 +315,7 @@ class PeriodiciteAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les périodicités"""
     
     list_display = [
-        'indicateur_id', 'periode', 'a_realiser', 'realiser', 'taux', 'created_at', 'updated_at'
+        'indicateur_id', 'periode', 'a_realiser', 'realiser', 'taux', 'preuve', 'created_at', 'updated_at'
     ]
     list_filter = [
         'periode', 'indicateur_id__objective_id', 'created_at', 'updated_at'
@@ -338,6 +335,9 @@ class PeriodiciteAdmin(admin.ModelAdmin):
         ('Mesures', {
             'fields': ('a_realiser', 'realiser', 'taux')
         }),
+        ('Preuve', {
+            'fields': ('preuve',)
+        }),
         ('Métadonnées', {
             'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
@@ -346,7 +346,7 @@ class PeriodiciteAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('indicateur_id', 'indicateur_id__objective_id')
+        return super().get_queryset(request).select_related('indicateur_id', 'indicateur_id__objective_id', 'preuve').prefetch_related('preuve__medias')
 
 
 @admin.register(Cible)

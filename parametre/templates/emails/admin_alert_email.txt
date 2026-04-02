@@ -1,0 +1,36 @@
+================================================================
+KORA - Autorité Nationale de l'Aviation Civile (ANAC)
+ALERTE ADMINISTRATION - ÉCHÉANCES
+================================================================
+
+Échéances approchant : {{ total_unique_pacs }} PAC{% if total_unique_pacs > 1 %}s arrivent{% else %} arrive{% endif %} bientôt à échéance.
+
+Des emails de rappel automatiques ont été envoyés le {{ current_date }}
+à {{ total_users }} responsable{{ total_users|pluralize }} concerné{{ total_users|pluralize }}
+({{ user_names|join:", " }}).
+
+----------------------------------------------------------------
+DÉTAILS DES TRAITEMENTS
+----------------------------------------------------------------
+
+{% for notification in notifications %}{{ forloop.counter }}. PAC {{ notification.numero_pac }}
+   
+   Processus       : {{ notification.processus_name }}
+   Action          : {{ notification.action }}{% if notification.nature_label %}
+   Nature          : {{ notification.nature_label }}{% endif %}
+   Échéance        : {{ notification.due_date_formatted }}
+   Jours restants  : {{ notification.days_remaining }} jour{{ notification.days_remaining|pluralize }}
+   
+{% endfor %}================================================================
+
+NOTE : Email d'information automatique. Les responsables 
+concernés ont été notifiés et disposent des détails nécessaires
+pour traiter les échéances.
+
+================================================================
+
+Autorité Nationale de l'Aviation Civile (ANAC)
+
+---
+Message automatique envoyé le {{ current_date }}
+Email d'information administrative - Merci de ne pas répondre

@@ -60,6 +60,11 @@ class ActivitePeriodique(models.Model):
         blank=True,
         help_text='Référence à l\'activité périodique initiale (pour les amendements)'
     )
+    raison_amendement = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Raison ou cause de la création de cet amendement"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

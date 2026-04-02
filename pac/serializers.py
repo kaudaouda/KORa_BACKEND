@@ -82,10 +82,11 @@ class PacSerializer(serializers.ModelSerializer):
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'initial_ref', 'initial_ref_uuid',
+            'raison_amendement',
             'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
-            'cree_par', 'createur_nom'
+            'cree_par', 'createur_nom', 'created_at'
         ]
-        read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by']
+        read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by', 'created_at']
 
     def get_numero_pac(self, obj):
         """Retourner le numéro du premier détail PAC associé, ou None"""
@@ -110,16 +111,17 @@ class PacSerializer(serializers.ModelSerializer):
 
 class PacCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de PACs"""
-    
+
     class Meta:
         model = Pac
         fields = [
-            'processus', 'annee', 'type_tableau', 'initial_ref'
+            'processus', 'annee', 'type_tableau', 'initial_ref', 'raison_amendement'
         ]
         extra_kwargs = {
             'annee': {'required': False, 'allow_null': True},
             'type_tableau': {'required': False, 'allow_null': True},
             'initial_ref': {'required': False, 'allow_null': True},
+            'raison_amendement': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
     
     def validate(self, data):
@@ -165,15 +167,16 @@ class PacCreateSerializer(serializers.ModelSerializer):
 
 class PacUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour la mise à jour de PACs"""
-    
+
     class Meta:
         model = Pac
         fields = [
-            'processus', 'annee', 'type_tableau'
+            'processus', 'annee', 'type_tableau', 'raison_amendement'
         ]
         extra_kwargs = {
             'annee': {'required': False, 'allow_null': True},
             'type_tableau': {'required': False, 'allow_null': True},
+            'raison_amendement': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
     
     def validate_processus(self, value):
@@ -434,6 +437,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
     traitement_action = serializers.CharField(source='traitement.action', read_only=True, allow_null=True)
     traitement_uuid = serializers.UUIDField(source='traitement.uuid', read_only=True, allow_null=True)
     statut_nom = serializers.CharField(source='statut.nom', read_only=True, allow_null=True)
+    preuve_uuid = serializers.UUIDField(source='preuve.uuid', read_only=True, allow_null=True)
     preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     preuve_media_urls = serializers.SerializerMethodField()
@@ -445,7 +449,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'traitement', 'traitement_uuid', 'traitement_action', 'etat_mise_en_oeuvre',
             'etat_nom', 'resultat', 'appreciation', 'appreciation_nom',
-            'preuve', 'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
+            'preuve', 'preuve_uuid', 'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
             'statut', 'statut_nom', 'date_mise_en_oeuvre_effective',
             'date_cloture', 'cree_par', 'createur_nom', 'created_at'
         ]
@@ -547,33 +551,43 @@ class PacSuiviCreateSerializer(serializers.ModelSerializer):
                     "Un suivi existe déjà pour ce traitement. Un traitement ne peut avoir qu'un seul suivi."
                 )
         return value
-    
+
     def validate_date_mise_en_oeuvre_effective(self, value):
-        """Valider que la date de mise en œuvre effective est >= aujourd'hui"""
+        """Valider que la date de mise en œuvre effective est >= aujourd'hui (sauf copie d'amendement)"""
         if value:
-            from django.utils import timezone
-            today = timezone.now().date()
-            
-            if value < today:
-                raise serializers.ValidationError(
-                    "La date de mise en œuvre effective doit être égale ou supérieure à la date d'aujourd'hui."
-                )
-        
+            request = self.context.get('request')
+            from_amendment_copy = request and (
+                request.data.get('from_amendment_copy', False) or
+                request.data.get('from_amendment_copy') == 'true' or
+                request.data.get('from_amendment_copy') is True
+            )
+            if not from_amendment_copy:
+                from django.utils import timezone
+                today = timezone.now().date()
+                if value < today:
+                    raise serializers.ValidationError(
+                        "La date de mise en œuvre effective doit être égale ou supérieure à la date d'aujourd'hui."
+                    )
         return value
-    
+
     def validate_date_cloture(self, value):
-        """Valider que la date de clôture est >= aujourd'hui"""
+        """Valider que la date de clôture est >= aujourd'hui (sauf copie d'amendement)"""
         if value:
-            from django.utils import timezone
-            today = timezone.now().date()
-            
-            if value < today:
-                raise serializers.ValidationError(
-                    "La date de clôture doit être égale ou supérieure à la date d'aujourd'hui."
-                )
-        
+            request = self.context.get('request')
+            from_amendment_copy = request and (
+                request.data.get('from_amendment_copy', False) or
+                request.data.get('from_amendment_copy') == 'true' or
+                request.data.get('from_amendment_copy') is True
+            )
+            if not from_amendment_copy:
+                from django.utils import timezone
+                today = timezone.now().date()
+                if value < today:
+                    raise serializers.ValidationError(
+                        "La date de clôture doit être égale ou supérieure à la date d'aujourd'hui."
+                    )
         return value
-    
+
     def create(self, validated_data):
         """Créer un suivi avec l'utilisateur connecté"""
         validated_data['cree_par'] = self.context['request'].user
@@ -605,9 +619,11 @@ class PacCompletSerializer(serializers.ModelSerializer):
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
             'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
             'initial_ref', 'initial_ref_uuid',
-            'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by', 'details'
+            'raison_amendement',
+            'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by',
+            'created_at', 'details'
         ]
-        read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by']
+        read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by', 'created_at']
 
     def get_numero_pac(self, obj):
         """Retourner le numéro du premier détail PAC associé, ou None"""
@@ -696,8 +712,10 @@ class PacCompletSerializer(serializers.ModelSerializer):
                     'responsables_sous_directions': responsables_sous_directions,
                     'delai_realisation': traitement.delai_realisation,
                     'preuve': traitement.preuve.uuid if traitement.preuve else None,
+                    'preuve_uuid': str(traitement.preuve.uuid) if traitement.preuve else None,
                     'preuve_description': traitement.preuve.description if traitement.preuve else None,
                     'preuve_media_url': self.get_preuve_media_url(traitement),
+                    'preuve_medias': self.get_preuve_medias(traitement),
                     'suivi': None
                 }
                 
@@ -720,9 +738,11 @@ class PacCompletSerializer(serializers.ModelSerializer):
                             'createur_nom': f"{suivi.cree_par.first_name} {suivi.cree_par.last_name}".strip() or suivi.cree_par.username,
                             'created_at': suivi.created_at,
                             'preuve': suivi.preuve.uuid if suivi.preuve else None,
+                            'preuve_uuid': str(suivi.preuve.uuid) if suivi.preuve else None,
                             'preuve_description': suivi.preuve.description if suivi.preuve else None,
                             'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
-                            'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi)
+                            'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi),
+                            'preuve_medias': self.get_preuve_medias_suivi(suivi)
                         }
                         traitement_data['suivi'] = suivi_data
                 except (AttributeError, PacSuivi.DoesNotExist):
@@ -777,6 +797,46 @@ class PacCompletSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return urls
+    
+    def get_preuve_medias(self, traitement):
+        """Retourner la liste des médias avec uuid, url et description pour le traitement"""
+        medias = []
+        try:
+            if traitement.preuve:
+                for media in traitement.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    medias.append({
+                        'uuid': str(media.uuid),
+                        'url': url,
+                        'description': getattr(media, 'description', None),
+                    })
+        except Exception:
+            pass
+        return medias
+    
+    def get_preuve_medias_suivi(self, suivi):
+        """Retourner la liste des médias avec uuid, url et description pour le suivi"""
+        medias = []
+        try:
+            if suivi.preuve:
+                for media in suivi.preuve.medias.all():
+                    url = None
+                    if hasattr(media, 'get_url'):
+                        url = media.get_url()
+                    else:
+                        url = getattr(media, 'url_fichier', None)
+                    medias.append({
+                        'uuid': str(media.uuid),
+                        'url': url,
+                        'description': getattr(media, 'description', None),
+                    })
+        except Exception:
+            pass
+        return medias
 
 
 class PacSuiviUpdateSerializer(serializers.ModelSerializer):
@@ -921,10 +981,11 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
         }
     
     def validate_pac(self, value):
-        """Vérifier que le PAC appartient à l'utilisateur connecté"""
+        """Vérifier que l'utilisateur a accès au processus du PAC (comme dashboard, unicité globale)"""
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
-            if value.cree_par != request.user:
+            from parametre.permissions import user_has_access_to_processus
+            if not user_has_access_to_processus(request.user, value.processus.uuid):
                 raise serializers.ValidationError(
                     "Vous n'avez pas les permissions pour ajouter un détail à ce PAC."
                 )
@@ -938,18 +999,23 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
         return value
     
     def validate_periode_de_realisation(self, value):
-        """Valider que la période de réalisation est >= aujourd'hui"""
+        """Valider que la période de réalisation est >= aujourd'hui (sauf copie d'amendement)"""
         if value:
             from django.utils import timezone
-            today = timezone.now().date()
-            
-            if value < today:
-                raise serializers.ValidationError(
-                    "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
-                )
-        
+            request = self.context.get('request')
+            from_amendment_copy = request and (
+                request.data.get('from_amendment_copy', False) or
+                request.data.get('from_amendment_copy') == 'true' or
+                request.data.get('from_amendment_copy') is True
+            )
+            if not from_amendment_copy:
+                today = timezone.now().date()
+                if value < today:
+                    raise serializers.ValidationError(
+                        "La période de réalisation doit être égale ou supérieure à la date d'aujourd'hui."
+                    )
         return value
-    
+
     def create(self, validated_data):
         """Créer un détail PAC avec génération automatique du numéro"""
         # Vérifier si c'est une copie d'amendement (flag from_amendment_copy)

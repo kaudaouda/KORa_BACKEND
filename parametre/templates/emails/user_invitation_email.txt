@@ -1,0 +1,51 @@
+================================================================
+KORA - Autorité Nationale de l'Aviation Civile (ANAC)
+Activation de votre compte
+================================================================
+
+Bonjour {{ user_first_name|default:user_username }},
+
+Un compte KORA a été créé pour vous. Pour activer votre compte et 
+définir votre mot de passe, cliquez sur le lien ci-dessous.
+
+----------------------------------------------------------------
+INFORMATIONS DE CONNEXION
+----------------------------------------------------------------
+
+Nom d'utilisateur : {{ user_username }}
+Email              : {{ user_email }}
+
+================================================================
+
+ACTION REQUISE
+
+Pour activer votre compte, cliquez sur le lien suivant ou copiez-le 
+dans votre navigateur :
+
+{{ invite_url }}
+
+================================================================
+
+⏰ IMPORTANT
+
+Ce lien est valide jusqu'au {{ expiration_date }}.
+Après cette date, vous devrez demander une nouvelle invitation à 
+votre administrateur.
+
+================================================================
+
+SÉCURITÉ
+
+Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer 
+cet email en toute sécurité. Votre compte ne sera pas activé sans 
+votre action.
+
+================================================================
+
+Cordialement,
+L'équipe KORA
+Autorité Nationale de l'Aviation Civile (ANAC)
+
+---
+Message automatique envoyé par KORA
+Merci de ne pas répondre à cet email

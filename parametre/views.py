@@ -10,6 +10,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q
+from django.contrib.auth.tokens import default_token_generator
+from django.utils import timezone
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+from django.conf import settings
+from django.template.loader import render_to_string
 import json
 import logging
 
@@ -19,16 +26,19 @@ from .models import (
     SousDirection, Service, Processus, Preuve, ActivityLog, StatutActionCDR,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque,
-    Role, UserProcessus, UserProcessusRole
+    Role, UserProcessus, UserProcessusRole, Notification, NotificationPolicy
 )
+from .utils.notification_policy import should_notify_pac
 from .serializers import (
     AppreciationSerializer, CategorieSerializer, DirectionSerializer,
     SousDirectionSerializer, ActionTypeSerializer, NotificationSettingsSerializer,
     DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
     RisqueSerializer, StatutActionCDRSerializer,
     RoleSerializer, UserProcessusSerializer, UserProcessusRoleSerializer,
-    UserSerializer, UserCreateSerializer
+    UserSerializer, UserCreateSerializer, UserInviteSerializer
 )
+from .utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
+from .utils.email_config import load_email_settings_into_django
 
 logger = logging.getLogger(__name__)
 
@@ -327,12 +337,17 @@ def log_traitement_creation(user, traitement, ip_address=None, user_agent=None):
     """
     Log spécifique pour la création d'un traitement
     """
+    # numero_pac est sur DetailsPac, pas sur Pac
+    numero_pac = 'N/A'
+    if traitement.details_pac and traitement.details_pac.numero_pac:
+        numero_pac = traitement.details_pac.numero_pac
+    
     return log_activity(
         user=user,
         action='create',
         entity_type='traitement',
         entity_id=str(traitement.uuid),
-        entity_name=f"Traitement pour PAC {traitement.pac.numero_pac}",
+        entity_name=f"Traitement pour PAC {numero_pac}",
         description=f"Création d'un traitement: {traitement.action[:50]}...",
         ip_address=ip_address,
         user_agent=user_agent
@@ -343,12 +358,17 @@ def log_suivi_creation(user, suivi, ip_address=None, user_agent=None):
     """
     Log spécifique pour la création d'un suivi
     """
+    # numero_pac est sur DetailsPac, pas sur Pac
+    numero_pac = 'N/A'
+    if suivi.traitement and suivi.traitement.details_pac and suivi.traitement.details_pac.numero_pac:
+        numero_pac = suivi.traitement.details_pac.numero_pac
+    
     return log_activity(
         user=user,
         action='create',
         entity_type='suivi',
         entity_id=str(suivi.uuid),
-        entity_name=f"Suivi pour PAC {suivi.traitement.pac.numero_pac}",
+        entity_name=f"Suivi pour PAC {numero_pac}",
         description=f"Création d'un suivi: {suivi.etat_mise_en_oeuvre.nom}",
         ip_address=ip_address,
         user_agent=user_agent
@@ -1505,87 +1525,137 @@ def upcoming_notifications(request):
     Récupère les échéances à venir pour l'utilisateur connecté - Délai de réalisation uniquement
     """
     try:
-        from datetime import datetime, timedelta
-        from django.utils import timezone
-        from pac.models import Traitement
-        
-        today = timezone.now().date()
-        notifications = []
-        
-        # Récupérer les paramètres de notification globaux
-        global_settings = NotificationSettings.get_solo()
-        
-        # Traitements avec délais proches uniquement
-        traitement_delai_days = global_settings.traitement_delai_notice_days
-        traitement_cutoff_date = today + timedelta(days=traitement_delai_days)
-        
-        upcoming_traitements = Traitement.objects.filter(
-            delai_realisation__lte=traitement_cutoff_date,
-            delai_realisation__gte=today
-        ).order_by('delai_realisation')
-        
-        for traitement in upcoming_traitements:
-            days_until_due = (traitement.delai_realisation - today).days
-            priority = 'high' if days_until_due <= 2 else 'medium' if days_until_due <= 5 else 'low'
-
-            # Déterminer la nature (dysfonctionnement ou recommandation) via le PAC
-            nature_label = None
-            try:
-                # Si une nature est liée sur PAC, utiliser son nom
-                if getattr(traitement.pac, 'nature', None):
-                    nature_name = (traitement.pac.nature.nom or '').strip().lower()
-                    if 'recommand' in nature_name:
-                        nature_label = 'Recommandation'
-                    elif 'non' in nature_name or 'dysfonction' in nature_name:
-                        nature_label = 'Dysfonctionnement'
-                    else:
-                        nature_label = traitement.pac.nature.nom
-            except Exception:
-                nature_label = None
-
-            # Type d'action (ActionType.nom)
-            type_action = None
-            if getattr(traitement, 'type_action', None):
-                try:
-                    type_action = traitement.type_action.nom
-                except Exception:
-                    type_action = None
-
-            # Libellé de délai + jours restants entre parenthèses
-            delai_label = f"{traitement.delai_realisation.strftime('%d/%m/%Y')} ({days_until_due} jour{'s' if days_until_due > 1 else ''})"
-
-            notifications.append({
-                'id': f'traitement_{traitement.uuid}',
-                'type': 'traitement',
-                'title': f"{traitement.pac.numero_pac} - Action : {traitement.action[:50]}{'...' if len(traitement.action) > 50 else ''}",
-                'message': f"Délai de réalisation dans {days_until_due} jour{'s' if days_until_due > 1 else ''}",
-                'due_date': traitement.delai_realisation.isoformat(),
-                'priority': priority,
-                'action_url': f'/pac/traitement/{traitement.uuid}/show',
-                'entity_id': str(traitement.uuid),
-                # Champs ajoutés pour l'affichage
-                'nature_label': nature_label,
-                'type_action': type_action,
-                'days_remaining': days_until_due,
-                'delai_label': delai_label,
-            })
-        
-        # Trier par priorité et date d'échéance
-        priority_order = {'high': 0, 'medium': 1, 'low': 2}
-        notifications.sort(key=lambda x: (priority_order.get(x['priority'], 3), x['due_date']))
-        
-        return Response({
-            'notifications': notifications,
-            'total': len(notifications),
-            'settings': {
-                'traitement_delai_notice_days': traitement_delai_days,
-                'traitement_reminder_frequency_days': global_settings.traitement_reminder_frequency_days
-            }
-        }, status=status.HTTP_200_OK)
-        
+        from parametre.services.pac_notification_service import get_pac_notifications
+        data = get_pac_notifications(request.user)
+        return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des échéances: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({'error': 'Impossible de récupérer les échéances'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notifications_list(request):
+    """
+    Liste générique des notifications pour l'utilisateur connecté.
+    Permet d'exploiter la table parametre.Notification pour toutes les apps.
+    Filtres possibles (query params) :
+    - is_read=true|false
+    - include_dismissed=true pour inclure les notifications masquées
+    - source_app=pac|dashboard|...
+    - notification_type=traitement|suivi|...
+    - limit, offset pour la pagination simple
+    """
+    try:
+        qs = Notification.objects.filter(user=request.user)
+
+        # Filtre masquées
+        include_dismissed = request.query_params.get('include_dismissed')
+        if not (include_dismissed and include_dismissed.lower() in ('1', 'true', 'yes')):
+            qs = qs.filter(dismissed_at__isnull=True)
+
+        # Filtre lu / non lu
+        is_read = request.query_params.get('is_read')
+        if is_read is not None:
+            is_read = is_read.lower()
+            if is_read in ('1', 'true', 'yes'):
+                qs = qs.filter(read_at__isnull=False)
+            elif is_read in ('0', 'false', 'no'):
+                qs = qs.filter(read_at__isnull=True)
+
+        # Filtre source_app
+        source_app = request.query_params.get('source_app')
+        if source_app:
+            qs = qs.filter(source_app=source_app)
+
+        # Filtre type métier
+        notif_type = request.query_params.get('notification_type')
+        if notif_type:
+            qs = qs.filter(notification_type=notif_type)
+
+        qs = qs.order_by('-created_at')
+
+        # Pagination simple
+        try:
+            limit = int(request.query_params.get('limit', '100'))
+        except ValueError:
+            limit = 100
+        try:
+            offset = int(request.query_params.get('offset', '0'))
+        except ValueError:
+            offset = 0
+
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+
+        total = qs.count()
+        notifications_qs = qs[offset:offset + limit]
+
+        notifications_data = []
+        for n in notifications_qs:
+            notifications_data.append({
+                'notification_uuid': str(n.uuid),
+                'title': n.title,
+                'message': n.message,
+                'source_app': n.source_app,
+                'notification_type': n.notification_type,
+                'action_url': n.action_url,
+                'priority': n.priority,
+                'due_date': n.due_date.isoformat() if n.due_date else None,
+                'read_at': n.read_at.isoformat() if n.read_at else None,
+                'dismissed_at': n.dismissed_at.isoformat() if n.dismissed_at else None,
+                'sent_by_email_at': n.sent_by_email_at.isoformat() if n.sent_by_email_at else None,
+                'shown_in_ui_at': n.shown_in_ui_at.isoformat() if n.shown_in_ui_at else None,
+                'content_type': n.content_type.model if n.content_type else None,
+                'object_id': str(n.object_id) if n.object_id is not None else None,
+                'created_at': n.created_at.isoformat() if n.created_at else None,
+                'updated_at': n.updated_at.isoformat() if n.updated_at else None,
+                'is_read': bool(n.read_at),
+            })
+
+        return Response({
+            'notifications': notifications_data,
+            'total': total,
+            'limit': limit,
+            'offset': offset,
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de la liste des notifications: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({'error': 'Impossible de récupérer les notifications'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PATCH', 'POST'])
+@permission_classes([IsAuthenticated])
+def notification_mark_read(request, uuid):
+    """
+    Marquer une notification comme lue (read_at) pour l'utilisateur connecté.
+    """
+    try:
+        notif = Notification.objects.filter(uuid=uuid, user=request.user).first()
+        if not notif:
+            return Response(
+                {'error': 'Notification introuvable ou accès refusé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if not notif.read_at:
+            notif.read_at = timezone.now()
+            notif.save(update_fields=['read_at', 'updated_at'])
+        return Response({
+            'success': True,
+            'notification_uuid': str(notif.uuid),
+            'read_at': notif.read_at.isoformat(),
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors du marquage lu de la notification {uuid}: {e}")
+        return Response(
+            {'error': 'Impossible de marquer la notification comme lue'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # ==================== EMAIL SETTINGS ====================
@@ -1646,15 +1716,48 @@ def email_settings_update(request):
 @permission_classes([IsAuthenticated])
 def test_email_configuration(request):
     """
-    Tester la configuration email
+    Tester la configuration email (version sécurisée)
+    Security by Design : Validation stricte, logging sécurisé
     """
     try:
         from django.core.mail import send_mail
         from django.conf import settings
+        from .utils.email_security import EmailValidator, EmailContentSanitizer, SecureEmailLogger
         
         email_settings = EmailSettings.get_solo()
         
-        # Configuration temporaire pour le test
+        # Récupérer et valider l'email de test
+        test_email = request.data.get('test_email', request.user.email)
+        if not test_email:
+            return Response({'error': 'Adresse email de test requise'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Valider l'email
+        if not EmailValidator.is_valid_email(test_email):
+            return Response({
+                'error': 'Adresse email invalide',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier que la configuration est complète
+        if not email_settings.email_host_user or not email_settings.get_password():
+            return Response({
+                'error': 'Configuration email incomplète',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Test de connexion SMTP d'abord
+        connection_ok, connection_message = email_settings.test_smtp_connection()
+        if not connection_ok:
+            SecureEmailLogger.log_security_event('smtp_connection_failed', {
+                'user': request.user.username,
+                'error': connection_message
+            })
+            return Response({
+                'error': f'Échec de la connexion SMTP : {connection_message}',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Configuration temporaire
         original_config = {
             'EMAIL_HOST': getattr(settings, 'EMAIL_HOST', ''),
             'EMAIL_PORT': getattr(settings, 'EMAIL_PORT', 587),
@@ -1662,7 +1765,7 @@ def test_email_configuration(request):
             'EMAIL_HOST_PASSWORD': getattr(settings, 'EMAIL_HOST_PASSWORD', ''),
             'EMAIL_USE_TLS': getattr(settings, 'EMAIL_USE_TLS', True),
             'EMAIL_USE_SSL': getattr(settings, 'EMAIL_USE_SSL', False),
-            'EMAIL_TIMEOUT': getattr(settings, 'EMAIL_TIMEOUT', 30),
+            'EMAIL_TIMEOUT': getattr(settings, 'EMAIL_TIMEOUT', 10),
         }
         
         # Appliquer la configuration depuis la base de données
@@ -1670,34 +1773,60 @@ def test_email_configuration(request):
         for key, value in test_config.items():
             setattr(settings, key, value)
         
-        # Envoyer un email de test
-        test_email = request.data.get('test_email', request.user.email)
-        if not test_email:
-            return Response({'error': 'Adresse email de test requise'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # Préparer le contenu sécurisé
+            subject = EmailContentSanitizer.sanitize_subject('Test de configuration email - KORA')
+            message = EmailContentSanitizer.sanitize_html('Ceci est un email de test pour vérifier la configuration SMTP.')
+            
+            # Envoyer l'email
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=test_config['DEFAULT_FROM_EMAIL'],
+                recipient_list=[test_email],
+                fail_silently=False,
+            )
+            
+            # Logger le succès
+            SecureEmailLogger.log_email_sent(test_email, subject, True)
+            
+            # Créer un log d'activité
+            ActivityLog.objects.create(
+                user=request.user,
+                action='test',
+                entity_type='email_settings',
+                entity_id=str(email_settings.uuid),
+                entity_name='Configuration email',
+                description=f'Test email réussi vers {SecureEmailLogger.mask_email(test_email)}',
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')
+            )
+            
+            return Response({
+                'message': f'Email de test envoyé avec succès à {test_email}',
+                'status': 'success'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as send_error:
+            # Logger l'échec
+            SecureEmailLogger.log_email_sent(test_email, 'Test email', False)
+            
+            return Response({
+                'error': f'Erreur lors de l\'envoi : {str(send_error)}',
+                'status': 'error'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        send_mail(
-            subject='Test de configuration email - KORA',
-            message='Ceci est un email de test pour vérifier la configuration SMTP.',
-            from_email=test_config['DEFAULT_FROM_EMAIL'],
-            recipient_list=[test_email],
-            fail_silently=False,
-        )
-        
-        # Restaurer la configuration originale
-        for key, value in original_config.items():
-            setattr(settings, key, value)
-        
-        return Response({
-            'message': f'Email de test envoyé avec succès à {test_email}',
-            'status': 'success'
-        }, status=status.HTTP_200_OK)
+        finally:
+            # Restaurer la configuration originale
+            for key, value in original_config.items():
+                setattr(settings, key, value)
         
     except Exception as e:
         logger.error(f"Erreur lors du test email: {str(e)}")
         return Response({
-            'error': f'Erreur lors de l\'envoi du test: {str(e)}',
+            'error': 'Erreur interne lors du test',
             'status': 'error'
-        }, status=status.HTTP_400_BAD_REQUEST)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== ENDPOINTS POUR AFFICHAGE COMPLET (AVEC ÉLÉMENTS DÉSACTIVÉS) ====================
@@ -2103,7 +2232,7 @@ def preuve_add_medias(request, uuid):
     """Ajouter des médias à une preuve existante"""
     try:
         try:
-            preuve = Preuve.objects.get(uuid=uuid)
+            preuve = Preuve.objects.prefetch_related('medias').get(uuid=uuid)
         except Preuve.DoesNotExist:
             return Response({'error': 'Preuve non trouvée'}, status=status.HTTP_404_NOT_FOUND)
         
@@ -2118,6 +2247,10 @@ def preuve_add_medias(request, uuid):
         # Ajouter les médias à la preuve (ManyToMany.add ignore les doublons)
         preuve.medias.add(*medias)
         
+        # Recharger la preuve depuis la DB avec prefetch pour avoir les médias à jour
+        # IMPORTANT: refresh_from_db() ne rafraîchit pas les relations ManyToMany
+        preuve = Preuve.objects.prefetch_related('medias').get(uuid=uuid)
+        
         return Response({
             'uuid': str(preuve.uuid),
             'description': preuve.description,
@@ -2125,7 +2258,9 @@ def preuve_add_medias(request, uuid):
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de l'ajout de médias à la preuve: {str(e)}")
+        logger.error(f"[PREUVE_ADD_MEDIAS] Erreur lors de l'ajout de médias à la preuve: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return Response({'error': 'Impossible d\'ajouter les médias à la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2770,18 +2905,34 @@ def role_delete(request, uuid):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_processus_list(request):
-    """Liste des attributions processus-utilisateur"""
+    """
+    Liste des attributions processus-utilisateur.
+    - Utilisateurs avec is_staff ET is_superuser (can_manage_users=True) : peuvent voir toutes les attributions, avec filtres optionnels.
+    - Autres utilisateurs : ne voient que leurs propres attributions, sans filtres arbitraires.
+    Security by Design : évite qu'un utilisateur normal liste les attributions d'autres utilisateurs.
+    """
     try:
+        from parametre.permissions import can_manage_users
+
         user_id = request.GET.get('user_id')
         processus_id = request.GET.get('processus_id')
-        
-        queryset = UserProcessus.objects.select_related('user', 'processus', 'attribue_par').filter(is_active=True)
-        
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-        if processus_id:
-            queryset = queryset.filter(processus_id=processus_id)
-        
+
+        # Utilisateur avec droits de gestion : accès complet avec filtres
+        if can_manage_users(request.user):
+            queryset = UserProcessus.objects.select_related(
+                'user', 'processus', 'attribue_par'
+            ).filter(is_active=True)
+
+            if user_id:
+                queryset = queryset.filter(user_id=user_id)
+            if processus_id:
+                queryset = queryset.filter(processus_id=processus_id)
+        else:
+            # Utilisateur normal : uniquement ses propres attributions actives
+            queryset = UserProcessus.objects.select_related(
+                'user', 'processus', 'attribue_par'
+            ).filter(is_active=True, user=request.user)
+
         serializer = UserProcessusSerializer(queryset.order_by('-date_attribution'), many=True)
         return Response({
             'success': True,
@@ -2799,8 +2950,21 @@ def user_processus_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def user_processus_create(request):
-    """Créer une nouvelle attribution processus-utilisateur"""
+    """
+    Créer une nouvelle attribution processus-utilisateur.
+    Security by Design : réservé aux super administrateurs (can_manage_users).
+    """
     try:
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response(
+                {
+                    'error': 'Accès refusé. Seuls les super administrateurs peuvent attribuer des processus.',
+                    'code': 'PERMISSION_DENIED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         data = request.data.copy()
         data['attribue_par'] = request.user.id
         
@@ -2827,8 +2991,21 @@ def user_processus_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def user_processus_update(request, uuid):
-    """Mettre à jour une attribution processus-utilisateur"""
+    """
+    Mettre à jour une attribution processus-utilisateur.
+    Security by Design : réservé aux super administrateurs (can_manage_users).
+    """
     try:
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response(
+                {
+                    'error': 'Accès refusé. Seuls les super administrateurs peuvent modifier des attributions processus.',
+                    'code': 'PERMISSION_DENIED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         user_processus = UserProcessus.objects.get(uuid=uuid)
         serializer = UserProcessusSerializer(user_processus, data=request.data, partial=True)
         if serializer.is_valid():
@@ -2855,8 +3032,21 @@ def user_processus_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def user_processus_delete(request, uuid):
-    """Supprimer une attribution processus-utilisateur"""
+    """
+    Supprimer une attribution processus-utilisateur.
+    Security by Design : réservé aux super administrateurs (can_manage_users).
+    """
     try:
+        from parametre.permissions import can_manage_users
+        if not can_manage_users(request.user):
+            return Response(
+                {
+                    'error': 'Accès refusé. Seuls les super administrateurs peuvent supprimer des attributions processus.',
+                    'code': 'PERMISSION_DENIED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         user_processus = UserProcessus.objects.get(uuid=uuid)
         user_processus.delete()
         log_activity(
@@ -2949,6 +3139,28 @@ def user_processus_role_create(request):
         data = request.data.copy()
         data['attribue_par'] = request.user.id
         
+        # Vérifier si l'attribution existe déjà (contrainte UNIQUE)
+        from parametre.models import UserProcessusRole
+        user_id = data.get('user')
+        processus_id = data.get('processus')
+        role_id = data.get('role')
+        
+        if user_id and processus_id and role_id:
+            existing = UserProcessusRole.objects.filter(
+                user_id=user_id,
+                processus_id=processus_id,
+                role_id=role_id,
+                is_active=True
+            ).first()
+            
+            if existing:
+                # Retourner une réponse 400 avec un message clair au lieu d'une erreur 500
+                return Response({
+                    'error': 'Ce rôle est déjà attribué à cet utilisateur pour ce processus.',
+                    'code': 'ALREADY_EXISTS',
+                    'existing_uuid': str(existing.uuid)
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = UserProcessusRoleSerializer(data=data)
         if serializer.is_valid():
             user_processus_role = serializer.save()
@@ -2966,6 +3178,17 @@ def user_processus_role_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error(f"Erreur lors de la création de l'attribution de rôle: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Vérifier si c'est une erreur de contrainte UNIQUE
+        error_str = str(e)
+        if 'UNIQUE constraint' in error_str or 'unique constraint' in error_str.lower():
+            return Response({
+                'error': 'Ce rôle est déjà attribué à cet utilisateur pour ce processus.',
+                'code': 'ALREADY_EXISTS'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         return Response({'error': 'Impossible de créer l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3149,6 +3372,184 @@ def users_create(request):
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de l\'utilisateur'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def users_invite(request):
+    """
+    Invite un nouvel utilisateur (is_staff ET is_superuser uniquement).
+    Security by Design :
+    - Vérifie les permissions via can_manage_users
+    - Ne manipule jamais de mot de passe côté admin
+    - Envoie un lien signé et limité dans le temps pour que l'utilisateur définisse son mot de passe
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("DEBUT users_invite")
+        logger.info(f"Utilisateur qui invite: {request.user.username} (is_staff={request.user.is_staff}, is_superuser={request.user.is_superuser})")
+        logger.info(f"IP: {get_client_ip(request)}")
+        
+        # ========== VÉRIFICATION DE SÉCURITÉ ==========
+        from parametre.permissions import can_manage_users
+        can_manage = can_manage_users(request.user)
+        logger.info(f"can_manage_users: {can_manage}")
+        
+        if not can_manage:
+            logger.warning(f"Accès refusé pour {request.user.username}")
+            return Response({
+                'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent inviter des utilisateurs.',
+                'code': 'PERMISSION_DENIED'
+            }, status=status.HTTP_403_FORBIDDEN)
+        # ========== FIN VÉRIFICATION ==========
+
+        # Rate limiting basique pour éviter le spam d'invitations
+        user_limit_ok = EmailRateLimiter.check_user_limit(request.user.id)
+        global_limit_ok = EmailRateLimiter.check_global_limit()
+        logger.info(f"Rate limiting - user_limit: {user_limit_ok}, global_limit: {global_limit_ok}")
+        
+        if not user_limit_ok or not global_limit_ok:
+            SecureEmailLogger.log_security_event('invite_rate_limit_exceeded', {
+                'user': request.user.username,
+                'ip': get_client_ip(request),
+                'type': 'user_invite'
+            })
+            logger.warning(f"Rate limit dépassé pour {request.user.username}")
+            return Response({
+                'success': False,
+                'error': "Trop de tentatives d'invitation, veuillez réessayer plus tard."
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        # Logger les données reçues pour le débogage
+        logger.info(f"Données brutes reçues (request.data): {request.data}")
+        logger.info(f"Type de request.data: {type(request.data)}")
+        logger.info(f"Clés présentes: {list(request.data.keys()) if isinstance(request.data, dict) else 'N/A'}")
+        
+        # Vérifier si l'email existe déjà AVANT la validation du serializer
+        email_received = request.data.get('email', '')
+        logger.info(f"Email reçu: {email_received}")
+        
+        if email_received:
+            from django.contrib.auth.models import User
+            email_exists = User.objects.filter(email=email_received).exists()
+            logger.info(f"Email existe déjà dans la DB: {email_exists}")
+            if email_exists:
+                existing_user = User.objects.filter(email=email_received).first()
+                logger.info(f"Utilisateur existant trouvé: username={existing_user.username}, id={existing_user.id}, is_active={existing_user.is_active}")
+        
+        serializer = UserInviteSerializer(data=request.data)
+        logger.info(f"Serializer créé, validation en cours...")
+        
+        if not serializer.is_valid():
+            logger.error(f"ERREUR: Serializer invalide")
+            logger.error(f"Erreurs de validation détaillées: {serializer.errors}")
+            logger.error(f"Données qui ont causé l'erreur: {request.data}")
+            return Response({
+                'success': False,
+                'error': 'Données invalides',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info("Serializer valide, création de l'utilisateur...")
+
+        user = serializer.save()
+        logger.info(f"Utilisateur créé avec succès: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}")
+
+        # Générer un token d'invitation basé sur le système de reset password
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        logger.info(f"Token d'invitation généré: uid={uid}, token={token[:20]}...")
+
+        frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        raw_invite_url = f"{frontend_base}/set-password?uid={uid}&token={token}"
+        invite_url = EmailContentSanitizer.sanitize_url(raw_invite_url)
+
+        # Calculer la date d'expiration pour l'affichage dans l'email
+        from datetime import datetime, timedelta
+        invitation_timeout = getattr(settings, 'INVITATION_TOKEN_TIMEOUT', 604800)  # 7 jours par défaut
+        expiration_date = datetime.now() + timedelta(seconds=invitation_timeout)
+        expiration_str = expiration_date.strftime("%d/%m/%Y à %H:%M")
+
+        # Vérifier l'email du destinataire
+        if not EmailValidator.is_valid_email(user.email):
+            return Response({
+                'success': False,
+                'error': "Adresse email du destinataire invalide."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Préparer le contexte pour le template
+        context = {
+            'user_first_name': user.first_name,
+            'user_username': user.username,
+            'user_email': user.email,
+            'invite_url': invite_url,
+            'expiration_date': expiration_str,
+        }
+
+        # Rendre les templates HTML et texte
+        html_body = render_to_string('emails/user_invitation_email.html', context)
+        text_body = render_to_string('emails/user_invitation_email.txt', context)
+        
+        subject = EmailContentSanitizer.sanitize_subject("KORA – Activation de votre compte")
+
+        # Charger la configuration SMTP depuis EmailSettings
+        config_ok = load_email_settings_into_django()
+        if not config_ok:
+            logger.warning("Configuration EmailSettings incomplète, utilisation de la configuration actuelle des settings.")
+
+        # Envoyer l'email via la configuration courante
+        logger.info(f"Envoi de l'email d'invitation à {user.email}...")
+        logger.info(f"URL d'invitation: {invite_url}")
+        
+        try:
+            send_mail(
+                subject=subject,
+                message=text_body,
+                html_message=html_body,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', user.email),
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            logger.info(f"Email envoyé avec succès à {user.email}")
+        except Exception as email_error:
+            logger.error(f"ERREUR lors de l'envoi de l'email: {str(email_error)}")
+            # Ne pas échouer complètement si l'email échoue, mais logger l'erreur
+            SecureEmailLogger.log_email_sent(user.email, subject, False)
+
+        SecureEmailLogger.log_email_sent(user.email, subject, True)
+
+        # Log de l'activité
+        log_activity(
+            user=request.user,
+            action='create',
+            entity_type='user',
+            entity_id=str(user.id),
+            entity_name=f"{user.username} ({user.email})",
+            description=f"Invitation de l'utilisateur {user.username}",
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+
+        logger.info(f"Invitation terminée avec succès pour {user.email}")
+        logger.info("=" * 60)
+        
+        return Response({
+            'success': True,
+            'message': "Invitation envoyée avec succès. L'utilisateur recevra un email pour définir son mot de passe."
+        }, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error(f"ERREUR EXCEPTION dans users_invite: {str(e)}")
+        logger.error(f"Type d'erreur: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("=" * 60)
+        SecureEmailLogger.log_email_sent(getattr(request, 'user', None) and getattr(request.user, 'email', ''), "KORA – Invitation utilisateur", False)
+        return Response({
+            'success': False,
+            'error': f"Erreur lors de l'invitation de l'utilisateur: {str(e)}"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

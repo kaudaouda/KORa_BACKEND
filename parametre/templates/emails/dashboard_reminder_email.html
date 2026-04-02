@@ -1,0 +1,173 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>KORA - Rappel Tableau de bord</title>
+    <style type="text/css">
+        {% include 'emails/email_styles.css' %}
+    </style>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td {font-family: Arial, sans-serif !important;}
+    </style>
+    <![endif]-->
+</head>
+<body>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" class="email-wrapper">
+        <tr>
+            <td align="center">
+                <!-- Container principal -->
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="email-container">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td class="email-header-dashboard">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <h1 class="email-logo">KORA</h1>
+                                        <p class="email-subtitle email-subtitle-dashboard">Autorité Nationale de l'Aviation Civile</p>
+                                        <div class="email-divider"></div>
+                                        <p class="email-title">Rappel Tableau de bord</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Contenu principal -->
+                    <tr>
+                        <td class="email-content">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td>
+                                        <p class="email-greeting">
+                                            Bonjour <strong class="color-dashboard">{{ user_name }}</strong>,
+                                        </p>
+                                        
+                                        <p class="email-text-small">
+                                            Un indicateur nécessite votre attention. Veuillez compléter les données de la période concernée.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Détails de l'indicateur -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-card">
+                                <tr>
+                                    <td style="padding: 0;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="6" class="notification-priority-bar" style="background-color: #7C3AED;"></td>
+                                                <td class="notification-card-content" style="padding: 20px;">
+                                                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                                        <tr>
+                                                            <td>
+                                                                <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-details-table">
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Objectif:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value">
+                                                                            {{ objective_number }} - {{ objective_libelle }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Indicateur:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value">
+                                                                            {{ indicateur_libelle }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Fréquence:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-secondary">
+                                                                            {{ frequence }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Période:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-secondary">
+                                                                            {{ periode_name }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label">
+                                                                            <strong>Date de fin:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-secondary" style="font-weight: 600;">
+                                                                            {{ periode_end_date }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label" style="padding: 8px 0 4px 0;">
+                                                                            <strong>Statut:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-urgent" style="padding: 8px 0 4px 0;">
+                                                                            {{ message }}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Bouton d'action -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
+                                <tr>
+                                    <td align="center">
+                                        <table border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td align="center" style="border-radius: 6px; background-color: #7C3AED;">
+                                                    <a href="{{ dashboard_url }}" target="_blank" style="font-size: 15px; font-family: Arial, sans-serif; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 6px; padding: 14px 32px; display: inline-block;">
+                                                        Accéder au tableau de bord
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td class="email-footer">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <p class="footer-text">
+                                            <strong>Autorité Nationale de l'Aviation Civile (ANAC)</strong>
+                                        </p>
+                                        <p class="footer-text-small">
+                                            Message automatique envoyé par KORA
+                                        </p>
+                                        <p class="footer-text-small-last">
+                                            Merci de ne pas répondre à cet email
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                </table>
+                <!-- Fin du container principal -->
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

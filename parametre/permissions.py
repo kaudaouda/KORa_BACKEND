@@ -9,7 +9,9 @@ from .models import UserProcessusRole, Processus, Role
 def is_super_admin(user):
     """
     Vérifie si un utilisateur est un super administrateur
-    (processus "smi" ou "prs-smi" + rôle "admin")
+    Un super admin est :
+    1. Un utilisateur avec is_staff ET is_superuser (accès complet par défaut)
+    2. OU un utilisateur qui a le rôle "admin" pour le processus "smi" ou "prs-smi"
     
     Les super administrateurs ont accès complet à tous les processus :
     - Peuvent lire, écrire, valider, supprimer pour tous les processus
@@ -24,6 +26,10 @@ def is_super_admin(user):
     """
     if not user or not user.is_authenticated:
         return False
+    
+    # Security by Design : is_staff ET is_superuser = toutes les permissions
+    if user.is_staff and user.is_superuser:
+        return True
     
     # Vérifier si l'utilisateur a le rôle "admin" pour le processus "smi" ou "prs-smi"
     # Utiliser Q objects pour faire un OR avec iexact (case-insensitive)
@@ -318,7 +324,10 @@ def check_permission_or_403(user, processus_uuid, role_code, error_message=None)
     from rest_framework import status
     
     # ========== SUPER ADMIN : Accès complet sans restriction ==========
-    if is_super_admin(user):
+    # Aligner avec le comportement global : 
+    # - is_super_admin (rôle admin sur SMI/PRS-SMI)
+    # - OU utilisateur technique avec is_staff ET is_superuser (can_manage_users)
+    if can_manage_users(user) or is_super_admin(user):
         return True, None
     # ========== FIN SUPER ADMIN ==========
     

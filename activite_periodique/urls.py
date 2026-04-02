@@ -18,6 +18,7 @@ urlpatterns = [
     path('activites-periodiques/<uuid:uuid>/update/', views.activite_periodique_update, name='activite_periodique_update'),
     path('activites-periodiques/<uuid:uuid>/delete/', views.activite_periodique_delete, name='activite_periodique_delete'),
     path('activites-periodiques/<uuid:uuid>/validate/', views.activite_periodique_validate, name='activite_periodique_validate'),
+    path('activites-periodiques/<uuid:uuid>/unvalidate/', views.activite_periodique_unvalidate, name='activite_periodique_unvalidate'),
     
     # Details AP endpoints
     path('details-ap/', views.details_ap_list, name='details_ap_list'),
@@ -32,5 +33,11 @@ urlpatterns = [
     path('suivis-ap/create/', views.suivi_ap_create, name='suivi_ap_create'),
     path('suivis-ap/<uuid:uuid>/update/', views.suivi_ap_update, name='suivi_ap_update'),
     path('suivis-ap/<uuid:uuid>/delete/', views.suivi_ap_delete, name='suivi_ap_delete'),
+    
+    # MediaLivrable endpoints
+    path('media-livrables/suivi/<uuid:suivi_uuid>/', views.media_livrables_by_suivi, name='media_livrables_by_suivi'),
+    path('media-livrables/create/', views.media_livrable_create, name='media_livrable_create'),
+    path('media-livrables/<uuid:uuid>/update/', views.media_livrable_update, name='media_livrable_update'),
+    path('media-livrables/<uuid:uuid>/delete/', views.media_livrable_delete, name='media_livrable_delete'),
 ]
 

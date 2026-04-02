@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/activite-periodique/', include('activite_periodique.urls')),  # API activité périodique
     path('api/documentation/', include('documentation.urls')),  # API documentation
     path('api/permissions/', include('permissions.urls')),  # API permissions génériques
+    path('api/analyse-tableau/', include('analyse_tableau.urls')),  # API analyse du tableau
 ]
 
 # Servir les fichiers média en développement

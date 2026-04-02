@@ -1,0 +1,37 @@
+================================================================
+KORA - Autorité Nationale de l'Aviation Civile (ANAC)
+Rappel d'échéances
+================================================================
+
+Madame, Monsieur {{ user_name }},
+
+Vous avez {{ notifications|length }} échéance(s) approchant dans le système KORA.
+Veuillez prendre les mesures nécessaires pour respecter les délais.
+
+----------------------------------------------------------------
+ÉCHÉANCES À TRAITER
+----------------------------------------------------------------
+
+{% for notification in notifications %}{{ forloop.counter }}. PAC {{ notification.numero_pac }}
+   
+   Processus       : {{ notification.processus_name }}
+   Action          : {{ notification.action }}{% if notification.nature_label %}
+   Nature          : {{ notification.nature_label }}{% endif %}
+   Échéance        : {{ notification.due_date_formatted }}
+   Jours restants  : {{ notification.days_remaining }} jour{{ notification.days_remaining|pluralize }}
+   
+{% endfor %}
+================================================================
+
+IMPORTANT : Connectez-vous au système KORA pour traiter ces 
+échéances dans les meilleurs délais.
+
+================================================================
+
+Cordialement,
+L'équipe KORA
+Autorité Nationale de l'Aviation Civile (ANAC)
+
+---
+Message automatique envoyé le {{ current_date }}
+Merci de ne pas répondre à cet email

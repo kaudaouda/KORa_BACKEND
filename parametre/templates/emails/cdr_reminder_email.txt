@@ -1,0 +1,38 @@
+================================================================
+KORA - Autorité Nationale de l'Aviation Civile (ANAC)
+Rappel - Plans d'Action Cartographie des Risques (CDR)
+================================================================
+
+Madame, Monsieur {{ user_name }},
+
+Vous avez {{ notifications|length }} plan(s) d'action de la Cartographie
+des Risques avec des délais approchants.
+Veuillez prendre les mesures nécessaires pour respecter les délais.
+
+----------------------------------------------------------------
+PLANS D'ACTION A TRAITER
+----------------------------------------------------------------
+
+{% for notification in notifications %}{{ forloop.counter }}. CDR {{ notification.numero_cdr }}
+
+   Processus       : {{ notification.processus }}
+   Action          : {{ notification.action }}{% if notification.responsables %}
+   Responsable(s)  : {{ notification.responsables|join:", " }}{% endif %}
+   Délai           : {{ notification.due_date_formatted }}
+   Jours restants  : {{ notification.days_remaining }} jour{{ notification.days_remaining|pluralize }}
+
+{% endfor %}
+================================================================
+
+IMPORTANT : Connectez-vous au système KORA pour traiter ces
+plans d'action dans les meilleurs délais.
+
+================================================================
+
+Cordialement,
+L'équipe KORA
+Autorité Nationale de l'Aviation Civile (ANAC)
+
+---
+Message automatique envoyé le {{ current_date }}
+Merci de ne pas répondre à cet email

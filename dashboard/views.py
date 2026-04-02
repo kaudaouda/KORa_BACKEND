@@ -11,6 +11,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 import logging
 from .models import Objectives, Indicateur, Observation, TableauBord
+from analyse_tableau.models import AnalyseTableau
 from parametre.views import (
     log_tableau_bord_creation,
     log_tableau_bord_update,
@@ -26,6 +27,7 @@ from permissions.permissions import (
     DashboardTableauUpdatePermission,
     DashboardTableauDeletePermission,
     DashboardTableauValidatePermission,
+    DashboardTableauDevalidatePermission,
     DashboardTableauReadPermission,
     DashboardTableauListCreatePermission,
     DashboardTableauDetailPermission,
@@ -147,17 +149,26 @@ def tableaux_bord_list_create(request):
                         'error': f'Un tableau INITIAL existe déjà pour l\'année {annee} et ce processus. Vous ne pouvez créer que des amendements.'
                     }, status=status.HTTP_400_BAD_REQUEST)
             
-            # VALIDATION 2 : Si AMENDEMENT_1, vérifier qu'INITIAL existe
+            # VALIDATION 2 : Si AMENDEMENT_1, vérifier qu'INITIAL existe ET est validé
             elif type_code == 'AMENDEMENT_1':
-                initial_exists = TableauBord.objects.filter(
-                    annee=annee,
-                    processus=processus_uuid,
-                    type_tableau__code='INITIAL'
-                ).exists()
-                if not initial_exists:
+                # Security by Design : Récupérer le tableau initial pour vérifier son statut de validation
+                try:
+                    initial_tableau = TableauBord.objects.get(
+                        annee=annee,
+                        processus=processus_uuid,
+                        type_tableau__code='INITIAL'
+                    )
+                except TableauBord.DoesNotExist:
                     return Response({
                         'success': False,
                         'error': 'Impossible de créer AMENDEMENT_1 : aucun tableau INITIAL n\'existe pour cette année et ce processus'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Security by Design : Vérifier que le tableau initial est validé
+                if not initial_tableau.is_validated:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer AMENDEMENT_1 : le tableau initial doit être validé avant de pouvoir créer un amendement.'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 # Vérifier aussi qu'AMENDEMENT_1 n'existe pas déjà
@@ -172,17 +183,26 @@ def tableaux_bord_list_create(request):
                         'error': 'AMENDEMENT_1 existe déjà pour cette année et ce processus. Vous pouvez créer AMENDEMENT_2.'
                     }, status=status.HTTP_400_BAD_REQUEST)
             
-            # VALIDATION 3 : Si AMENDEMENT_2, vérifier qu'AMENDEMENT_1 existe
+            # VALIDATION 3 : Si AMENDEMENT_2, vérifier qu'AMENDEMENT_1 existe ET est validé
             elif type_code == 'AMENDEMENT_2':
-                a1_exists = TableauBord.objects.filter(
-                    annee=annee,
-                    processus=processus_uuid,
-                    type_tableau__code='AMENDEMENT_1'
-                ).exists()
-                if not a1_exists:
+                # Security by Design : Récupérer AMENDEMENT_1 pour vérifier son statut de validation
+                try:
+                    amendement_1 = TableauBord.objects.get(
+                        annee=annee,
+                        processus=processus_uuid,
+                        type_tableau__code='AMENDEMENT_1'
+                    )
+                except TableauBord.DoesNotExist:
                     return Response({
                         'success': False,
                         'error': 'Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 n\'existe pas. Créez d\'abord AMENDEMENT_1.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Security by Design : Vérifier que AMENDEMENT_1 est validé
+                if not amendement_1.is_validated:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 doit être validé avant de pouvoir créer AMENDEMENT_2.'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 # Vérifier aussi qu'AMENDEMENT_2 n'existe pas déjà
@@ -221,9 +241,27 @@ def tableaux_bord_list_create(request):
 
                     # Si amendement et clone demandé, copier les objectifs (+ éléments associés)
                     if instance.type_tableau.code in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone and instance.initial_ref:
-                        initial = instance.initial_ref
-                        # cloner objectifs
-                        for obj in initial.objectives.all():
+                        # Déterminer le tableau source : le dernier tableau existant pour cette année et ce processus
+                        # (INITIAL, puis AMENDEMENT_1, puis AMENDEMENT_2 si jamais étendu)
+                        source_tableau = TableauBord.objects.filter(
+                            annee=instance.annee,
+                            processus=instance.processus,
+                            type_tableau__code__in=['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
+                        ).exclude(pk=instance.pk).order_by('-created_at').first()
+
+                        # Par sécurité, repli sur le tableau initial si aucune autre version n'est trouvée
+                        if not source_tableau:
+                            source_tableau = instance.initial_ref
+
+                        logger.info(
+                            "Clonage des objectifs pour l'amendement %s depuis le tableau source %s (%s)",
+                            instance.uuid,
+                            getattr(source_tableau, 'uuid', None),
+                            getattr(source_tableau.type_tableau, 'code', None)
+                        )
+
+                        # cloner objectifs du tableau source (dernier tableau : initial ou dernier amendement)
+                        for obj in source_tableau.objectives.all():
                             new_obj = Objectives.objects.create(
                                 number=obj.number,
                                 libelle=obj.libelle,
@@ -391,6 +429,13 @@ def create_amendement(request, tableau_initial_uuid):
         try:
             if existing_amendements == 0:
                 # Créer AMENDEMENT_1 si aucun amendement validé n'existe
+                # MAIS le tableau initial DOIT être validé avant de créer le premier amendement
+                if not initial_tableau.is_validated:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer un amendement : le tableau initial doit être validé avant de pouvoir créer un amendement.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
                 # Essayer d'abord avec is_active=True, puis sans si non trouvé
                 try:
                     type_amendement = Versions.objects.get(code='AMENDEMENT_1', is_active=True)
@@ -686,6 +731,79 @@ def validate_tableau_bord(request, uuid):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, DashboardTableauDevalidatePermission])
+def devalidate_tableau_bord(request, uuid):
+    """Dévalider un tableau de bord"""
+    try:
+        # Security by Design : La vérification des permissions est gérée par DashboardTableauDevalidatePermission
+        # via le décorateur @permission_classes. La méthode _extract_processus_uuid personnalisée
+        # récupère le tableau depuis view.kwargs['uuid'] pour extraire le processus_uuid.
+        tableau = TableauBord.objects.select_related('processus').get(uuid=uuid)
+        
+        # Vérifier que le tableau est bien validé
+        if not tableau.is_validated:
+            return Response({
+                'success': False,
+                'error': 'Ce tableau n\'est pas validé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Vérifier qu'il n'y a pas d'amendements validés qui dépendent de ce tableau
+        # Si c'est un tableau initial, vérifier les amendements
+        if tableau.type_tableau and tableau.type_tableau.code == 'INITIAL':
+            amendements_valides = TableauBord.objects.filter(
+                initial_ref=tableau,
+                is_validated=True
+            ).exists()
+            if amendements_valides:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de dévalider ce tableau : il existe des amendements validés qui en dépendent'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        # Si c'est un amendement 1, vérifier l'amendement 2
+        elif tableau.type_tableau and tableau.type_tableau.code == 'AMENDEMENT_1':
+            amendement_2_valide = TableauBord.objects.filter(
+                annee=tableau.annee,
+                processus=tableau.processus,
+                type_tableau__code='AMENDEMENT_2',
+                is_validated=True
+            ).exists()
+            if amendement_2_valide:
+                return Response({
+                    'success': False,
+                    'error': 'Impossible de dévalider cet amendement : l\'amendement 2 est validé'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Dévalider le tableau
+        tableau.is_validated = False
+        tableau.date_validation = None
+        tableau.valide_par = None
+        tableau.save()
+        
+        logger.info(f"Tableau {tableau.uuid} dévalidé par {request.user.username}")
+        
+        return Response({
+            'success': True,
+            'message': 'Tableau dévalidé avec succès',
+            'data': TableauBordSerializer(tableau).data
+        }, status=status.HTTP_200_OK)
+        
+    except PermissionDenied:
+        # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
+        raise
+    except TableauBord.DoesNotExist:
+        return Response({
+            'success': False,
+            'error': 'Tableau de bord non trouvé'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur dévalidation tableau: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors de la dévalidation'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def tableau_bord_objectives(request, uuid):
@@ -737,7 +855,11 @@ def objectives_list(request):
         user_processus_uuids = get_user_processus_list(request.user)
         
         # Filtrer les objectifs pour ne montrer que ceux des tableaux de bord accessibles
-        if user_processus_uuids:
+        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
+        if user_processus_uuids is None:
+            # Super admin : voir tous les objectifs sans filtre
+            objectives = Objectives.objects.all().order_by('number')
+        elif user_processus_uuids:
             objectives = Objectives.objects.filter(
                 tableau_bord__processus__uuid__in=user_processus_uuids
             ).order_by('number')
@@ -1045,49 +1167,202 @@ def dashboard_stats(request):
         objectives_this_month = objectives_filter.filter(created_at__date__gte=month_ago).count()
         
         # Calculer les pourcentages de cibles atteintes et non atteintes
+        # et dériver les indicateurs / objectifs atteints selon la règle métier
         from parametre.models import Cible, Periodicite
-        from django.db.models import Q, Count, Case, When, DecimalField, F
         import decimal
+        from collections import defaultdict
         
         # Récupérer toutes les cibles avec leurs indicateurs (filtrées par processus)
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
         if user_processus_uuids is None:
             # Super admin : voir toutes les cibles sans filtre
-            cibles_with_periodicites = Cible.objects.all().select_related('indicateur_id')
+            cibles_qs = Cible.objects.all().select_related('indicateur_id', 'indicateur_id__frequence_id')
         elif user_processus_uuids:
-            cibles_with_periodicites = Cible.objects.filter(
+            cibles_qs = Cible.objects.filter(
                 indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
-            ).select_related('indicateur_id')
+            ).select_related('indicateur_id', 'indicateur_id__frequence_id')
         else:
-            cibles_with_periodicites = Cible.objects.none()
+            cibles_qs = Cible.objects.none()
         
-        total_cibles = cibles_with_periodicites.count()
+        total_cibles = cibles_qs.count()
         cibles_atteintes = 0
         cibles_non_atteintes = 0
         
-        # Pour chaque cible, vérifier si elle est atteinte en comparant avec les périodicités
-        for cible in cibles_with_periodicites:
-            # Récupérer la dernière périodicité pour cet indicateur
-            derniere_periodicite = Periodicite.objects.filter(
-                indicateur_id=cible.indicateur_id
-            ).order_by('-created_at').first()
-            
-            if derniere_periodicite and derniere_periodicite.taux is not None:
-                try:
-                    # Convertir le Decimal en float de manière sécurisée
-                    taux_value = float(derniere_periodicite.taux)
-                    # Utiliser la méthode is_objectif_atteint pour vérifier si la cible est atteinte
-                    if cible.is_objectif_atteint(taux_value):
-                        cibles_atteintes += 1
-                    else:
-                        cibles_non_atteintes += 1
-                except (ValueError, TypeError, decimal.InvalidOperation):
-                    # Si la conversion échoue, considérer comme non atteinte
-                    cibles_non_atteintes += 1
+        # Préparer les données pour les indicateurs / objectifs atteints
+        indicateurs_ids = list(indicateurs_filter.values_list('pk', flat=True))
         
-        # Calculer les pourcentages
+        # Dictionnaire des cibles par indicateur (OneToOne, mais plus simple à manipuler comme dict)
+        cibles_by_indicateur = {cible.indicateur_id_id: cible for cible in cibles_qs}
+        
+        # Récupérer toutes les périodicités des indicateurs concernés avec optimisation pour les preuves
+        periodicites_qs = Periodicite.objects.filter(indicateur_id__in=indicateurs_ids).select_related('preuve').prefetch_related('preuve__medias')
+        periodicites_by_indicateur = defaultdict(list)
+        for periodicite in periodicites_qs:
+            periodicites_by_indicateur[periodicite.indicateur_id_id].append(periodicite)
+        
+        # Statut atteinte par indicateur (True/False/None si non évaluable)
+        indicateur_status = {}
+        indicateurs_atteints = 0
+        indicateurs_non_atteints = 0
+        
+        logger.info(
+            "[DashboardStats] Totaux initiaux - objectifs=%s, indicateurs=%s, cibles=%s",
+            total_objectives, total_indicateurs, total_cibles
+        )
+
+        for indicateur in indicateurs_filter.select_related('frequence_id'):
+            cible = cibles_by_indicateur.get(indicateur.pk)
+            periodicites = periodicites_by_indicateur.get(indicateur.pk, [])
+            
+            # Si pas de cible ou pas de périodicité, on ne peut pas évaluer cet indicateur
+            if not cible or not periodicites:
+                indicateur_status[indicateur.pk] = None
+                logger.debug(
+                    "[DashboardStats] Indicateur %s ignoré (cible=%s, periodicites=%s)",
+                    indicateur.pk, bool(cible), len(periodicites)
+                )
+                continue
+            
+            # Filtrer les périodes autorisées en fonction de la fréquence de l'indicateur
+            frequence_nom = getattr(indicateur.frequence_id, 'nom', None)
+            periodicites_utilisables = periodicites
+            if frequence_nom:
+                allowed_periodes = [code for code, _ in Periodicite.get_periodes_for_frequence(frequence_nom)]
+                filtered = [p for p in periodicites if p.periode in allowed_periodes]
+                if filtered:
+                    periodicites_utilisables = filtered
+            
+            # Calculer la moyenne des taux sur les périodicités retenues
+            taux_values = []
+            for p in periodicites_utilisables:
+                if p.taux is not None:
+                    try:
+                        taux_values.append(float(p.taux))
+                    except (ValueError, TypeError, decimal.InvalidOperation):
+                        continue
+            
+            if not taux_values:
+                indicateur_status[indicateur.pk] = None
+                logger.debug(
+                    "[DashboardStats] Indicateur %s ignoré (aucun taux exploitable sur %s périodicités)",
+                    indicateur.pk, len(periodicites_utilisables)
+                )
+                continue
+            
+            moyenne_taux = sum(taux_values) / len(taux_values)
+            
+            # Vérifier si la cible de l'indicateur est atteinte avec cette moyenne
+            if cible.is_objectif_atteint(moyenne_taux):
+                indicateurs_atteints += 1
+                indicateurs_non_atteints += 0
+                indicateur_status[indicateur.pk] = True
+                cibles_atteintes += 1
+            else:
+                indicateurs_non_atteints += 1
+                indicateur_status[indicateur.pk] = False
+                cibles_non_atteintes += 1
+        
+        # Compléter les compteurs de cibles pour les cibles qui n'ont pas pu être évaluées
+        # (par ex. pas de périodicité ou taux invalide) en les comptant comme non atteintes
+        # pour garder une compatibilité avec l'ancienne logique si nécessaire.
+        if total_cibles > (cibles_atteintes + cibles_non_atteintes):
+            cibles_non_atteintes += total_cibles - (cibles_atteintes + cibles_non_atteintes)
+        
+        # Calculer les pourcentages de cibles atteintes / non atteintes
         pourcentage_atteintes = (cibles_atteintes / total_cibles * 100) if total_cibles > 0 else 0
         pourcentage_non_atteintes = (cibles_non_atteintes / total_cibles * 100) if total_cibles > 0 else 0
+        
+        # Calculer les objectifs atteints / non atteints
+        objectifs_atteints = 0
+        objectifs_non_atteints = 0
+        
+        # Préparer la liste des indicateurs par objectif
+        indicateurs_by_objective = defaultdict(list)
+        for indicateur in indicateurs_filter:
+            indicateurs_by_objective[indicateur.objective_id_id].append(indicateur)
+        
+        for objective in objectives_filter:
+            indicateurs_obj = indicateurs_by_objective.get(objective.pk, [])
+            
+            # Aucun indicateur associé : on ignore cet objectif pour le statut atteint/non atteint
+            if not indicateurs_obj:
+                continue
+            
+            has_evaluable_indicator = False
+            all_indicateurs_atteints = True
+            
+            for indicateur in indicateurs_obj:
+                indicateur_is_atteint = indicateur_status.get(indicateur.pk)
+                if indicateur_is_atteint is None:
+                    # Indicateur non évaluable (pas de cible ou pas de périodicité exploitable)
+                    continue
+                
+                has_evaluable_indicator = True
+                if indicateur_is_atteint is False:
+                    all_indicateurs_atteints = False
+                    break
+            
+            if not has_evaluable_indicator:
+                # Aucun indicateur avec données exploitables pour cet objectif
+                continue
+            
+            if all_indicateurs_atteints:
+                objectifs_atteints += 1
+            else:
+                objectifs_non_atteints += 1
+
+        logger.info(
+            "[DashboardStats] Résultats calculés - indicateurs_atteints=%s, indicateurs_non_atteints=%s, "
+            "objectifs_atteints=%s, objectifs_non_atteints=%s, cibles_atteintes=%s, cibles_non_atteintes=%s",
+            indicateurs_atteints, indicateurs_non_atteints,
+            objectifs_atteints, objectifs_non_atteints,
+            cibles_atteintes, cibles_non_atteintes
+        )
+        
+        # ========== STATISTIQUES D'ANALYSE ==========
+        # Filtrer les tableaux de bord selon les processus accessibles
+        if user_processus_uuids is None:
+            # Super admin : voir tous les tableaux de bord
+            tableaux_bord_filter = TableauBord.objects.all()
+        elif user_processus_uuids:
+            # Filtrer par processus accessibles
+            tableaux_bord_filter = TableauBord.objects.filter(
+                processus__uuid__in=user_processus_uuids
+            )
+        else:
+            tableaux_bord_filter = TableauBord.objects.none()
+        
+        # Compter le nombre total d'analyses effectuées
+        if user_processus_uuids is None:
+            total_analyses = AnalyseTableau.objects.count()
+        elif user_processus_uuids:
+            total_analyses = AnalyseTableau.objects.filter(
+                tableau_bord__processus__uuid__in=user_processus_uuids
+            ).count()
+        else:
+            total_analyses = 0
+        
+        # Compter le nombre de tableaux ayant une analyse
+        # IMPORTANT: On doit compter le nombre de tableaux UNIQUES, pas le nombre d'AnalyseTableau
+        # Si un tableau a plusieurs AnalyseTableau (ce qui ne devrait pas être possible avec OneToOneField),
+        # on doit quand même le compter comme 1 tableau unique
+        # Utiliser distinct() pour compter les tableaux uniques
+        tableaux_avec_analyse = AnalyseTableau.objects.filter(
+            tableau_bord__in=tableaux_bord_filter
+        ).values('tableau_bord').distinct().count()
+        
+        # Compter le nombre total de tableaux (filtrés par processus)
+        total_tableaux = tableaux_bord_filter.count()
+        
+        # Compter le nombre de tableaux sans analyse
+        tableaux_sans_analyse = total_tableaux - tableaux_avec_analyse
+        
+        logger.info(
+            "[DashboardStats] Statistiques d'analyse - total_analyses=%s, tableaux_avec_analyse=%s, "
+            "tableaux_sans_analyse=%s, total_tableaux=%s",
+            total_analyses, tableaux_avec_analyse, tableaux_sans_analyse, total_tableaux
+        )
+        # ========== FIN STATISTIQUES D'ANALYSE ==========
         
         stats = {
             'total_objectives': total_objectives,
@@ -1101,6 +1376,15 @@ def dashboard_stats(request):
             'cibles_non_atteintes': cibles_non_atteintes,
             'pourcentage_atteintes': round(pourcentage_atteintes, 2),
             'pourcentage_non_atteintes': round(pourcentage_non_atteintes, 2),
+            # Nouvelles statistiques basées sur la règle métier
+            'indicateurs_atteints': indicateurs_atteints,
+            'indicateurs_non_atteints': indicateurs_non_atteints,
+            'objectifs_atteints': objectifs_atteints,
+            'objectifs_non_atteints': objectifs_non_atteints,
+            # Statistiques d'analyse
+            'total_analyses': total_analyses,
+            'tableaux_avec_analyse': tableaux_avec_analyse,
+            'tableaux_sans_analyse': tableaux_sans_analyse,
         }
         
         return Response({
@@ -1481,8 +1765,10 @@ def cibles_create(request):
         from parametre.models import Cible
         
         # Vérifier que le tableau n'est pas validé et n'a pas d'amendements
+        # SAUF si c'est une copie depuis l'année précédente (from_copy=True)
+        is_copy = request.data.get('from_copy', False)
         indicateur_uuid = request.data.get('indicateur_id')
-        if indicateur_uuid:
+        if indicateur_uuid and not is_copy:
             try:
                 indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
                 if indicateur.objective_id.tableau_bord:
@@ -1692,40 +1978,55 @@ def periodicites_list(request):
         
         # Récupérer les périodicités avec gestion d'erreur pour les données corrompues
         periodicites_data = []
-        periodicites = Periodicite.objects.all().order_by('indicateur_id', 'periode')
+        periodicites = Periodicite.objects.all().select_related('preuve').prefetch_related('preuve__medias').order_by('indicateur_id', 'periode')
+        
+        # Utiliser le serializer pour inclure toutes les données de preuve
+        from .serializers import PeriodiciteSerializer
         
         for periodicite in periodicites:
             try:
-                # Créer un dictionnaire avec les données sérialisées manuellement
-                periodicite_data = {
-                    'uuid': str(periodicite.uuid),
-                    'indicateur_id': str(periodicite.indicateur_id.uuid),
-                    'indicateur_libelle': periodicite.indicateur_id.libelle,
-                    'periode': periodicite.periode,
-                    'periode_display': periodicite.get_periode_display(),
-                    'a_realiser': float(periodicite.a_realiser),
-                    'realiser': float(periodicite.realiser),
-                    'taux': float(periodicite.taux) if periodicite.taux is not None else 0.0,
-                    'created_at': periodicite.created_at,
-                    'updated_at': periodicite.updated_at
-                }
+                # Utiliser le serializer pour avoir toutes les données de preuve
+                serializer = PeriodiciteSerializer(periodicite)
+                periodicite_data = serializer.data
+                # Convertir l'indicateur_id en string si c'est un objet
+                if 'indicateur_id' in periodicite_data and not isinstance(periodicite_data['indicateur_id'], str):
+                    periodicite_data['indicateur_id'] = str(periodicite_data['indicateur_id'])
                 periodicites_data.append(periodicite_data)
             except (ValueError, TypeError, decimal.InvalidOperation) as e:
                 logger.warning(f"Périodicité {periodicite.uuid} ignorée à cause de données corrompues: {str(e)}")
-                # Ajouter une entrée avec des valeurs par défaut pour les données corrompues
-                periodicite_data = {
-                    'uuid': str(periodicite.uuid),
-                    'indicateur_id': str(periodicite.indicateur_id.uuid) if periodicite.indicateur_id else None,
-                    'indicateur_libelle': periodicite.indicateur_id.libelle if periodicite.indicateur_id else 'Indicateur supprimé',
-                    'periode': periodicite.periode,
-                    'periode_display': periodicite.get_periode_display(),
-                    'a_realiser': 0.0,
-                    'realiser': 0.0,
-                    'taux': 0.0,
-                    'created_at': periodicite.created_at,
-                    'updated_at': periodicite.updated_at
-                }
-                periodicites_data.append(periodicite_data)
+                # Utiliser le serializer même pour les données corrompues pour avoir les preuves
+                try:
+                    serializer = PeriodiciteSerializer(periodicite)
+                    periodicite_data = serializer.data
+                    # Forcer les valeurs par défaut pour les champs corrompus
+                    periodicite_data['a_realiser'] = 0.0
+                    periodicite_data['realiser'] = 0.0
+                    periodicite_data['taux'] = 0.0
+                    if 'indicateur_id' in periodicite_data and not isinstance(periodicite_data['indicateur_id'], str):
+                        periodicite_data['indicateur_id'] = str(periodicite_data['indicateur_id'])
+                    periodicites_data.append(periodicite_data)
+                except Exception as serializer_error:
+                    logger.error(f"Erreur lors de la sérialisation de la périodicité {periodicite.uuid}: {str(serializer_error)}")
+                    # Fallback : créer un dictionnaire minimal avec les champs de preuve
+                    periodicite_data = {
+                        'uuid': str(periodicite.uuid),
+                        'indicateur_id': str(periodicite.indicateur_id.uuid) if periodicite.indicateur_id else None,
+                        'indicateur_libelle': periodicite.indicateur_id.libelle if periodicite.indicateur_id else 'Indicateur supprimé',
+                        'periode': periodicite.periode,
+                        'periode_display': periodicite.get_periode_display(),
+                        'a_realiser': 0.0,
+                        'realiser': 0.0,
+                        'taux': 0.0,
+                        'preuve': str(periodicite.preuve.uuid) if periodicite.preuve else None,
+                        'preuve_uuid': str(periodicite.preuve.uuid) if periodicite.preuve else None,
+                        'preuve_description': periodicite.preuve.description if periodicite.preuve else None,
+                        'preuve_media_url': None,
+                        'preuve_media_urls': [],
+                        'preuve_medias': [],
+                        'created_at': periodicite.created_at,
+                        'updated_at': periodicite.updated_at
+                    }
+                    periodicites_data.append(periodicite_data)
 
         return Response({
             'success': True,
@@ -1773,9 +2074,12 @@ def periodicites_detail(request, uuid):
 def periodicites_create(request):
     """Créer une nouvelle périodicité"""
     try:
+        from parametre.models import Periodicite
         # Vérifier que le tableau est validé et n'a pas d'amendements avant de permettre la création de périodicités
+        # SAUF si c'est une copie depuis l'année précédente (from_copy=True)
+        is_copy = request.data.get('from_copy', False)
         indicateur_uuid = request.data.get('indicateur_id')
-        if indicateur_uuid:
+        if indicateur_uuid and not is_copy:
             try:
                 indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
                 tableau = indicateur.objective_id.tableau_bord
@@ -1803,6 +2107,8 @@ def periodicites_create(request):
         
         if serializer.is_valid():
             periodicite = serializer.save()
+            # Optimiser la requête pour inclure la preuve et ses médias
+            periodicite = Periodicite.objects.select_related('preuve').prefetch_related('preuve__medias').get(uuid=periodicite.uuid)
             response_serializer = PeriodiciteSerializer(periodicite)
             
             return Response({
@@ -1831,7 +2137,8 @@ def periodicites_update(request, uuid):
     """Mettre à jour une périodicité"""
     try:
         from parametre.models import Periodicite
-        periodicite = Periodicite.objects.get(uuid=uuid)
+        # Optimiser la requête pour inclure la preuve et ses médias
+        periodicite = Periodicite.objects.select_related('preuve').prefetch_related('preuve__medias').get(uuid=uuid)
         
         # Vérifier que le tableau est validé et n'a pas d'amendements avant de permettre la modification de périodicités
         try:
@@ -1854,7 +2161,7 @@ def periodicites_update(request, uuid):
         except Exception:
             pass  # En cas d'erreur, continuer avec la validation normale
         
-        serializer = PeriodiciteUpdateSerializer(periodicite, data=request.data)
+        serializer = PeriodiciteUpdateSerializer(periodicite, data=request.data, partial=True)
         
         if serializer.is_valid():
             periodicite = serializer.save()
@@ -1927,8 +2234,8 @@ def periodicites_by_indicateur(request, indicateur_uuid):
         # Récupérer l'indicateur
         indicateur = Indicateur.objects.get(uuid=indicateur_uuid)
 
-        # Récupérer les périodicités liées à l'indicateur
-        periodicites = Periodicite.objects.filter(indicateur_id=indicateur).order_by('periode')
+        # Récupérer les périodicités liées à l'indicateur avec optimisation pour les preuves
+        periodicites = Periodicite.objects.filter(indicateur_id=indicateur).select_related('preuve').prefetch_related('preuve__medias').order_by('periode')
         serializer = PeriodiciteSerializer(periodicites, many=True)
 
         return Response({
@@ -2266,7 +2573,6 @@ def get_last_tableau_bord_previous_year(request):
 
         for code in codes_order:
             tableau = TableauBord.objects.filter(
-                cree_par=request.user,
                 annee=annee_precedente,
                 processus__uuid=processus_uuid,
                 type_tableau__code=code

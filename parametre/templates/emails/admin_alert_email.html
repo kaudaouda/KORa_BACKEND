@@ -1,0 +1,167 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>KORA - Alerte Admin</title>
+    <style type="text/css">
+        {% include 'emails/email_styles.css' %}
+    </style>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td {font-family: Arial, sans-serif !important;}
+    </style>
+    <![endif]-->
+</head>
+<body>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" class="email-wrapper">
+        <tr>
+            <td align="center">
+                <!-- Container principal -->
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="email-container">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td class="email-header-admin">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <h1 class="email-logo">KORA</h1>
+                                        <p class="email-subtitle email-subtitle-admin">Autorité Nationale de l'Aviation Civile</p>
+                                        <div class="email-divider"></div>
+                                        <p class="email-title">Alerte Administration</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Contenu principal -->
+                    <tr>
+                        <td class="email-content">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td>
+                                        <p class="email-greeting">
+                                            <strong>Échéances approchant :</strong> {{ total_unique_pacs }} PAC{% if total_unique_pacs > 1 %}s arrivent{% else %} arrive{% endif %} bientôt à échéance.
+                                        </p>
+                                        
+                                        <p class="email-text-small">
+                                            Des emails de rappel automatiques ont été envoyés le <strong>{{ current_date }}</strong> à <strong>{{ total_users }}</strong> responsable{{ total_users|pluralize }} concerné{{ total_users|pluralize }} ({{ user_names|join:", " }}).
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Liste des PACs -->
+                            {% for notification in notifications %}
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-card" style="background-color: #FEF2F2; border: 2px solid #FEE2E2;">
+                                <tr>
+                                    <td style="padding: 0;">
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td width="6" class="notification-priority-bar priority-{{ notification.priority|default:'medium' }}"></td>
+                                                <td class="notification-card-content" style="padding: 20px;">
+                                                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                                        <tr>
+                                                            <td>
+                                                                <h3 class="notification-title">
+                                                                    PAC {{ notification.numero_pac }}
+                                                                </h3>
+                                                                
+                                                                <table border="0" cellpadding="0" cellspacing="0" width="100%" class="notification-details-table">
+                                                                    <tr>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Processus:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value">
+                                                                            {{ notification.processus_name }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Action:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-secondary">
+                                                                            {{ notification.action }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    {% if notification.nature_label %}
+                                                                    <tr>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Nature:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-secondary">
+                                                                            {{ notification.nature_label }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    {% endif %}
+                                                                    <tr>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Échéance:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-urgent">
+                                                                            {{ notification.due_date_formatted }}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td class="notification-label" style="width: 140px;">
+                                                                            <strong>Jours restants:</strong>
+                                                                        </td>
+                                                                        <td class="notification-value notification-value-urgent">
+                                                                            {{ notification.days_remaining }} jour{{ notification.days_remaining|pluralize }}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endfor %}
+                            
+                            <!-- Note importante -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 30px;">
+                                <tr>
+                                    <td class="alert-box alert-warning">
+                                        <p style="margin: 0;">
+                                            <strong>Note :</strong> Email d'information automatique. Les responsables concernés ont été notifiés et disposent des détails nécessaires pour traiter les échéances.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td class="email-footer">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <p class="footer-text">
+                                            <strong>Autorité Nationale de l'Aviation Civile (ANAC)</strong>
+                                        </p>
+                                        <p class="footer-text-small">
+                                            Message automatique envoyé par KORA le {{ current_date }}
+                                        </p>
+                                        <p class="footer-text-small-last">
+                                            Email d'information administrative - Merci de ne pas répondre
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                </table>
+                <!-- Fin du container principal -->
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
