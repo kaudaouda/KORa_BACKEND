@@ -515,7 +515,7 @@ class Command(BaseCommand):
             # Plan d'action amendé
             direction = directions[i % len(directions)] if directions else None
             delai = datetime.date(annee, min((i + 1) * 3, 12), 28)
-            action_text = f'[Amendement] {data["actions"][0]}'
+            action_text = data["actions"][0]
 
             plan, p_created = PlanAction.objects.get_or_create(
                 details_cdr=detail,
