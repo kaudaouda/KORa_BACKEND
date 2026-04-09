@@ -202,8 +202,22 @@ class NotificationPolicyAdmin(admin.ModelAdmin):
     )
     readonly_fields = ('uuid', 'created_at', 'updated_at')
 
+class EmailSettingsAdminForm(forms.ModelForm):
+    email_host_password = forms.CharField(
+        label='Mot de passe SMTP',
+        widget=forms.PasswordInput(render_value=False),
+        required=False,
+        help_text='Laissez vide pour conserver le mot de passe actuel. Sera chiffré automatiquement.'
+    )
+
+    class Meta:
+        model = EmailSettings
+        exclude = ('email_host_password_encrypted',)
+
+
 @admin.register(EmailSettings)
 class EmailSettingsAdmin(admin.ModelAdmin):
+    form = EmailSettingsAdminForm
     list_display = (
         'email_host',
         'email_host_user',
@@ -227,13 +241,12 @@ class EmailSettingsAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('uuid', 'created_at', 'updated_at', 'singleton_enforcer')
-    
-    def get_readonly_fields(self, request, obj=None):
-        """Rendre le mot de passe en lecture seule après création"""
-        readonly_fields = list(super().get_readonly_fields(request, obj))
-        if obj:  # Si l'objet existe déjà
-            readonly_fields.append('email_host_password')
-        return readonly_fields
+
+    def save_model(self, request, obj, form, change):
+        password = form.cleaned_data.get('email_host_password')
+        if password:
+            obj.set_password(password)
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(ReminderEmailLog)
