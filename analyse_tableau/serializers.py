@@ -22,7 +22,7 @@ class AnalyseActionSerializer(serializers.ModelSerializer):
     # Exposer les noms pour l'affichage
     etat_nom = serializers.CharField(source='etat_mise_en_oeuvre.nom', read_only=True, allow_null=True)
     evaluation_nom = serializers.CharField(source='evaluation.nom', read_only=True, allow_null=True)
-    preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
+    preuve_titre = serializers.CharField(source='preuve.titre', read_only=True, allow_null=True)
     preuve_medias = serializers.SerializerMethodField()
 
     class Meta:
@@ -38,7 +38,7 @@ class AnalyseActionSerializer(serializers.ModelSerializer):
             'etat_nom',
             'date_realisation',
             'preuve',
-            'preuve_description',
+            'preuve_titre',
             'preuve_medias',
             'evaluation',
             'evaluation_nom',

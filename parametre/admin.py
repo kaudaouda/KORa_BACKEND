@@ -91,9 +91,9 @@ class MediaAdmin(admin.ModelAdmin):
 
 @admin.register(Preuve)
 class PreuveAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'description', 'get_medias_count', 'created_at')
+    list_display = ('uuid', 'titre', 'get_medias_count', 'created_at')
     list_filter = ('created_at',)
-    search_fields = ('description',)
+    search_fields = ('titre',)
     readonly_fields = ('uuid', 'created_at')
     filter_horizontal = ('medias',)
 

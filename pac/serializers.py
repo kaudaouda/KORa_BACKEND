@@ -202,7 +202,7 @@ class PacUpdateSerializer(serializers.ModelSerializer):
 class TraitementPacSerializer(serializers.ModelSerializer):
     """Serializer pour les traitements PAC"""
     type_action_nom = serializers.CharField(source='type_action.nom', read_only=True, allow_null=True)
-    preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
+    preuve_titre = serializers.CharField(source='preuve.titre', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     details_pac_uuid = serializers.UUIDField(source='details_pac.uuid', read_only=True, allow_null=True)
     details_pac_libelle = serializers.CharField(source='details_pac.libelle', read_only=True, allow_null=True)
@@ -227,7 +227,7 @@ class TraitementPacSerializer(serializers.ModelSerializer):
             'type_action_nom', 'responsable_direction', 'responsable_direction_nom',
             'responsable_sous_direction', 'responsable_sous_direction_nom',
             'responsables_directions', 'responsables_sous_directions',
-            'preuve', 'preuve_description', 'preuve_media_url', 'delai_realisation'
+            'preuve', 'preuve_titre', 'preuve_media_url', 'delai_realisation'
         ]
         read_only_fields = ['uuid']
 
@@ -438,7 +438,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
     traitement_uuid = serializers.UUIDField(source='traitement.uuid', read_only=True, allow_null=True)
     statut_nom = serializers.CharField(source='statut.nom', read_only=True, allow_null=True)
     preuve_uuid = serializers.UUIDField(source='preuve.uuid', read_only=True, allow_null=True)
-    preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
+    preuve_titre = serializers.CharField(source='preuve.titre', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     preuve_media_urls = serializers.SerializerMethodField()
     preuve_medias = serializers.SerializerMethodField()
@@ -449,7 +449,7 @@ class PacSuiviSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'traitement', 'traitement_uuid', 'traitement_action', 'etat_mise_en_oeuvre',
             'etat_nom', 'resultat', 'appreciation', 'appreciation_nom',
-            'preuve', 'preuve_uuid', 'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
+            'preuve', 'preuve_uuid', 'preuve_titre', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
             'statut', 'statut_nom', 'date_mise_en_oeuvre_effective',
             'date_cloture', 'cree_par', 'createur_nom', 'created_at'
         ]
@@ -713,7 +713,7 @@ class PacCompletSerializer(serializers.ModelSerializer):
                     'delai_realisation': traitement.delai_realisation,
                     'preuve': traitement.preuve.uuid if traitement.preuve else None,
                     'preuve_uuid': str(traitement.preuve.uuid) if traitement.preuve else None,
-                    'preuve_description': traitement.preuve.description if traitement.preuve else None,
+                    'preuve_titre': traitement.preuve.titre if traitement.preuve else None,
                     'preuve_media_url': self.get_preuve_media_url(traitement),
                     'preuve_medias': self.get_preuve_medias(traitement),
                     'suivi': None
@@ -739,7 +739,7 @@ class PacCompletSerializer(serializers.ModelSerializer):
                             'created_at': suivi.created_at,
                             'preuve': suivi.preuve.uuid if suivi.preuve else None,
                             'preuve_uuid': str(suivi.preuve.uuid) if suivi.preuve else None,
-                            'preuve_description': suivi.preuve.description if suivi.preuve else None,
+                            'preuve_titre': suivi.preuve.titre if suivi.preuve else None,
                             'preuve_media_url': self.get_preuve_media_url_suivi(suivi),
                             'preuve_media_urls': self.get_preuve_media_urls_suivi(suivi),
                             'preuve_medias': self.get_preuve_medias_suivi(suivi)

@@ -306,7 +306,7 @@ class PeriodiciteSerializer(serializers.ModelSerializer):
     indicateur_libelle = serializers.CharField(source='indicateur_id.libelle', read_only=True)
     periode_display = serializers.CharField(source='get_periode_display', read_only=True)
     preuve_uuid = serializers.UUIDField(source='preuve.uuid', read_only=True, allow_null=True)
-    preuve_description = serializers.CharField(source='preuve.description', read_only=True, allow_null=True)
+    preuve_titre = serializers.CharField(source='preuve.titre', read_only=True, allow_null=True)
     preuve_media_url = serializers.SerializerMethodField()
     preuve_media_urls = serializers.SerializerMethodField()
     preuve_medias = serializers.SerializerMethodField()
@@ -316,7 +316,7 @@ class PeriodiciteSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'indicateur_id', 'indicateur_libelle', 'periode', 'periode_display',
             'a_realiser', 'realiser', 'taux', 'preuve', 'preuve_uuid', 
-            'preuve_description', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
+            'preuve_titre', 'preuve_media_url', 'preuve_media_urls', 'preuve_medias',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'taux', 'created_at', 'updated_at']

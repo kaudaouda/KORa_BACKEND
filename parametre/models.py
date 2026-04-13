@@ -414,7 +414,7 @@ class Preuve(models.Model):
     Modèle pour les preuves (Evidence) - Déplacé de pac vers parametre
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    description = models.TextField()
+    titre = models.TextField()
     medias = models.ManyToManyField(Media, related_name='preuves', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -424,7 +424,7 @@ class Preuve(models.Model):
         verbose_name_plural = 'Preuves'
 
     def __str__(self):
-        return f"Preuve {self.uuid} - {self.description[:50]}..."
+        return f"Preuve {self.uuid} - {self.titre[:50]}..."
 
 
 class MediaLivrable(models.Model):
