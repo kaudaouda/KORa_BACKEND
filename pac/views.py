@@ -335,14 +335,23 @@ def login(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def logout(request):
-    """Déconnexion d'un utilisateur"""
+    """Déconnexion d'un utilisateur — blackliste le refresh token côté serveur"""
     try:
-        # Créer la réponse
+        # Security by Design : invalider le refresh token côté serveur
+        # même si le cookie est supprimé, le token ne peut plus être réutilisé
+        refresh_token_value = request.COOKIES.get('refresh_token')
+        if refresh_token_value:
+            try:
+                token = RefreshToken(refresh_token_value)
+                token.blacklist()
+            except (InvalidToken, TokenError):
+                # Token déjà invalide ou expiré — pas bloquant
+                pass
+
         response = Response({
             'message': 'Déconnexion réussie'
         }, status=status.HTTP_200_OK)
 
-        # Supprimer les cookies
         return AuthService.clear_auth_cookies(response)
 
     except Exception as e:
@@ -3456,6 +3465,7 @@ def pac_stats(request):
     """Statistiques des PACs de l'utilisateur connecté"""
     try:
         logger.info(f"[pac_stats] Début de la fonction pour l'utilisateur: {request.user.username}")
+        scope = request.query_params.get('scope', 'tous')
         
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
@@ -3495,12 +3505,30 @@ def pac_stats(request):
         logger.info(f"[pac_stats] Types de PACs trouvés: {list(all_pac_types)}")
         logger.info(f"[pac_stats] Nombre total de PACs de l'utilisateur: {pacs_base.count()}")
         
-        # Filtrer les PACs initiaux (code peut être 'INITIAL' ou 'INITIALE')
-        # Exclure les PACs avec type_tableau null
-        pacs_initiaux_base = pacs_base.filter(
-            type_tableau__isnull=False,
-            type_tableau__code__in=['INITIAL', 'INITIALE']
-        )
+        # Filtrer selon le scope
+        if scope == 'dernier':
+            # Dernier PAC par processus (AMENDEMENT_2 > AMENDEMENT_1 > INITIAL)
+            from django.db.models import Case, When, IntegerField, Max
+            type_priority = Case(
+                When(type_tableau__code='AMENDEMENT_2', then=3),
+                When(type_tableau__code='AMENDEMENT_1', then=2),
+                When(type_tableau__code__in=['INITIAL', 'INITIALE'], then=1),
+                default=0, output_field=IntegerField()
+            )
+            annotated = pacs_base.filter(type_tableau__isnull=False).annotate(priority=type_priority)
+            last_uuids = []
+            for proc_uuid in annotated.values_list('processus', flat=True).distinct():
+                max_p = annotated.filter(processus=proc_uuid).aggregate(max_p=Max('priority'))['max_p']
+                last = annotated.filter(processus=proc_uuid, priority=max_p).first()
+                if last:
+                    last_uuids.append(last.uuid)
+            pacs_initiaux_base = pacs_base.filter(uuid__in=last_uuids)
+        else:
+            # Filtrer les PACs initiaux (code peut être 'INITIAL' ou 'INITIALE')
+            pacs_initiaux_base = pacs_base.filter(
+                type_tableau__isnull=False,
+                type_tableau__code__in=['INITIAL', 'INITIALE']
+            )
         logger.info(f"[pac_stats] Nombre de PACs initiaux: {pacs_initiaux_base.count()}")
         
         total_pacs = pacs_initiaux_base.count()

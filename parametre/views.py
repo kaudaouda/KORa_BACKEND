@@ -2207,17 +2207,17 @@ def media_list(request):
 def preuve_create_with_medias(request):
     """Créer une preuve et y associer une liste de médias (uuids)."""
     try:
-        description = request.data.get('description')
+        titre = request.data.get('titre')
         media_uuids = request.data.get('medias', [])
-        if not description:
-            return Response({'error': 'description est requis'}, status=status.HTTP_400_BAD_REQUEST)
-        preuve = Preuve.objects.create(description=description)
+        if not titre:
+            return Response({'error': 'titre est requis'}, status=status.HTTP_400_BAD_REQUEST)
+        preuve = Preuve.objects.create(titre=titre)
         if isinstance(media_uuids, list) and len(media_uuids) > 0:
             medias = list(Media.objects.filter(uuid__in=media_uuids))
             preuve.medias.add(*medias)
         return Response({
             'uuid': str(preuve.uuid),
-            'description': preuve.description,
+            'titre': preuve.titre,
             'medias': [str(m.uuid) for m in preuve.medias.all()],
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_201_CREATED)
@@ -2253,7 +2253,7 @@ def preuve_add_medias(request, uuid):
         
         return Response({
             'uuid': str(preuve.uuid),
-            'description': preuve.description,
+            'titre': preuve.titre,
             'medias': [str(m.uuid) for m in preuve.medias.all()],
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_200_OK)
@@ -2295,7 +2295,7 @@ def preuve_remove_media(request, uuid, media_uuid):
             'message': 'Média supprimé avec succès',
             'preuve': {
                 'uuid': str(preuve.uuid),
-                'description': preuve.description,
+                'titre': preuve.titre,
                 'medias': [str(m.uuid) for m in preuve.medias.all()]
             }
         }, status=status.HTTP_200_OK)
@@ -2314,7 +2314,7 @@ def preuves_list(request):
         for p in preuves:
             data.append({
                 'uuid': str(p.uuid),
-                'description': p.description,
+                'titre': p.titre,
                 'medias': [
                     {
                         'uuid': str(m.uuid),

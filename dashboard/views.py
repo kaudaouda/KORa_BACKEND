@@ -10,6 +10,7 @@ from rest_framework.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.utils import timezone
 import logging
+from django.db import models
 from .models import Objectives, Indicateur, Observation, TableauBord
 from analyse_tableau.models import AnalyseTableau
 from parametre.views import (
@@ -1121,28 +1122,92 @@ def objectives_delete(request, uuid):
 def dashboard_stats(request):
     """Statistiques du tableau de bord"""
     try:
-        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
+        # Paramètre de portée : 'tous' (défaut) ou 'dernier' (dernier tableau par processus)
+        scope = request.query_params.get('scope', 'tous')
+
+        # ========== FILTRAGE PAR PROCESSUS ET ANNÉE (Security by Design) ==========
         # Récupérer les processus accessibles par l'utilisateur
         user_processus_uuids = get_user_processus_list(request.user)
-        
-        # Filtrer les données selon les processus accessibles
+
+        # Année en cours
+        current_year = timezone.now().year
+
+        # Déterminer l'année à utiliser pour les statistiques
+        # Priorité : année en cours si des données existent, sinon année la plus récente avec des données
+        if user_processus_uuids is None:
+            # Super admin : vérifier d'abord l'année en cours
+            year_to_use = current_year
+            if not TableauBord.objects.filter(annee=current_year).exists():
+                # Si pas de données pour l'année en cours, prendre l'année la plus récente
+                latest_year = TableauBord.objects.aggregate(max_year=models.Max('annee'))['max_year']
+                year_to_use = latest_year if latest_year else current_year
+        elif user_processus_uuids:
+            # Utilisateur normal : vérifier d'abord l'année en cours pour ses processus
+            year_to_use = current_year
+            if not TableauBord.objects.filter(
+                processus__uuid__in=user_processus_uuids,
+                annee=current_year
+            ).exists():
+                # Si pas de données pour l'année en cours, prendre l'année la plus récente pour ses processus
+                latest_year = TableauBord.objects.filter(
+                    processus__uuid__in=user_processus_uuids
+                ).aggregate(max_year=models.Max('annee'))['max_year']
+                year_to_use = latest_year if latest_year else current_year
+        else:
+            year_to_use = current_year
+
+        # Filtrer les données selon les processus accessibles et l'année déterminée
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
         if user_processus_uuids is None:
-            # Super admin : voir toutes les données sans filtre
-            objectives_filter = Objectives.objects.all()
-            indicateurs_filter = Indicateur.objects.all()
+            # Super admin : voir toutes les données de l'année déterminée sans filtre de processus
+            objectives_filter = Objectives.objects.filter(tableau_bord__annee=year_to_use)
+            indicateurs_filter = Indicateur.objects.filter(objective_id__tableau_bord__annee=year_to_use)
         elif user_processus_uuids:
             objectives_filter = Objectives.objects.filter(
-                tableau_bord__processus__uuid__in=user_processus_uuids
+                tableau_bord__processus__uuid__in=user_processus_uuids,
+                tableau_bord__annee=year_to_use
             )
             indicateurs_filter = Indicateur.objects.filter(
-                objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
+                objective_id__tableau_bord__processus__uuid__in=user_processus_uuids,
+                objective_id__tableau_bord__annee=year_to_use
             )
         else:
             objectives_filter = Objectives.objects.none()
             indicateurs_filter = Indicateur.objects.none()
+
+        # ========== SCOPE : DERNIER TABLEAU PAR PROCESSUS ==========
+        last_tableau_uuids = None
+        if scope == 'dernier':
+            from django.db.models import Case, When, IntegerField, Max
+            type_priority = Case(
+                When(type_tableau__code='AMENDEMENT_2', then=3),
+                When(type_tableau__code='AMENDEMENT_1', then=2),
+                When(type_tableau__code='INITIAL', then=1),
+                default=0,
+                output_field=IntegerField()
+            )
+            if user_processus_uuids is None:
+                all_tb = TableauBord.objects.filter(annee=year_to_use).annotate(priority=type_priority)
+            elif user_processus_uuids:
+                all_tb = TableauBord.objects.filter(
+                    processus__uuid__in=user_processus_uuids, annee=year_to_use
+                ).annotate(priority=type_priority)
+            else:
+                all_tb = TableauBord.objects.none().annotate(priority=type_priority)
+
+            last_tableau_uuids = []
+            for proc_uuid in all_tb.values_list('processus', flat=True).distinct():
+                max_p = all_tb.filter(processus=proc_uuid).aggregate(max_p=Max('priority'))['max_p']
+                last_tb_obj = all_tb.filter(processus=proc_uuid, priority=max_p).first()
+                if last_tb_obj:
+                    last_tableau_uuids.append(last_tb_obj.uuid)
+
+            objectives_filter = objectives_filter.filter(tableau_bord__uuid__in=last_tableau_uuids)
+            indicateurs_filter = indicateurs_filter.filter(
+                objective_id__tableau_bord__uuid__in=last_tableau_uuids
+            )
         # ========== FIN FILTRAGE ==========
-        
+
         # Compter les objectifs
         total_objectives = objectives_filter.count()
         
@@ -1172,14 +1237,17 @@ def dashboard_stats(request):
         import decimal
         from collections import defaultdict
         
-        # Récupérer toutes les cibles avec leurs indicateurs (filtrées par processus)
+        # Récupérer toutes les cibles avec leurs indicateurs (filtrées par processus et année déterminée)
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
         if user_processus_uuids is None:
-            # Super admin : voir toutes les cibles sans filtre
-            cibles_qs = Cible.objects.all().select_related('indicateur_id', 'indicateur_id__frequence_id')
+            # Super admin : voir toutes les cibles de l'année déterminée sans filtre de processus
+            cibles_qs = Cible.objects.filter(
+                indicateur_id__objective_id__tableau_bord__annee=year_to_use
+            ).select_related('indicateur_id', 'indicateur_id__frequence_id')
         elif user_processus_uuids:
             cibles_qs = Cible.objects.filter(
-                indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids
+                indicateur_id__objective_id__tableau_bord__processus__uuid__in=user_processus_uuids,
+                indicateur_id__objective_id__tableau_bord__annee=year_to_use
             ).select_related('indicateur_id', 'indicateur_id__frequence_id')
         else:
             cibles_qs = Cible.objects.none()
@@ -1320,24 +1388,32 @@ def dashboard_stats(request):
         )
         
         # ========== STATISTIQUES D'ANALYSE ==========
-        # Filtrer les tableaux de bord selon les processus accessibles
+        # Filtrer les tableaux de bord selon les processus accessibles et l'année déterminée
         if user_processus_uuids is None:
-            # Super admin : voir tous les tableaux de bord
-            tableaux_bord_filter = TableauBord.objects.all()
+            # Super admin : voir tous les tableaux de bord de l'année déterminée
+            tableaux_bord_filter = TableauBord.objects.filter(annee=year_to_use)
         elif user_processus_uuids:
-            # Filtrer par processus accessibles
+            # Filtrer par processus accessibles et année déterminée
             tableaux_bord_filter = TableauBord.objects.filter(
-                processus__uuid__in=user_processus_uuids
+                processus__uuid__in=user_processus_uuids,
+                annee=year_to_use
             )
         else:
             tableaux_bord_filter = TableauBord.objects.none()
-        
-        # Compter le nombre total d'analyses effectuées
+
+        # Restreindre au dernier tableau par processus si scope='dernier'
+        if scope == 'dernier' and last_tableau_uuids is not None:
+            tableaux_bord_filter = tableaux_bord_filter.filter(uuid__in=last_tableau_uuids)
+
+        # Compter le nombre total d'analyses effectuées pour l'année déterminée
         if user_processus_uuids is None:
-            total_analyses = AnalyseTableau.objects.count()
+            total_analyses = AnalyseTableau.objects.filter(
+                tableau_bord__annee=year_to_use
+            ).count()
         elif user_processus_uuids:
             total_analyses = AnalyseTableau.objects.filter(
-                tableau_bord__processus__uuid__in=user_processus_uuids
+                tableau_bord__processus__uuid__in=user_processus_uuids,
+                tableau_bord__annee=year_to_use
             ).count()
         else:
             total_analyses = 0
@@ -1365,6 +1441,9 @@ def dashboard_stats(request):
         # ========== FIN STATISTIQUES D'ANALYSE ==========
         
         stats = {
+            'year_used': year_to_use,
+            'is_current_year': year_to_use == current_year,
+            'scope': scope,
             'total_objectives': total_objectives,
             'total_frequences': total_frequences,
             'total_indicateurs': total_indicateurs,
@@ -2019,7 +2098,7 @@ def periodicites_list(request):
                         'taux': 0.0,
                         'preuve': str(periodicite.preuve.uuid) if periodicite.preuve else None,
                         'preuve_uuid': str(periodicite.preuve.uuid) if periodicite.preuve else None,
-                        'preuve_description': periodicite.preuve.description if periodicite.preuve else None,
+                        'preuve_titre': periodicite.preuve.titre if periodicite.preuve else None,
                         'preuve_media_url': None,
                         'preuve_media_urls': [],
                         'preuve_medias': [],
