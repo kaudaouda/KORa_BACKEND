@@ -3,7 +3,7 @@ Vues API pour l'application PAC
 """
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -67,6 +67,25 @@ import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class AllowAnyWithJWT(BasePermission):
+    """
+    Security by Design : permission dédiée aux endpoints de vérification de session.
+
+    Permet aux requêtes anonymes d'atteindre la vue (pas de 401 bloquant)
+    TOUT EN laissant le middleware JWT authentifier les requêtes portant un token valide.
+    La vue est responsable de retourner des données différentes selon request.user.is_anonymous.
+
+    Différence avec AllowAny :
+    - AllowAny : usage générique, sans intention documentée.
+    - AllowAnyWithJWT : intention explicite — endpoint public uniquement pour lire le statut auth.
+      N'expose aucune donnée sensible pour les utilisateurs anonymes.
+    """
+    def has_permission(self, request, view):
+        return True
+
+
 # ==================== UTILITAIRES TYPE TABLEAU ====================
 
 def _get_next_type_tableau_for_context(user, annee_uuid, processus_uuid):
@@ -423,7 +442,7 @@ def refresh_token(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAnyWithJWT])
 def user_profile(request):
     """Récupérer le profil de l'utilisateur connecté"""
     try:

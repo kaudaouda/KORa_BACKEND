@@ -169,6 +169,7 @@ def cdr_stats(request):
     """Statistiques des CDR de l'utilisateur connecté (compatible super admin)"""
     try:
         logger.info(f"[cdr_stats] Début pour l'utilisateur: {request.user.username}")
+        scope = request.query_params.get('scope', 'tous')
 
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
@@ -198,8 +199,26 @@ def cdr_stats(request):
             cdrs_base = CDR.objects.filter(processus__uuid__in=user_processus_uuids)
         # ========== FIN FILTRAGE ==========
 
-        # CDR initiaux uniquement (comme ListeCDRPage)
-        cdrs_initiaux = cdrs_base.filter(type_tableau__code='INITIAL')
+        # Filtrer selon le scope
+        if scope == 'dernier':
+            from django.db.models import Case, When, IntegerField, Max
+            type_priority = Case(
+                When(type_tableau__code='AMENDEMENT_2', then=3),
+                When(type_tableau__code='AMENDEMENT_1', then=2),
+                When(type_tableau__code='INITIAL', then=1),
+                default=0, output_field=IntegerField()
+            )
+            annotated = cdrs_base.filter(type_tableau__isnull=False).annotate(priority=type_priority)
+            last_uuids = []
+            for proc_uuid in annotated.values_list('processus', flat=True).distinct():
+                max_p = annotated.filter(processus=proc_uuid).aggregate(max_p=Max('priority'))['max_p']
+                last = annotated.filter(processus=proc_uuid, priority=max_p).first()
+                if last:
+                    last_uuids.append(last.uuid)
+            cdrs_initiaux = cdrs_base.filter(uuid__in=last_uuids)
+        else:
+            cdrs_initiaux = cdrs_base.filter(type_tableau__code='INITIAL')
+
         total_cdrs = cdrs_initiaux.count()
         cdrs_valides = cdrs_initiaux.filter(is_validated=True).count()
         cdrs_en_cours = cdrs_initiaux.filter(is_validated=False).count()

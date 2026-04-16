@@ -218,8 +218,8 @@ class DetailsAPCreateSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             # Super admin : permettre la création même si ce n'est pas le créateur
-            from parametre.permissions import can_manage_users, is_super_admin
-            is_super = can_manage_users(request.user) or is_super_admin(request.user)
+            from parametre.permissions import can_manage_users, is_super_admin, is_supervisor_smi
+            is_super = can_manage_users(request.user) or is_super_admin(request.user) or is_supervisor_smi(request.user)
             
             # Si ce n'est pas un super admin, vérifier la permission create_detail_activite_periodique
             if not is_super:
@@ -440,8 +440,8 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             # Super admin : permettre la création même si ce n'est pas le créateur
-            from parametre.permissions import can_manage_users, is_super_admin
-            is_super = can_manage_users(request.user) or is_super_admin(request.user)
+            from parametre.permissions import can_manage_users, is_super_admin, is_supervisor_smi
+            is_super = can_manage_users(request.user) or is_super_admin(request.user) or is_supervisor_smi(request.user)
             
             # Si ce n'est pas un super admin, vérifier la permission create_suivi_activite_periodique
             # ou update_suivi_activite_periodique comme fallback (logique métier : si on peut modifier, on peut créer)
@@ -504,8 +504,8 @@ class SuivisAPCreateSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         is_super = False
         if request and hasattr(request, 'user'):
-            from parametre.permissions import can_manage_users, is_super_admin
-            is_super = can_manage_users(request.user) or is_super_admin(request.user)
+            from parametre.permissions import can_manage_users, is_super_admin, is_supervisor_smi
+            is_super = can_manage_users(request.user) or is_super_admin(request.user) or is_supervisor_smi(request.user)
         
         if not detail_ap.activite_periodique.is_validated and not from_amendment_copy and not is_super:
             raise serializers.ValidationError(

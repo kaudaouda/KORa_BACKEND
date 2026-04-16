@@ -2854,7 +2854,11 @@ def role_delete(request, uuid):
             user_processus_roles = UserProcessusRole.objects.filter(role=role).select_related('user', 'processus')
             affected_users = set()
             for upr in user_processus_roles:
-                affected_users.add((upr.user.id, str(upr.processus.uuid)))
+                # processus peut être None pour les rôles globaux (is_global=True)
+                if upr.processus:
+                    affected_users.add((upr.user.id, str(upr.processus.uuid)))
+                else:
+                    affected_users.add((upr.user.id, None))
             
             # Invalider le cache pour chaque utilisateur/processus
             for user_id, processus_uuid in affected_users:
@@ -3145,6 +3149,22 @@ def user_processus_role_create(request):
         processus_id = data.get('processus')
         role_id = data.get('role')
         
+        is_global = data.get('is_global', False)
+        if is_global and user_id and role_id:
+            # Duplicate check for global roles
+            existing = UserProcessusRole.objects.filter(
+                user_id=user_id,
+                role_id=role_id,
+                is_global=True,
+                is_active=True
+            ).first()
+            if existing:
+                return Response({
+                    'error': 'Ce rôle global est déjà attribué à cet utilisateur.',
+                    'code': 'ALREADY_EXISTS',
+                    'existing_uuid': str(existing.uuid)
+                }, status=status.HTTP_400_BAD_REQUEST)
+
         if user_id and processus_id and role_id:
             existing = UserProcessusRole.objects.filter(
                 user_id=user_id,
@@ -3152,7 +3172,7 @@ def user_processus_role_create(request):
                 role_id=role_id,
                 is_active=True
             ).first()
-            
+
             if existing:
                 # Retourner une réponse 400 avec un message clair au lieu d'une erreur 500
                 return Response({
@@ -3169,8 +3189,20 @@ def user_processus_role_create(request):
                 action='create',
                 entity_type='user_processus_role',
                 entity_id=str(user_processus_role.uuid),
-                entity_name=f"{user_processus_role.user.username} - {user_processus_role.processus.nom} - {user_processus_role.role.nom}",
-                description=f"Attribution du rôle {user_processus_role.role.nom} pour {user_processus_role.user.username} sur le processus {user_processus_role.processus.nom}",
+                entity_name=(
+                    f"{user_processus_role.user.username} - "
+                    f"{'[GLOBAL]' if user_processus_role.is_global else user_processus_role.processus.nom} - "
+                    f"{user_processus_role.role.nom}"
+                ),
+                description=(
+                    f"Attribution du rôle {user_processus_role.role.nom} pour "
+                    f"{user_processus_role.user.username} "
+                    + (
+                        "sur tous les processus (rôle global)"
+                        if user_processus_role.is_global
+                        else f"sur le processus {user_processus_role.processus.nom}"
+                    )
+                ),
                 ip_address=get_client_ip(request),
                 user_agent=request.META.get('HTTP_USER_AGENT', '')
             )
@@ -3218,8 +3250,20 @@ def user_processus_role_update(request, uuid):
                 action='update',
                 entity_type='user_processus_role',
                 entity_id=str(user_processus_role.uuid),
-                entity_name=f"{user_processus_role.user.username} - {user_processus_role.processus.nom} - {user_processus_role.role.nom}",
-                description=f"Modification de l'attribution du rôle {user_processus_role.role.nom} pour {user_processus_role.user.username} sur le processus {user_processus_role.processus.nom}",
+                entity_name=(
+                    f"{user_processus_role.user.username} - "
+                    f"{'[GLOBAL]' if user_processus_role.is_global else user_processus_role.processus.nom} - "
+                    f"{user_processus_role.role.nom}"
+                ),
+                description=(
+                    f"Modification de l'attribution du rôle {user_processus_role.role.nom} pour "
+                    f"{user_processus_role.user.username} "
+                    + (
+                        "sur tous les processus (rôle global)"
+                        if user_processus_role.is_global
+                        else f"sur le processus {user_processus_role.processus.nom}"
+                    )
+                ),
                 ip_address=get_client_ip(request),
                 user_agent=request.META.get('HTTP_USER_AGENT', '')
             )
@@ -3256,8 +3300,20 @@ def user_processus_role_delete(request, uuid):
             action='delete',
             entity_type='user_processus_role',
             entity_id=str(user_processus_role.uuid),
-            entity_name=f"{user_processus_role.user.username} - {user_processus_role.processus.nom} - {user_processus_role.role.nom}",
-            description=f"Suppression de l'attribution du rôle {user_processus_role.role.nom} pour {user_processus_role.user.username} sur le processus {user_processus_role.processus.nom}",
+            entity_name=(
+                f"{user_processus_role.user.username} - "
+                f"{'[GLOBAL]' if user_processus_role.is_global else user_processus_role.processus.nom} - "
+                f"{user_processus_role.role.nom}"
+            ),
+            description=(
+                f"Suppression de l'attribution du rôle {user_processus_role.role.nom} pour "
+                f"{user_processus_role.user.username} "
+                + (
+                    "sur tous les processus (rôle global)"
+                    if user_processus_role.is_global
+                    else f"sur le processus {user_processus_role.processus.nom}"
+                )
+            ),
             ip_address=get_client_ip(request),
             user_agent=request.META.get('HTTP_USER_AGENT', '')
         )

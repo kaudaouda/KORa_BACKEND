@@ -3,7 +3,7 @@ from parametre.models import Role, UserProcessusRole
 
 
 class Command(BaseCommand):
-    help = 'Crée les 5 rôles : Responsable de processus, Contributeur, Validateur, Lecteur, Admin (supprime les anciens)'
+    help = 'Crée les 6 rôles : Responsable de processus, Contributeur, Validateur, Lecteur, Admin, Superviseur SMI (supprime les anciens)'
 
     def handle(self, *args, **options):
         # Supprimer les anciens rôles
@@ -66,6 +66,16 @@ class Command(BaseCommand):
                 'code': 'admin',
                 'nom': 'Admin',
                 'description': 'Rôle administrateur avec tous les droits (peut supprimer, valider, etc.)'
+            },
+            {
+                'code': 'superviseur_smi',
+                'nom': 'Superviseur SMI',
+                'description': (
+                    'Rôle de supervision transverse du Système de Management Intégré. '
+                    'Peut être attribué en mode global (is_global=True) pour couvrir tous les processus '
+                    'sans assignation individuelle. Droits : lecture totale, édition des tableaux, '
+                    'édition des processus, suppression, validation et dévalidation.'
+                )
             },
         ]
 
