@@ -6,6 +6,28 @@ from django.contrib.auth.models import User
 from .models import UserProcessusRole, Processus, Role
 
 
+def is_supervisor_smi(user):
+    """
+    Vérifie si un utilisateur est Superviseur SMI (rôle global transverse).
+    Un superviseur SMI a UserProcessusRole(is_global=True, role__code='superviseur_smi').
+    Ce rôle donne accès complet à tous les processus (lecture, écriture, validation, suppression).
+
+    Args:
+        user: L'utilisateur Django
+
+    Returns:
+        bool: True si l'utilisateur est superviseur SMI actif, False sinon
+    """
+    if not user or not user.is_authenticated:
+        return False
+    return UserProcessusRole.objects.filter(
+        user=user,
+        is_global=True,
+        role__code='superviseur_smi',
+        is_active=True
+    ).exists()
+
+
 def is_super_admin(user):
     """
     Vérifie si un utilisateur est un super administrateur
@@ -80,10 +102,10 @@ def user_can_create_objectives_amendements(user, processus_uuid):
     if not user or not user.is_authenticated:
         return False
     
-    # ========== SUPER ADMIN : Peut créer ==========
-    if is_super_admin(user):
+    # ========== SUPER ADMIN / SUPERVISEUR SMI : Peut créer ==========
+    if is_super_admin(user) or is_supervisor_smi(user):
         return True
-    # ========== FIN SUPER ADMIN ==========
+    # ========== FIN BYPASS ==========
     
     # Convertir processus_uuid en UUID si c'est un objet Processus
     if isinstance(processus_uuid, Processus):
@@ -102,22 +124,22 @@ def user_can_create_objectives_amendements(user, processus_uuid):
 def user_has_permission(user, processus_uuid, role_code):
     """
     Vérifie si un utilisateur a un rôle spécifique pour un processus donné
-    
+
     Args:
         user: L'utilisateur Django
         processus_uuid: UUID du processus (peut être un UUID string ou un objet Processus)
         role_code: Code du rôle à vérifier (ex: 'ecrire', 'lire', 'supprimer', 'valider')
-    
+
     Returns:
         bool: True si l'utilisateur a le rôle, False sinon
     """
     if not user or not user.is_authenticated:
         return False
-    
-    # ========== SUPER ADMIN : Accès complet sans restriction ==========
-    if is_super_admin(user):
+
+    # ========== SUPER ADMIN / SUPERVISEUR SMI : Accès complet ==========
+    if is_super_admin(user) or is_supervisor_smi(user):
         return True
-    # ========== FIN SUPER ADMIN ==========
+    # ========== FIN BYPASS ==========
     
     # Convertir processus_uuid en UUID si c'est un objet Processus
     if isinstance(processus_uuid, Processus):
@@ -199,33 +221,29 @@ def user_can_validate_for_processus(user, processus_uuid):
 
 def get_user_processus_list(user):
     """
-    Retourne la liste des UUIDs des processus où l'utilisateur a au moins un rôle actif
-    
-    Args:
-        user: L'utilisateur Django
-    
+    Retourne la liste des UUIDs des processus où l'utilisateur a au moins un rôle actif.
+
     Returns:
-        list: Liste des UUIDs (strings) des processus accessibles par l'utilisateur
-        Si l'utilisateur est super admin (is_staff ET is_superuser) OU is_super_admin, 
-        retourne tous les processus actifs (None pour indiquer "tous")
+        None  → l'utilisateur a accès à TOUS les processus (super admin ou superviseur SMI)
+        list  → liste des UUIDs (strings) des processus accessibles
+        []    → aucun accès
     """
     if not user or not user.is_authenticated:
         return []
-    
-    # ========== SUPER ADMIN : Accès à tous les processus ==========
-    # Security by Design : Les utilisateurs avec is_staff ET is_superuser ont accès à tous les processus
-    if can_manage_users(user) or is_super_admin(user):
-        # Retourner None pour indiquer "tous les processus" (sera géré dans les vues)
-        # Cela permet de ne pas filtrer les données
+
+    # ========== SUPER ADMIN / SUPERVISEUR SMI : Tous les processus ==========
+    if can_manage_users(user) or is_super_admin(user) or is_supervisor_smi(user):
         return None
-    # ========== FIN SUPER ADMIN ==========
-    
+    # ========== FIN BYPASS ==========
+
     # Récupérer tous les processus où l'utilisateur a au moins un rôle actif
+    # Exclure les entrées avec processus=None (rôles globaux déjà gérés ci-dessus)
     processus_uuids = UserProcessusRole.objects.filter(
         user=user,
-        is_active=True
+        is_active=True,
+        processus__isnull=False
     ).values_list('processus__uuid', flat=True).distinct()
-    
+
     return list(processus_uuids)
 
 
@@ -244,16 +262,15 @@ def user_has_access_to_processus(user, processus_uuid):
     if not user or not user.is_authenticated:
         return False
     
-    # ========== SUPER ADMIN : Accès à tous les processus ==========
-    # Security by Design : Les utilisateurs avec is_staff ET is_superuser ont accès à tous les processus
-    if can_manage_users(user) or is_super_admin(user):
+    # ========== SUPER ADMIN / SUPERVISEUR SMI : Accès à tous les processus ==========
+    if can_manage_users(user) or is_super_admin(user) or is_supervisor_smi(user):
         return True
-    # ========== FIN SUPER ADMIN ==========
-    
+    # ========== FIN BYPASS ==========
+
     # Convertir processus_uuid en UUID si c'est un objet Processus
     if isinstance(processus_uuid, Processus):
         processus_uuid = processus_uuid.uuid
-    
+
     # Vérifier si l'utilisateur a au moins un rôle actif pour ce processus
     return UserProcessusRole.objects.filter(
         user=user,
@@ -279,11 +296,11 @@ def user_has_write_permission_anywhere(user):
     if not user or not user.is_authenticated:
         return False
     
-    # ========== SUPER ADMIN : Accès complet ==========
-    if is_super_admin(user):
+    # ========== SUPER ADMIN / SUPERVISEUR SMI : Accès complet ==========
+    if is_super_admin(user) or is_supervisor_smi(user):
         return True
-    # ========== FIN SUPER ADMIN ==========
-    
+    # ========== FIN BYPASS ==========
+
     try:
         # Récupérer le rôle 'ecrire'
         try:
@@ -323,13 +340,10 @@ def check_permission_or_403(user, processus_uuid, role_code, error_message=None)
     from rest_framework.response import Response
     from rest_framework import status
     
-    # ========== SUPER ADMIN : Accès complet sans restriction ==========
-    # Aligner avec le comportement global : 
-    # - is_super_admin (rôle admin sur SMI/PRS-SMI)
-    # - OU utilisateur technique avec is_staff ET is_superuser (can_manage_users)
-    if can_manage_users(user) or is_super_admin(user):
+    # ========== SUPER ADMIN / SUPERVISEUR SMI : Accès complet ==========
+    if can_manage_users(user) or is_super_admin(user) or is_supervisor_smi(user):
         return True, None
-    # ========== FIN SUPER ADMIN ==========
+    # ========== FIN BYPASS ==========
     
     if not user_has_permission(user, processus_uuid, role_code):
         default_message = f"Vous n'avez pas les permissions nécessaires ({role_code}) pour ce processus."

@@ -566,45 +566,70 @@ class UserInviteSerializer(serializers.ModelSerializer):
 
 
 class UserProcessusRoleSerializer(serializers.ModelSerializer):
-    """Serializer pour les rôles utilisateur-processus"""
+    """Serializer pour les rôles utilisateur-processus.
+
+    processus peut être NULL pour les rôles globaux (is_global=True).
+    Les champs processus_nom et processus_numero retournent None dans ce cas.
+    """
     user_username = serializers.CharField(source='user.username', read_only=True)
     user_email = serializers.CharField(source='user.email', read_only=True)
-    processus_nom = serializers.CharField(source='processus.nom', read_only=True)
-    processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
+    # SerializerMethodField pour gérer processus=None (rôles globaux)
+    processus_nom = serializers.SerializerMethodField()
+    processus_numero = serializers.SerializerMethodField()
     role_code = serializers.CharField(source='role.code', read_only=True)
     role_nom = serializers.CharField(source='role.nom', read_only=True)
     attribue_par_username = serializers.CharField(source='attribue_par.username', read_only=True, allow_null=True)
-    
+
+    def get_processus_nom(self, obj):
+        return obj.processus.nom if obj.processus else None
+
+    def get_processus_numero(self, obj):
+        return obj.processus.numero_processus if obj.processus else None
+
     class Meta:
         model = UserProcessusRole
         fields = [
             'uuid', 'user', 'user_username', 'user_email',
             'processus', 'processus_nom', 'processus_numero',
             'role', 'role_code', 'role_nom',
+            'is_global',
             'attribue_par', 'attribue_par_username',
-            'date_attribution', 'is_active', 'created_at', 'updated_at'
+            'date_attribution', 'is_active', 'created_at', 'updated_at',
         ]
         read_only_fields = ['uuid', 'date_attribution', 'created_at', 'updated_at']
-    
+
     def validate(self, data):
-        """Valider que l'utilisateur est bien attribué au processus"""
+        """
+        Valide la cohérence entre is_global et processus :
+        - is_global=True  → processus doit être absent/None
+        - is_global=False → processus obligatoire + UserProcessus requis
+        """
         user = data.get('user')
         processus = data.get('processus')
-        
-        if user and processus:
-            # Vérifier que l'utilisateur est bien attribué au processus
-            user_processus_exists = UserProcessus.objects.filter(
-                user=user,
-                processus=processus,
-                is_active=True
-            ).exists()
-            
-            if not user_processus_exists:
+        is_global = data.get('is_global', False)
+
+        if is_global:
+            if processus is not None:
                 raise serializers.ValidationError(
-                    f"L'utilisateur {user.username} doit d'abord être attribué au processus {processus.nom} "
-                    "avant de pouvoir avoir des rôles."
+                    "Un rôle global (is_global=True) ne doit pas avoir de processus spécifié."
                 )
-        
+        else:
+            if processus is None:
+                raise serializers.ValidationError(
+                    "Un processus est obligatoire pour un rôle non-global."
+                )
+            if user:
+                user_processus_exists = UserProcessus.objects.filter(
+                    user=user,
+                    processus=processus,
+                    is_active=True
+                ).exists()
+                if not user_processus_exists:
+                    raise serializers.ValidationError(
+                        f"L'utilisateur {user.username} doit d'abord être attribué au processus "
+                        f"'{processus.nom}' avant de pouvoir y recevoir des rôles."
+                    )
+
         return data
 
 

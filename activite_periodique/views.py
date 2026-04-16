@@ -868,9 +868,8 @@ def details_ap_delete(request, uuid):
         # la permission delete_detail_activite_periodique, donc pas besoin de vérifier ici
         # ========== FIN VÉRIFICATION ==========
         
-        # Vérifier si l'utilisateur est super admin
-        from parametre.permissions import is_super_admin, can_manage_users
-        is_super = can_manage_users(request.user) or is_super_admin(request.user)
+        from parametre.permissions import is_super_admin, can_manage_users, is_supervisor_smi
+        is_super = can_manage_users(request.user) or is_super_admin(request.user) or is_supervisor_smi(request.user)
         
         # Vérifier que l'AP n'est pas validée (sauf pour super admin)
         if detail.activite_periodique.is_validated and not is_super:
@@ -1017,10 +1016,10 @@ def suivi_ap_create(request):
         # ========== FIN VÉRIFICATION ==========
         
         # Vérifier que l'AP est validée (les suivis ne peuvent être renseignés que si l'AP est validée)
-        # Exception : permettre la création lors de la copie d'amendement ou pour les super admins
+        # Exception : permettre la création lors de la copie d'amendement ou pour les super admins / superviseur SMI
         from_amendment_copy = data.get('from_amendment_copy', False)
-        from parametre.permissions import can_manage_users, is_super_admin
-        is_super = can_manage_users(request.user) or is_super_admin(request.user)
+        from parametre.permissions import can_manage_users, is_super_admin, is_supervisor_smi
+        is_super = can_manage_users(request.user) or is_super_admin(request.user) or is_supervisor_smi(request.user)
         
         if not detail_ap.activite_periodique.is_validated and not from_amendment_copy and not is_super:
             return Response({
@@ -1249,6 +1248,7 @@ def activite_periodique_stats(request):
     """Statistiques des Activités Périodiques de l'utilisateur connecté"""
     try:
         logger.info(f"[activite_periodique_stats] Début pour l'utilisateur: {request.user.username}")
+        scope = request.query_params.get('scope', 'tous')
 
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
@@ -1282,11 +1282,28 @@ def activite_periodique_stats(request):
         logger.info(f"[activite_periodique_stats] Nombre total d'APs: {aps_base.count()}")
         # ========== FIN FILTRAGE ==========
 
-        # Filtrer uniquement les APs initiaux (exclure les amendements)
-        aps_initiaux = aps_base.filter(
-            type_tableau__isnull=False,
-            type_tableau__code='INITIAL'
-        )
+        # Filtrer selon le scope
+        if scope == 'dernier':
+            from django.db.models import Case, When, IntegerField, Max
+            type_priority = Case(
+                When(type_tableau__code='AMENDEMENT_2', then=3),
+                When(type_tableau__code='AMENDEMENT_1', then=2),
+                When(type_tableau__code__in=['INITIAL', 'INITIALE'], then=1),
+                default=0, output_field=IntegerField()
+            )
+            annotated = aps_base.filter(type_tableau__isnull=False).annotate(priority=type_priority)
+            last_uuids = []
+            for proc_uuid in annotated.values_list('processus', flat=True).distinct():
+                max_p = annotated.filter(processus=proc_uuid).aggregate(max_p=Max('priority'))['max_p']
+                last = annotated.filter(processus=proc_uuid, priority=max_p).first()
+                if last:
+                    last_uuids.append(last.uuid)
+            aps_initiaux = aps_base.filter(uuid__in=last_uuids)
+        else:
+            aps_initiaux = aps_base.filter(
+                type_tableau__isnull=False,
+                type_tableau__code__in=['INITIAL', 'INITIALE']
+            )
         logger.info(f"[activite_periodique_stats] Nombre d'APs initiaux: {aps_initiaux.count()}")
 
         total_aps = aps_initiaux.count()

@@ -1642,8 +1642,14 @@ class UserProcessus(models.Model):
 
 class UserProcessusRole(models.Model):
     """
-    Modèle pour l'attribution d'un rôle à un utilisateur pour un processus spécifique
-    Un utilisateur doit d'abord être lié à un processus (UserProcessus) avant d'avoir des rôles
+    Modèle pour l'attribution d'un rôle à un utilisateur pour un processus spécifique,
+    ou en mode global (is_global=True) pour couvrir TOUS les processus sans assignation individuelle.
+
+    Security by Design :
+    - is_global=False (défaut) : processus obligatoire, UserProcessus requis en amont.
+    - is_global=True : processus doit être NULL, aucun UserProcessus requis.
+      Réservé aux rôles transverses (ex: superviseur_smi). L'attribution globale ne peut
+      être accordée que par un super admin depuis l'interface d'administration.
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -1656,13 +1662,23 @@ class UserProcessusRole(models.Model):
         Processus,
         on_delete=models.CASCADE,
         related_name='user_processus_roles',
-        help_text="Processus concerné"
+        null=True,
+        blank=True,
+        help_text="Processus concerné. Doit être NULL si is_global=True."
     )
     role = models.ForeignKey(
         Role,
         on_delete=models.CASCADE,
         related_name='user_processus_roles',
         help_text="Rôle attribué"
+    )
+    is_global = models.BooleanField(
+        default=False,
+        help_text=(
+            "Si True, ce rôle s'applique à TOUS les processus (ex: superviseur_smi). "
+            "Le champ 'processus' doit alors être laissé vide. "
+            "Réservé aux rôles de supervision transverse."
+        )
     )
     date_attribution = models.DateTimeField(
         auto_now_add=True,
@@ -1688,42 +1704,71 @@ class UserProcessusRole(models.Model):
         verbose_name = 'Rôle Utilisateur Processus'
         verbose_name_plural = 'Rôles Utilisateurs Processus'
         ordering = ['-date_attribution']
-        unique_together = [('user', 'processus', 'role')]
+        # Contraintes partielles :
+        # - Un utilisateur ne peut avoir le même rôle global qu'une fois.
+        # - Un utilisateur ne peut avoir le même rôle pour un processus donné qu'une fois.
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'role'],
+                condition=models.Q(is_global=True),
+                name='unique_global_user_role'
+            ),
+            models.UniqueConstraint(
+                fields=['user', 'processus', 'role'],
+                condition=models.Q(is_global=False),
+                name='unique_processus_user_role'
+            ),
+        ]
         indexes = [
             models.Index(fields=['user', 'processus']),
             models.Index(fields=['user', 'processus', 'is_active']),
+            models.Index(fields=['user', 'is_global', 'is_active']),
         ]
 
     def __str__(self):
         """Représentation string du UserProcessusRole avec gestion des valeurs None"""
         user_str = self.user.username if self.user else "Utilisateur inconnu"
-        processus_str = self.processus.nom if hasattr(self, 'processus') and self.processus else "Processus non défini"
         role_str = self.role.nom if hasattr(self, 'role') and self.role else "Rôle non défini"
+        if self.is_global:
+            return f"{user_str} - [GLOBAL] - {role_str}"
+        processus_str = self.processus.nom if hasattr(self, 'processus') and self.processus else "Processus non défini"
         return f"{user_str} - {processus_str} - {role_str}"
 
     def clean(self):
-        """Validation : vérifier que l'utilisateur est bien attribué au processus"""
+        """
+        Validation métier :
+        - is_global=True  → processus doit être NULL (rôle transverse, pas de processus cible).
+        - is_global=False → processus obligatoire ET l'utilisateur doit être inscrit au processus.
+        """
         from django.core.exceptions import ValidationError
-        
-        # Vérifier que l'utilisateur et le processus sont définis
+
         if not hasattr(self, 'user') or self.user is None:
             return
-        
-        if not hasattr(self, 'processus') or self.processus is None:
-            return
-        
-        # Vérifier que l'utilisateur est bien attribué au processus
-        user_processus_exists = UserProcessus.objects.filter(
-            user=self.user,
-            processus=self.processus,
-            is_active=True
-        ).exists()
-        
-        if not user_processus_exists:
-            raise ValidationError(
-                f"L'utilisateur {self.user.username} doit d'abord être attribué au processus {self.processus.nom} "
-                "avant de pouvoir avoir des rôles."
-            )
+
+        if self.is_global:
+            # Rôle global : processus interdit (empêche toute ambiguïté de périmètre)
+            if self.processus is not None:
+                raise ValidationError(
+                    "Un rôle global (is_global=True) ne doit pas avoir de processus spécifié. "
+                    "Laissez le champ 'Processus' vide."
+                )
+        else:
+            # Rôle spécifique : processus obligatoire
+            if self.processus is None:
+                raise ValidationError(
+                    "Un processus est obligatoire pour un rôle non-global (is_global=False)."
+                )
+            # L'utilisateur doit être préalablement attribué au processus
+            user_processus_exists = UserProcessus.objects.filter(
+                user=self.user,
+                processus=self.processus,
+                is_active=True
+            ).exists()
+            if not user_processus_exists:
+                raise ValidationError(
+                    f"L'utilisateur {self.user.username} doit d'abord être attribué au processus "
+                    f"'{self.processus.nom}' avant de pouvoir y recevoir des rôles."
+                )
 
     def save(self, *args, **kwargs):
         """Valider avant de sauvegarder"""

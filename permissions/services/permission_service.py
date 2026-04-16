@@ -181,32 +181,48 @@ class PermissionService:
         
         # Cache miss : calculer les permissions depuis la DB
         logger.info(f"[PermissionService] ✅ Cache MISS, calcul depuis DB pour {cache_key}")
-        
-        # 1. Récupérer les UserProcessusRole de l'utilisateur
-        user_roles_query = UserProcessusRole.objects.filter(
+
+        # 1a. Récupérer les rôles spécifiques (non-globaux) de l'utilisateur
+        specific_roles_query = UserProcessusRole.objects.filter(
             user=user,
-            is_active=True
+            is_active=True,
+            is_global=False
         ).select_related('role', 'processus')
-        
+
         if processus_uuid:
-            user_roles_query = user_roles_query.filter(processus__uuid=processus_uuid)
-        
-        user_roles = list(user_roles_query)
-        
+            specific_roles_query = specific_roles_query.filter(processus__uuid=processus_uuid)
+
+        specific_roles = list(specific_roles_query)
+
+        # 1b. Récupérer les rôles globaux de l'utilisateur (is_global=True)
+        #     Ces rôles s'appliquent à TOUS les processus (ex: superviseur_smi).
+        global_roles = list(
+            UserProcessusRole.objects.filter(
+                user=user,
+                is_active=True,
+                is_global=True
+            ).select_related('role')
+        )
+
         logger.info(
             f"[PermissionService.get_user_permissions] User {user.username} ({user.id}), "
             f"app={app_name}, processus_uuid={processus_uuid}, "
-            f"{len(user_roles)} rôles trouvés"
+            f"{len(specific_roles)} rôle(s) spécifique(s), "
+            f"{len(global_roles)} rôle(s) global/globaux"
         )
-        
-        for user_role in user_roles:
+
+        for user_role in specific_roles:
             logger.info(
-                f"[PermissionService.get_user_permissions] Rôle: {user_role.role.code} "
+                f"[PermissionService.get_user_permissions] Rôle spécifique: {user_role.role.code} "
                 f"pour processus: {user_role.processus.nom} ({user_role.processus.uuid})"
             )
-        
-        if not user_roles:
-            # Aucun rôle, aucune permission
+        for global_role in global_roles:
+            logger.info(
+                f"[PermissionService.get_user_permissions] Rôle global: {global_role.role.code}"
+            )
+
+        if not specific_roles and not global_roles:
+            # Aucun rôle d'aucune sorte → aucune permission (refus par défaut)
             result = {}
             cache.set(cache_key, result, cls.CACHE_TIMEOUT)
             logger.warning(
@@ -214,38 +230,63 @@ class PermissionService:
                 f"user={user.username}, processus_uuid={processus_uuid}"
             )
             return result
-        
+
         # 2. Récupérer les PermissionAction pour cette app
         actions = PermissionAction.objects.filter(
             app_name=app_name,
             is_active=True
         ).prefetch_related('role_mappings')
-        
+
         # 3. Récupérer les PermissionOverride pour cet utilisateur
         override_query = PermissionOverride.objects.filter(
             user=user,
             app_name=app_name,
             is_active=True
         ).select_related('permission_action', 'processus')
-        
+
         if processus_uuid:
             override_query = override_query.filter(processus__uuid=processus_uuid)
-        
+
         overrides = {
             (str(ov.processus.uuid), ov.permission_action.code): ov
             for ov in override_query
         }
-        
+
         # 4. Construire le résultat
         result = {}
-        
-        # Grouper les rôles par processus
+
+        # 4a. Grouper les rôles spécifiques par processus
         roles_by_processus = {}
-        for user_role in user_roles:
+        for user_role in specific_roles:
             processus_uuid_str = str(user_role.processus.uuid)
             if processus_uuid_str not in roles_by_processus:
                 roles_by_processus[processus_uuid_str] = []
             roles_by_processus[processus_uuid_str].append(user_role.role)
+
+        # 4b. Étendre avec les rôles globaux
+        if global_roles:
+            global_role_objects = [gr.role for gr in global_roles]
+
+            if processus_uuid:
+                # L'appelant cible un processus précis : injecter les rôles globaux dedans
+                p_str = str(processus_uuid)
+                if p_str not in roles_by_processus:
+                    roles_by_processus[p_str] = []
+                for role_obj in global_role_objects:
+                    if role_obj not in roles_by_processus[p_str]:
+                        roles_by_processus[p_str].append(role_obj)
+            else:
+                # Pas de filtre processus : injecter les rôles globaux dans tous les processus actifs
+                all_processus_uuids = list(
+                    Processus.objects.filter(is_active=True).values_list('uuid', flat=True)
+                )
+                for proc_uuid in all_processus_uuids:
+                    p_str = str(proc_uuid)
+                    if p_str not in roles_by_processus:
+                        roles_by_processus[p_str] = []
+                    for role_obj in global_role_objects:
+                        if role_obj not in roles_by_processus[p_str]:
+                            roles_by_processus[p_str].append(role_obj)
         
         # Pour chaque processus, calculer les permissions
         for processus_uuid_str, roles in roles_by_processus.items():
@@ -490,13 +531,23 @@ class PermissionService:
                 action_nom = action
             
             # Récupérer les rôles de l'utilisateur pour ce processus
+            # (inclut les rôles spécifiques ET les rôles globaux)
             try:
-                user_roles = UserProcessusRole.objects.filter(
+                specific_user_roles = UserProcessusRole.objects.filter(
                     user=user,
                     processus__uuid=processus_uuid,
-                    is_active=True
-                ).select_related('role', 'processus')
-                roles_noms = [ur.role.nom for ur in user_roles if ur.role]
+                    is_active=True,
+                    is_global=False
+                ).select_related('role')
+                global_user_roles = UserProcessusRole.objects.filter(
+                    user=user,
+                    is_active=True,
+                    is_global=True
+                ).select_related('role')
+                roles_noms = (
+                    [ur.role.nom for ur in specific_user_roles if ur.role]
+                    + [f"{ur.role.nom} (global)" for ur in global_user_roles if ur.role]
+                )
                 roles_str = ", ".join(roles_noms) if roles_noms else "aucun rôle"
             except Exception as e:
                 logger.warning(f"[PermissionService] Erreur lors de la récupération des rôles: {e}")

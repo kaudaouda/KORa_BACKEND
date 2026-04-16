@@ -121,6 +121,15 @@ class AppActionPermission(BasePermission):
                     f"user={request.user.username}, app={self.app_name}, action={self.action}"
                 )
                 return True
+
+            # Superviseur SMI : rôle global transverse — accès complet à toutes les apps
+            from parametre.permissions import is_supervisor_smi
+            if is_supervisor_smi(request.user):
+                logger.info(
+                    f"[AppActionPermission.has_permission] ✅ Superviseur SMI bypass: "
+                    f"user={request.user.username}, app={self.app_name}, action={self.action}"
+                )
+                return True
             
             # Log pour déboguer
             logger.warning(
@@ -213,14 +222,22 @@ class AppActionPermission(BasePermission):
             return False
         
         # Security by Design : Vérifier le super admin AVANT d'extraire le processus_uuid
-        # Les super admins (is_staff ET is_superuser) ont toutes les permissions
         if PermissionService._is_super_admin(request.user):
             logger.info(
                 f"[AppActionPermission.has_object_permission] ✅ Super admin bypass: "
                 f"user={request.user.username}, app={self.app_name}, action={self.action}"
             )
             return True
-        
+
+        # Superviseur SMI : rôle global transverse — accès complet
+        from parametre.permissions import is_supervisor_smi
+        if is_supervisor_smi(request.user):
+            logger.info(
+                f"[AppActionPermission.has_object_permission] ✅ Superviseur SMI bypass: "
+                f"user={request.user.username}, app={self.app_name}, action={self.action}"
+            )
+            return True
+
         # Extraire le processus_uuid depuis l'objet
         processus_uuid = self._extract_processus_uuid(request, view, obj)
         
@@ -2370,13 +2387,14 @@ class ActivitePeriodiqueListPermission(BasePermission):
         if request.method != 'GET':
             return False
         
-        # ========== SUPER ADMIN : Accès complet ==========
-        # Security by Design : Les super admins (is_staff ET is_superuser) ont accès complet
-        from parametre.permissions import can_manage_users
-        if can_manage_users(request.user):
-            logger.info(f"[ActivitePeriodiqueListPermission] ✅ Super admin autorisé: {request.user.username}")
+        # ========== SUPER ADMIN / SUPERVISEUR SMI : Accès complet ==========
+        from parametre.permissions import can_manage_users, is_supervisor_smi
+        if can_manage_users(request.user) or is_supervisor_smi(request.user):
+            logger.info(
+                f"[ActivitePeriodiqueListPermission] ✅ Bypass autorisé: {request.user.username}"
+            )
             return True
-        # ========== FIN SUPER ADMIN ==========
+        # ========== FIN BYPASS ==========
         
         # Récupérer la liste des processus de l'utilisateur
         from parametre.permissions import get_user_processus_list

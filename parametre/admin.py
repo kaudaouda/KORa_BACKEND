@@ -1076,13 +1076,21 @@ class ProcessusMultipleChoiceFieldForRole(forms.ModelMultipleChoiceField):
 
 
 class UserProcessusRoleForm(forms.ModelForm):
-    """Formulaire personnalisé pour permettre la sélection multiple de processus et rôles"""
+    """
+    Formulaire personnalisé pour l'attribution de rôles utilisateur-processus.
+
+    Deux modes :
+    - Mode standard  (is_global=False) : sélection de processus + rôles. Le user doit déjà
+      être inscrit aux processus sélectionnés via UserProcessus.
+    - Mode global    (is_global=True)  : pas de processus requis. Le rôle s'applique à TOUS
+      les processus. Réservé aux rôles de supervision transverse (ex: superviseur_smi).
+    """
     processus_multiple = ProcessusMultipleChoiceFieldForRole(
         queryset=Processus.objects.filter(is_active=True).order_by('nom'),
         widget=forms.CheckboxSelectMultiple(attrs={'class': 'compact-checkboxes'}),
         required=False,
         label='Processus',
-        help_text='Sélectionnez un ou plusieurs processus'
+        help_text='Sélectionnez un ou plusieurs processus (non requis si "Rôle global" coché)'
     )
     roles = RoleMultipleChoiceField(
         queryset=Role.objects.filter(is_active=True),
@@ -1091,10 +1099,10 @@ class UserProcessusRoleForm(forms.ModelForm):
         label='Rôles',
         help_text='Sélectionnez un ou plusieurs rôles à attribuer'
     )
-    
+
     class Meta:
         model = UserProcessusRole
-        fields = ['user', 'attribue_par', 'is_active']
+        fields = ['user', 'is_global', 'attribue_par', 'is_active']
         widgets = {
             'user': forms.Select(attrs={'class': 'user-select'}),
         }
@@ -1155,38 +1163,53 @@ class UserProcessusRoleForm(forms.ModelForm):
         self.fields['roles'].choices = choices
     
     def clean(self):
-        # Définir un processus temporaire AVANT la validation du modèle
-        # pour éviter l'erreur RelatedObjectDoesNotExist
-        if hasattr(self.data, 'getlist'):
-            processus_ids = self.data.getlist('processus_multiple')
-        elif 'processus_multiple' in self.data:
-            processus_ids = [self.data['processus_multiple']] if isinstance(self.data['processus_multiple'], str) else self.data['processus_multiple']
+        is_global = self.data.get('is_global') in ('on', 'true', '1', True)
+
+        # En mode standard (non-global), définir un processus temporaire sur l'instance
+        # AVANT la validation du modèle pour éviter l'erreur RelatedObjectDoesNotExist.
+        if not is_global:
+            if hasattr(self.data, 'getlist'):
+                processus_ids = self.data.getlist('processus_multiple')
+            elif 'processus_multiple' in self.data:
+                processus_ids = (
+                    [self.data['processus_multiple']]
+                    if isinstance(self.data['processus_multiple'], str)
+                    else self.data['processus_multiple']
+                )
+            else:
+                processus_ids = []
+
+            if processus_ids:
+                try:
+                    processus_uuid = (
+                        processus_ids[0] if isinstance(processus_ids[0], str) else str(processus_ids[0])
+                    )
+                    processus = Processus.objects.get(uuid=processus_uuid)
+                    self.instance.processus = processus
+                except (Processus.DoesNotExist, ValueError, TypeError):
+                    pass
         else:
-            processus_ids = []
-            
-        if processus_ids:
-            try:
-                processus_uuid = processus_ids[0] if isinstance(processus_ids[0], str) else str(processus_ids[0])
-                processus = Processus.objects.get(uuid=processus_uuid)
-                self.instance.processus = processus
-            except (Processus.DoesNotExist, ValueError, TypeError):
-                pass
-        
+            # Mode global : aucun processus sur l'instance
+            self.instance.processus = None
+
         cleaned_data = super().clean()
         processus_multiple = cleaned_data.get('processus_multiple')
         roles = cleaned_data.get('roles')
-        
-        if not processus_multiple:
-            raise ValidationError('Vous devez sélectionner au moins un processus.')
-        
+
         if not roles:
             raise ValidationError('Vous devez sélectionner au moins un rôle.')
-        
+
+        if not is_global and not processus_multiple:
+            raise ValidationError(
+                'Vous devez sélectionner au moins un processus, '
+                'ou cocher "Rôle global" pour une attribution transverse.'
+            )
+
         # Si le champ user est disabled, récupérer la valeur depuis l'instance
         if 'user' not in cleaned_data or not cleaned_data['user']:
             if self.instance and self.instance.pk and hasattr(self.instance, 'user'):
                 cleaned_data['user'] = self.instance.user
-        
+
         return cleaned_data
     
     def _post_clean(self):
@@ -1203,34 +1226,49 @@ class UserProcessusRoleForm(forms.ModelForm):
 
 @admin.register(UserProcessusRole)
 class UserProcessusRoleAdmin(admin.ModelAdmin):
-    """Configuration de l'interface d'administration pour les rôles utilisateur-processus"""
-    
+    """
+    Interface d'administration pour les attributions de rôles utilisateur-processus.
+
+    Deux modes d'attribution :
+    - Standard  : sélectionner des processus + des rôles (is_global=False).
+    - Global    : cocher "Rôle global", sélectionner des rôles, laisser processus vide (is_global=True).
+      Le rôle s'applique alors à TOUS les processus sans assignation individuelle.
+      Réservé aux rôles de supervision transverse (ex: superviseur_smi).
+    """
+
     form = UserProcessusRoleForm
-    
+
     list_display = [
-        'user', 'processus', 'role', 'attribue_par', 'date_attribution', 'is_active', 'created_at'
+        'user', 'is_global', 'processus', 'role',
+        'attribue_par', 'date_attribution', 'is_active', 'created_at',
     ]
     list_filter = [
-        'is_active', 'date_attribution', 'created_at', 'processus', 'role'
+        'is_global', 'is_active', 'date_attribution', 'created_at', 'processus', 'role',
     ]
     search_fields = [
-        'user__username', 'user__email', 'processus__nom', 'processus__numero_processus', 'role__code', 'role__nom'
+        'user__username', 'user__email',
+        'processus__nom', 'processus__numero_processus',
+        'role__code', 'role__nom',
     ]
     readonly_fields = [
-        'uuid', 'date_attribution', 'created_at', 'updated_at'
+        'uuid', 'date_attribution', 'created_at', 'updated_at',
     ]
     ordering = ['-date_attribution']
-    
+
     fieldsets = (
         ('Attribution de rôles', {
-            'fields': ('uuid', 'user', 'processus_multiple', 'roles', 'attribue_par')
+            'fields': ('uuid', 'user', 'is_global', 'processus_multiple', 'roles', 'attribue_par'),
+            'description': (
+                'Cochez "Rôle global" pour une attribution transverse (tous les processus). '
+                'Dans ce cas, laissez le champ Processus vide.'
+            ),
         }),
         ('Statut', {
-            'fields': ('is_active',)
+            'fields': ('is_active',),
         }),
         ('Métadonnées', {
             'fields': ('date_attribution', 'created_at', 'updated_at'),
-            'classes': ('collapse',)
+            'classes': ('collapse',),
         }),
     )
     
@@ -1317,9 +1355,10 @@ class UserProcessusRoleAdmin(admin.ModelAdmin):
             roles_data = []
             for ur in user_roles:
                 roles_data.append({
-                    'processus_uuid': str(ur.processus.uuid),
+                    'processus_uuid': str(ur.processus.uuid) if ur.processus else None,
+                    'is_global': ur.is_global,
                     'role_uuid': str(ur.role.uuid),
-                    'role_nom': ur.role.nom
+                    'role_nom': ur.role.nom,
                 })
             
             return JsonResponse({'roles': roles_data}, safe=False)
@@ -1332,72 +1371,102 @@ class UserProcessusRoleAdmin(admin.ModelAdmin):
             return JsonResponse({'error': str(e)}, status=500)
     
     def save_model(self, request, obj, form, change):
-        """Sauvegarder le modèle - créer plusieurs instances pour chaque combinaison processus-rôle"""
+        """
+        Sauvegarder le modèle.
+
+        - Mode global    : crée un UserProcessusRole(is_global=True, processus=None) par rôle.
+        - Mode standard  : crée un UserProcessusRole par combinaison (processus, rôle).
+        """
+        is_global = form.cleaned_data.get('is_global', False)
         processus_list = form.cleaned_data.get('processus_multiple', [])
         roles = form.cleaned_data.get('roles', [])
-        
-        if not processus_list or not roles:
-            # Assigner des valeurs temporaires à obj pour éviter l'erreur dans __str__
-            # lors du logging par Django
-            if not hasattr(obj, 'processus') or not obj.processus:
-                # Assigner le premier processus temporairement
-                if processus_list:
-                    obj.processus = processus_list[0] if isinstance(processus_list, list) else processus_list
+
+        if not roles:
+            # Valeur temporaire sur obj pour éviter l'erreur dans __str__ lors du logging Django
             if not hasattr(obj, 'role') or not obj.role:
-                # Assigner le premier rôle temporairement
-                if roles:
-                    obj.role = roles[0] if isinstance(roles, list) else roles
+                return
             return
-        
-        # Récupérer les valeurs du formulaire
+
         user = form.cleaned_data.get('user')
         attribue_par = form.cleaned_data.get('attribue_par') or request.user
         is_active = form.cleaned_data.get('is_active', True)
-        
-        if not change:  # Création
-            # Créer un UserProcessusRole pour chaque combinaison processus-rôle
-            for processus in processus_list:
-                for role in roles:
-                    UserProcessusRole.objects.get_or_create(
-                        user=user,
-                        processus=processus,
-                        role=role,
-                        defaults={
-                            'attribue_par': attribue_par,
-                            'is_active': is_active
-                        }
-                    )
-        else:  # Modification
-            # Récupérer l'utilisateur depuis l'objet existant ou le formulaire
+
+        if is_global:
+            # --- Mode global ---
+            # Un UserProcessusRole(is_global=True, processus=None) par rôle sélectionné
             user_to_update = obj.user if hasattr(obj, 'user') and obj.user else user
-            
-            # Supprimer tous les UserProcessusRole existants pour cet utilisateur
-            # qui ne sont pas dans les nouvelles sélections
-            existing_combinations = UserProcessusRole.objects.filter(
-                user=user_to_update
-            )
-            
-            # Supprimer les combinaisons qui ne sont plus sélectionnées
-            for existing in existing_combinations:
-                if existing.processus not in processus_list or existing.role not in roles:
-                    existing.delete()
-            
-            # Créer ou mettre à jour les combinaisons sélectionnées
+
+            if change:
+                # Supprimer les anciens rôles globaux de cet utilisateur qui ne sont plus sélectionnés
+                UserProcessusRole.objects.filter(
+                    user=user_to_update,
+                    is_global=True,
+                ).exclude(role__in=roles).delete()
+
+            for role in roles:
+                upr, created = UserProcessusRole.objects.get_or_create(
+                    user=user_to_update,
+                    role=role,
+                    is_global=True,
+                    defaults={
+                        'processus': None,
+                        'attribue_par': attribue_par,
+                        'is_active': is_active,
+                    },
+                )
+                if not created:
+                    upr.attribue_par = attribue_par
+                    upr.is_active = is_active
+                    # Appel direct à Model.save() pour éviter full_clean() en doublon
+                    UserProcessusRole.objects.filter(pk=upr.pk).update(
+                        attribue_par=attribue_par,
+                        is_active=is_active,
+                    )
+
+            # Valeur temporaire sur obj pour le logging Django
+            if not hasattr(obj, 'role') or not obj.role:
+                obj.role = list(roles)[0]
+
+        else:
+            # --- Mode standard ---
+            if not processus_list:
+                return
+
+            user_to_update = obj.user if hasattr(obj, 'user') and obj.user else user
+
+            if change:
+                # Supprimer les combinaisons (processus, rôle) non-globales qui ne sont plus sélectionnées
+                existing = UserProcessusRole.objects.filter(
+                    user=user_to_update,
+                    is_global=False,
+                )
+                for existing_upr in existing:
+                    if existing_upr.processus not in processus_list or existing_upr.role not in roles:
+                        existing_upr.delete()
+
             for processus in processus_list:
                 for role in roles:
-                    user_processus_role, created = UserProcessusRole.objects.get_or_create(
+                    upr, created = UserProcessusRole.objects.get_or_create(
                         user=user_to_update,
                         processus=processus,
                         role=role,
+                        is_global=False,
                         defaults={
                             'attribue_par': attribue_par,
-                            'is_active': is_active
-                        }
+                            'is_active': is_active,
+                        },
                     )
                     if not created:
-                        user_processus_role.attribue_par = attribue_par
-                        user_processus_role.is_active = is_active
-                        user_processus_role.save()
+                        UserProcessusRole.objects.filter(pk=upr.pk).update(
+                            attribue_par=attribue_par,
+                            is_active=is_active,
+                        )
+
+            # Valeur temporaire sur obj pour le logging Django
+            if not hasattr(obj, 'processus') or not obj.processus:
+                obj.processus = list(processus_list)[0]
+            if not hasattr(obj, 'role') or not obj.role:
+                obj.role = list(roles)[0]
     
     def response_post_save_add(self, request, obj):
         """Rediriger vers la liste après l'ajout"""
