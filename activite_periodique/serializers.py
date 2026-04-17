@@ -22,9 +22,7 @@ class ActivitePeriodiqueSerializer(serializers.ModelSerializer):
     annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
     annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
     annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
-    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
-    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
-    type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
+    nom_version = serializers.SerializerMethodField()
     initial_ref_uuid = serializers.UUIDField(source='initial_ref.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     validateur_nom = serializers.SerializerMethodField()
@@ -36,7 +34,7 @@ class ActivitePeriodiqueSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'numero_ap', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
-            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
+            'num_amendement', 'nom_version',
             'initial_ref', 'initial_ref_uuid', 'raison_amendement',
             'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
             'cree_par', 'createur_nom', 'has_amendements', 'created_at', 'updated_at'
@@ -45,6 +43,9 @@ class ActivitePeriodiqueSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'raison_amendement': {'required': False, 'allow_blank': True, 'allow_null': True},
         }
+
+    def get_nom_version(self, obj):
+        return obj.nom_version
 
     def get_numero_ap(self, obj):
         """Retourner le numéro du premier détail AP associé, ou None"""
@@ -66,36 +67,15 @@ class ActivitePeriodiqueSerializer(serializers.ModelSerializer):
         return None
 
     def get_has_amendements(self, obj):
-        """Vérifier si cet AP a des amendements suivants (doit être verrouillé)"""
+        """Vérifier si cet AP a un amendement suivant (num_amendement + 1 existe)"""
         try:
-            type_code = obj.type_tableau.code if obj.type_tableau else None
-            
-            if type_code == 'INITIAL':
-                # Pour INITIAL : vérifier s'il y a AMENDEMENT_1 ou AMENDEMENT_2 pour le même processus/année
-                return ActivitePeriodique.objects.filter(
-                    processus=obj.processus,
-                    annee=obj.annee,
-                    type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2'],
-                    cree_par=obj.cree_par
-                ).exists()
-            elif type_code == 'AMENDEMENT_1':
-                # Pour AMENDEMENT_1 : vérifier s'il y a AMENDEMENT_2 créé après lui pour le même processus/année
-                # On vérifie s'il y a un AMENDEMENT_2 créé pour le même contexte
-                return ActivitePeriodique.objects.filter(
-                    processus=obj.processus,
-                    annee=obj.annee,
-                    type_tableau__code='AMENDEMENT_2',
-                    cree_par=obj.cree_par,
-                    created_at__gt=obj.created_at  # Créé après cet AMENDEMENT_1
-                ).exists()
-            elif type_code == 'AMENDEMENT_2':
-                # AMENDEMENT_2 ne peut pas avoir d'amendements suivants
-                return False
-            else:
-                # Par défaut, vérifier les amendements directs
-                return obj.amendements.exists()
+            return ActivitePeriodique.objects.filter(
+                processus=obj.processus,
+                annee=obj.annee,
+                cree_par=obj.cree_par,
+                num_amendement=obj.num_amendement + 1
+            ).exists()
         except Exception:
-            # En cas d'erreur, retourner False par défaut
             return False
 
     def create(self, validated_data):
@@ -568,14 +548,12 @@ class ActivitePeriodiqueCompletSerializer(serializers.ModelSerializer):
     annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
     annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
     annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
-    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
-    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
-    type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
+    nom_version = serializers.SerializerMethodField()
     initial_ref_uuid = serializers.UUIDField(source='initial_ref.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     numero_ap = serializers.SerializerMethodField()
     has_amendements = serializers.SerializerMethodField()
-    
+
     # Inclure tous les détails avec leurs périodicités et mois
     details = serializers.SerializerMethodField()
 
@@ -584,12 +562,15 @@ class ActivitePeriodiqueCompletSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'numero_ap', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
-            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
+            'num_amendement', 'nom_version',
             'initial_ref', 'initial_ref_uuid', 'raison_amendement',
             'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by', 'has_amendements', 'details',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'numero_ap', 'is_validated', 'validated_at', 'validated_by', 'cree_par', 'createur_nom', 'details', 'created_at', 'updated_at']
+
+    def get_nom_version(self, obj):
+        return obj.nom_version
 
     def get_numero_ap(self, obj):
         """Retourner le numéro du premier détail AP associé, ou None"""
@@ -605,36 +586,15 @@ class ActivitePeriodiqueCompletSerializer(serializers.ModelSerializer):
         return "Utilisateur inconnu"
 
     def get_has_amendements(self, obj):
-        """Vérifier si cet AP a des amendements suivants (doit être verrouillé)"""
+        """Vérifier si cet AP a un amendement suivant (num_amendement + 1 existe)"""
         try:
-            type_code = obj.type_tableau.code if obj.type_tableau else None
-            
-            if type_code == 'INITIAL':
-                # Pour INITIAL : vérifier s'il y a AMENDEMENT_1 ou AMENDEMENT_2 pour le même processus/année
-                return ActivitePeriodique.objects.filter(
-                    processus=obj.processus,
-                    annee=obj.annee,
-                    type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2'],
-                    cree_par=obj.cree_par
-                ).exists()
-            elif type_code == 'AMENDEMENT_1':
-                # Pour AMENDEMENT_1 : vérifier s'il y a AMENDEMENT_2 créé après lui pour le même processus/année
-                # On vérifie s'il y a un AMENDEMENT_2 créé pour le même contexte
-                return ActivitePeriodique.objects.filter(
-                    processus=obj.processus,
-                    annee=obj.annee,
-                    type_tableau__code='AMENDEMENT_2',
-                    cree_par=obj.cree_par,
-                    created_at__gt=obj.created_at  # Créé après cet AMENDEMENT_1
-                ).exists()
-            elif type_code == 'AMENDEMENT_2':
-                # AMENDEMENT_2 ne peut pas avoir d'amendements suivants
-                return False
-            else:
-                # Par défaut, vérifier les amendements directs
-                return obj.amendements.exists()
+            return ActivitePeriodique.objects.filter(
+                processus=obj.processus,
+                annee=obj.annee,
+                cree_par=obj.cree_par,
+                num_amendement=obj.num_amendement + 1
+            ).exists()
         except Exception:
-            # En cas d'erreur, retourner False par défaut
             return False
 
     def get_details(self, obj):

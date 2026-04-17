@@ -6,7 +6,7 @@ import os
 import datetime
 
 from parametre.models import (
-    Processus, Versions, Annee, Direction, SousDirection,
+    Processus, Annee, Direction, SousDirection,
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation,
     DysfonctionnementRecommandation, Media, Preuve,
@@ -22,101 +22,54 @@ PREUVE_PDF_PATH = os.path.join(
 # Référentiels
 # ---------------------------------------------------------------------------
 NATURES = [
-    {'nom': 'Recommandation', 'description': 'Action recommandée suite à un audit ou une revue'},
-    {'nom': 'Non-conformite', 'description': 'Ecart constaté par rapport à une exigence'},
-    {'nom': 'Observation', 'description': 'Remarque ou point d attention relevé'},
+    {'nom': 'Recommandation', 'description': 'Action recommandee suite a un audit ou une revue'},
+    {'nom': 'Non-conformite', 'description': 'Ecart constate par rapport a une exigence'},
+    {'nom': 'Observation',    'description': 'Remarque ou point d attention releve'},
 ]
 
 CATEGORIES = [
-    {'nom': 'Organisationnelle', 'description': 'Liée à l organisation ou aux processus'},
-    {'nom': 'Documentaire', 'description': 'Liée à la documentation ou aux procédures'},
-    {'nom': 'Technique', 'description': 'Liée aux équipements ou systèmes techniques'},
-    {'nom': 'Humaine', 'description': 'Liée aux compétences ou au comportement humain'},
+    {'nom': 'Organisationnelle', 'description': 'Liee a l organisation ou aux processus'},
+    {'nom': 'Documentaire',      'description': 'Liee a la documentation ou aux procedures'},
+    {'nom': 'Technique',         'description': 'Liee aux equipements ou systemes techniques'},
+    {'nom': 'Humaine',           'description': 'Liee aux competences ou au comportement humain'},
 ]
 
 SOURCES = [
-    {'nom': 'Audit interne', 'description': 'Audit réalisé par l équipe interne'},
-    {'nom': 'Revue de processus', 'description': 'Revue périodique des processus'},
-    {'nom': 'Audit externe', 'description': 'Audit réalisé par un organisme externe'},
-    {'nom': 'Inspection OACI', 'description': 'Inspection réalisée par l OACI'},
-    {'nom': 'Auto-evaluation', 'description': 'Evaluation réalisée par le responsable du processus'},
+    {'nom': 'Audit interne', 'description': 'Audit realise par l equipe interne'},
+    {'nom': 'Audit externe', 'description': 'Audit realise par un organisme externe'},
+]
+
+DYSFONCTIONNEMENTS_TYPES = [
+    {'nom': 'Dysfonctionnement', 'description': 'Dysfonctionnement constate necessitant une action corrective'},
+    {'nom': 'Recommandation',    'description': 'Recommandation emise suite a un audit ou une revue'},
 ]
 
 ACTION_TYPES = [
-    {'nom': 'Corrective', 'description': 'Action visant à corriger une non-conformité'},
-    {'nom': 'Preventive', 'description': 'Action visant à prévenir une non-conformité potentielle'},
-    {'nom': 'Amelioration', 'description': 'Action visant à améliorer un processus existant'},
+    {'nom': 'Corrective',   'description': 'Action visant a corriger une non-conformite'},
+    {'nom': 'Preventive',   'description': 'Action visant a prevenir une non-conformite potentielle'},
+    {'nom': 'Amelioration', 'description': 'Action visant a ameliorer un processus existant'},
 ]
 
 STATUTS = [
-    {'nom': 'Ouverte', 'description': 'Action en cours, non encore close'},
-    {'nom': 'Cloturee', 'description': 'Action terminée et validée'},
-    {'nom': 'Suspendue', 'description': 'Action temporairement mise en attente'},
+    {'nom': 'Ouverte',    'description': 'Action en cours, non encore close'},
+    {'nom': 'Cloturee',   'description': 'Action terminee et validee'},
+    {'nom': 'Suspendue',  'description': 'Action temporairement mise en attente'},
 ]
 
-# ---------------------------------------------------------------------------
-# Dysfonctionnements / recommandations par processus
-# ---------------------------------------------------------------------------
-DYSFUNCTIONS_PAR_PROCESSUS = {
-    'PRS-DAAF': [
-        'Absence de procedure documentee pour le suivi budgetaire',
-        'Delais de traitement des factures non respectes',
-        'Lacunes dans la gestion des archives comptables',
-        'Formation insuffisante du personnel sur les outils financiers',
-    ],
-    'PRS-SDARH': [
-        'Plan de formation annuel non etabli dans les delais',
-        'Evaluation du personnel non realisee de facon systematique',
-        'Absence de criteres objectifs pour les promotions internes',
-        'Gestion des conges non informatisee',
-    ],
-    'PRS-DSSC': [
-        'Procedure de surveillance non mise a jour',
-        'Rapports de supervision remis hors delai',
-        'Defaillances dans le suivi des ecarts de securite',
-        'Manque de coordination avec les compagnies aeriennes',
-    ],
-    'PRS-DSF': [
-        'Inspection des infrastructures aeroportuaires insuffisante',
-        'Procedure de certification non conforme aux normes OACI',
-        'Manque de personnel qualifie pour les inspections techniques',
-        'Documentation technique obsolete',
-    ],
-    'PRS-DSV': [
-        'Absence de procedure de validation des navigateurs',
-        'Retards dans le traitement des demandes de licence',
-        'Systeme de suivi des licences non informatise',
-        'Formation theorique insuffisante pour les examinateurs',
-    ],
-}
+# Processus a seeder (noms de processus)
+PROCESSUS_NOMS = ['PRS-DAAF', 'PRS-SDARH', 'PRS-DSSC', 'PRS-DSF', 'PRS-DSV']
 
-# Traitements associés aux dysfonctionnements (par type)
+# Traitements generiques pour les details PAC
 TRAITEMENTS = [
-    {
-        'action': 'Elaborer et valider une procedure documentee conforme aux exigences reglementaires',
-        'type': 'Corrective',
-        'delai_mois': 3,
-    },
-    {
-        'action': 'Mettre en place un tableau de bord de suivi avec des indicateurs de performance cles',
-        'type': 'Preventive',
-        'delai_mois': 2,
-    },
-    {
-        'action': 'Organiser une session de formation et de sensibilisation pour le personnel concerne',
-        'type': 'Amelioration',
-        'delai_mois': 1,
-    },
-    {
-        'action': 'Realiser un audit interne de conformite et corriger les ecarts identifies',
-        'type': 'Corrective',
-        'delai_mois': 4,
-    },
+    {'action': 'Elaborer et valider une procedure documentee conforme aux exigences reglementaires', 'type': 'Corrective',   'delai_mois': 3},
+    {'action': 'Mettre en place un tableau de bord de suivi avec des indicateurs de performance',    'type': 'Preventive',   'delai_mois': 2},
+    {'action': 'Organiser une session de formation et de sensibilisation pour le personnel',         'type': 'Amelioration', 'delai_mois': 1},
+    {'action': 'Realiser un audit interne de conformite et corriger les ecarts identifies',          'type': 'Corrective',   'delai_mois': 4},
 ]
 
 
 class Command(BaseCommand):
-    help = 'Seed les donnees PAC (Plans d Action Corrective) avec referentiels, details et suivis'
+    help = 'Seed les donnees PAC (referentiels, details et suivis)'
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS(f'\n{"=" * 60}'))
@@ -128,10 +81,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR('Aucun superutilisateur trouve. Creez-en un d abord.'))
             return
 
-        # 1. Referentiels
         self._seed_referentiels(user)
-
-        # 2. PAC
         self._seed_pacs(user)
 
         self.stdout.write(self.style.SUCCESS(f'\n{"=" * 60}'))
@@ -147,47 +97,37 @@ class Command(BaseCommand):
 
         for data in NATURES:
             obj, created = Nature.objects.get_or_create(nom=data['nom'], defaults={'description': data['description']})
-            prefix = '+' if created else 'o'
-            self.stdout.write(f'  {prefix} Nature: {obj.nom}')
+            self.stdout.write(f'  {"+" if created else "o"} Nature: {obj.nom}')
 
         for data in CATEGORIES:
             obj, created = Categorie.objects.get_or_create(nom=data['nom'], defaults={'description': data['description']})
-            prefix = '+' if created else 'o'
-            self.stdout.write(f'  {prefix} Categorie: {obj.nom}')
+            self.stdout.write(f'  {"+" if created else "o"} Categorie: {obj.nom}')
 
         for data in SOURCES:
             obj, created = Source.objects.get_or_create(nom=data['nom'], defaults={'description': data['description']})
-            prefix = '+' if created else 'o'
-            self.stdout.write(f'  {prefix} Source: {obj.nom}')
+            self.stdout.write(f'  {"+" if created else "o"} Source: {obj.nom}')
+
+        for data in DYSFONCTIONNEMENTS_TYPES:
+            obj, created = DysfonctionnementRecommandation.objects.get_or_create(
+                nom=data['nom'],
+                defaults={'cree_par': user, 'description': data['description']}
+            )
+            self.stdout.write(f'  {"+" if created else "o"} DysfonctionnementRecommandation: {obj.nom}')
 
         for data in ACTION_TYPES:
             obj, created = ActionType.objects.get_or_create(nom=data['nom'], defaults={'description': data['description']})
-            prefix = '+' if created else 'o'
-            self.stdout.write(f'  {prefix} ActionType: {obj.nom}')
+            self.stdout.write(f'  {"+" if created else "o"} ActionType: {obj.nom}')
 
         for data in STATUTS:
             obj, created = Statut.objects.get_or_create(nom=data['nom'], defaults={'description': data['description']})
-            prefix = '+' if created else 'o'
-            self.stdout.write(f'  {prefix} Statut: {obj.nom}')
-
-        # Dysfonctionnements/Recommandations
-        all_dysfs = [d for dysfuncs in DYSFUNCTIONS_PAR_PROCESSUS.values() for d in dysfuncs]
-        for nom in all_dysfs:
-            obj, created = DysfonctionnementRecommandation.objects.get_or_create(
-                nom=nom,
-                defaults={'cree_par': user}
-            )
-            if created:
-                self.stdout.write(f'  + DysfonctionnementRecommandation: {obj.nom[:60]}')
+            self.stdout.write(f'  {"+" if created else "o"} Statut: {obj.nom}')
 
     # -----------------------------------------------------------------------
     # PAC
     # -----------------------------------------------------------------------
 
     def _seed_pacs(self, user):
-        processus_list = list(Processus.objects.filter(nom__in=DYSFUNCTIONS_PAR_PROCESSUS.keys()))
-        version_initial = Versions.objects.get(code='INITIAL')
-        version_amend1 = Versions.objects.get(code='AMENDEMENT_1')
+        processus_list = list(Processus.objects.filter(nom__in=PROCESSUS_NOMS))
         annees = list(Annee.objects.filter(annee__in=[2024, 2025]).order_by('annee'))
 
         if not processus_list:
@@ -199,14 +139,13 @@ class Command(BaseCommand):
 
         for processus in processus_list:
             self.stdout.write(self.style.SUCCESS(f'\n[PROCESSUS] {processus.numero_processus} - {processus.nom}'))
-            dysfuncs = DYSFUNCTIONS_PAR_PROCESSUS.get(processus.nom, [])
 
             for annee in annees:
                 # PAC Initial
                 pac_initial, created = Pac.objects.get_or_create(
                     processus=processus,
                     annee=annee,
-                    type_tableau=version_initial,
+                    num_amendement=0,
                     defaults={
                         'cree_par': user,
                         'is_validated': True,
@@ -214,17 +153,15 @@ class Command(BaseCommand):
                         'validated_at': timezone.now(),
                     }
                 )
-                prefix = '+' if created else 'o'
-                self.stdout.write(f'  {prefix} PAC Initial {annee.annee}')
-
+                self.stdout.write(f'  {"+" if created else "o"} PAC Initial {annee.annee}')
                 if created:
-                    self._seed_details_pac(pac_initial, dysfuncs, user, annee.annee)
+                    self._seed_details_pac(pac_initial, user, annee.annee)
 
                 # PAC Amendement 1
                 pac_amend, created_a = Pac.objects.get_or_create(
                     processus=processus,
                     annee=annee,
-                    type_tableau=version_amend1,
+                    num_amendement=1,
                     defaults={
                         'cree_par': user,
                         'is_validated': True,
@@ -234,66 +171,63 @@ class Command(BaseCommand):
                         'raison_amendement': f'Revision suite aux nouvelles constatations du suivi {annee.annee}',
                     }
                 )
-                prefix = '+' if created_a else 'o'
-                self.stdout.write(f'  {prefix} PAC Amendement 1 {annee.annee}')
+                self.stdout.write(f'  {"+" if created_a else "o"} PAC Amendement 1 {annee.annee}')
+                if created_a:
+                    self._seed_details_pac(pac_amend, user, annee.annee)
 
-                if created_a and len(dysfuncs) > 2:
-                    self._seed_details_pac(pac_amend, dysfuncs[2:], user, annee.annee)
-
-    def _seed_details_pac(self, pac, dysfuncs, user, annee):
-        """Crée les DetailsPac, TraitementPac et PacSuivi pour un PAC."""
-        natures = list(Nature.objects.all())
-        categories = list(Categorie.objects.all())
-        sources = list(Source.objects.all())
-        action_types = {at.nom: at for at in ActionType.objects.all()}
-        etats = {e.nom: e for e in EtatMiseEnOeuvre.objects.all()}
+    def _seed_details_pac(self, pac, user, annee):
+        """Cree les DetailsPac, TraitementPac et PacSuivi pour un PAC (4 details)."""
+        natures       = list(Nature.objects.all())
+        categories    = list(Categorie.objects.all())
+        sources       = list(Source.objects.filter(is_active=True))
+        action_types  = {at.nom: at for at in ActionType.objects.all()}
+        etats         = {e.nom: e for e in EtatMiseEnOeuvre.objects.all()}
         appreciations = list(Appreciation.objects.all())
-        statuts = {s.nom: s for s in Statut.objects.all()}
-        directions = list(Direction.objects.all())
+        statuts       = {s.nom: s for s in Statut.objects.all()}
+        directions    = list(Direction.objects.all())
         sous_directions = list(SousDirection.objects.all())
+        preuve_obj    = self._get_or_create_preuve()
 
-        preuve_obj = self._get_or_create_preuve()
+        dysf_types = list(
+            DysfonctionnementRecommandation.objects.filter(
+                nom__in=['Dysfonctionnement', 'Recommandation'],
+                is_active=True
+            )
+        )
+        if not dysf_types:
+            self.stdout.write(self.style.WARNING('  ! Aucun type Dysfonctionnement/Recommandation actif — details ignores'))
+            return
 
-        count_details = 0
-        count_traitements = 0
-        count_suivis = 0
+        count_details = count_traitements = count_suivis = 0
 
-        for i, dysf_nom in enumerate(dysfuncs[:4]):  # max 4 details par PAC
-            try:
-                dysf = DysfonctionnementRecommandation.objects.get(nom=dysf_nom)
-            except DysfonctionnementRecommandation.DoesNotExist:
-                continue
-
-            nature = natures[i % len(natures)] if natures else None
-            categorie = categories[i % len(categories)] if categories else None
-            source = sources[i % len(sources)] if sources else None
-
-            # Période de réalisation : dans l'année (trimestre i+1)
-            mois = (i + 1) * 3  # 3, 6, 9, 12
-            periode = datetime.date(annee, mois, 30 if mois in [6, 9] else 31 if mois == 12 else 31)
+        for i in range(4):
+            dysf     = dysf_types[i % len(dysf_types)]
+            nature   = natures[i % len(natures)]     if natures     else None
+            categorie= categories[i % len(categories)] if categories else None
+            source   = sources[i % len(sources)]     if sources     else None
+            mois     = (i + 1) * 3  # 3, 6, 9, 12
+            periode  = datetime.date(annee, mois, 28)
 
             detail, created = DetailsPac.objects.get_or_create(
                 pac=pac,
-                dysfonctionnement_recommandation=dysf,
+                numero_pac=f'{pac.processus.numero_processus}-{annee}-{i + 1:02d}',
                 defaults={
-                    'numero_pac': f'{pac.processus.numero_processus}-{annee}-{i + 1:02d}',
-                    'libelle': dysf_nom,
-                    'nature': nature,
+                    'libelle': f'{dysf.nom} #{i + 1} — {pac.processus.numero_processus}',
+                    'dysfonctionnement_recommandation': dysf,
+                    'nature':    nature,
                     'categorie': categorie,
-                    'source': source,
+                    'source':    source,
                     'periode_de_realisation': periode,
                 }
             )
             if created:
                 count_details += 1
 
-            # Traitement
             traitement_data = TRAITEMENTS[i % len(TRAITEMENTS)]
             action_type = action_types.get(traitement_data['type'])
             delai = datetime.date(annee, min(mois + traitement_data['delai_mois'], 12), 28)
-
             direction = directions[i % len(directions)] if directions else None
-            sous_dir = next(
+            sous_dir  = next(
                 (s for s in sous_directions if direction and s.direction == direction),
                 sous_directions[i % len(sous_directions)] if sous_directions else None
             )
@@ -301,82 +235,70 @@ class Command(BaseCommand):
             traitement, t_created = TraitementPac.objects.get_or_create(
                 details_pac=detail,
                 defaults={
-                    'action': traitement_data['action'],
-                    'type_action': action_type,
-                    'responsable_direction': direction,
-                    'responsable_sous_direction': sous_dir,
-                    'preuve': preuve_obj,
-                    'delai_realisation': delai,
+                    'action':                    traitement_data['action'],
+                    'type_action':               action_type,
+                    'responsable_direction':     direction,
+                    'responsable_sous_direction':sous_dir,
+                    'preuve':                    preuve_obj,
+                    'delai_realisation':         delai,
                 }
             )
             if t_created:
-                if direction:
-                    traitement.responsables_directions.set([direction])
-                if sous_dir:
-                    traitement.responsables_sous_directions.set([sous_dir])
+                if direction:  traitement.responsables_directions.set([direction])
+                if sous_dir:   traitement.responsables_sous_directions.set([sous_dir])
                 count_traitements += 1
 
-            # Suivi — uniquement pour les PAC validés
-            if pac.is_validated and not hasattr(traitement, 'suivi') or not PacSuivi.objects.filter(traitement=traitement).exists():
-                # Alterner les états : Realisee, En cours, Partiellement realisee, Realisee
-                etats_cycle = ['Realisee', 'En cours', 'Partiellement realisee', 'Realisee']
-                appre_cycle = ['Satisfaisant', 'A ameliorer', 'Insuffisant', 'Tres satisfaisant']
-
-                etat_nom = etats_cycle[i % len(etats_cycle)]
-                appre_nom = appre_cycle[i % len(appre_cycle)]
-
-                etat = etats.get(etat_nom)
+            # Suivi — uniquement pour les PAC valides
+            if pac.is_validated and not PacSuivi.objects.filter(traitement=traitement).exists():
+                etats_cycle  = ['Realisee', 'En cours', 'Partiellement realisee', 'Realisee']
+                appre_cycle  = ['Satisfaisant', 'A ameliorer', 'Insuffisant', 'Tres satisfaisant']
+                etat_nom     = etats_cycle[i % len(etats_cycle)]
+                appre_nom    = appre_cycle[i % len(appre_cycle)]
+                etat  = etats.get(etat_nom)
                 appre = next((a for a in appreciations if a.nom == appre_nom), appreciations[0] if appreciations else None)
-                statut_cloture = statuts.get('Cloturee') if etat_nom == 'Realisee' else statuts.get('Ouverte')
-
-                date_effective = datetime.date(annee, min(mois + 1, 12), 15) if etat_nom == 'Realisee' else None
-                date_cloture = datetime.date(annee, min(mois + 1, 12), 28) if etat_nom == 'Realisee' else None
+                statut_obj   = statuts.get('Cloturee' if etat_nom == 'Realisee' else 'Ouverte')
+                date_eff     = datetime.date(annee, min(mois + 1, 12), 15) if etat_nom == 'Realisee' else None
+                date_clo     = datetime.date(annee, min(mois + 1, 12), 28) if etat_nom == 'Realisee' else None
 
                 if etat and appre:
-                    suivi, s_created = PacSuivi.objects.get_or_create(
+                    _, s_created = PacSuivi.objects.get_or_create(
                         traitement=traitement,
                         defaults={
                             'etat_mise_en_oeuvre': etat,
                             'resultat': (
-                                'Action realisee avec succes. Les objectifs sont atteints.'
+                                'Action realisee avec succes.'
                                 if etat_nom == 'Realisee'
-                                else 'Action en cours de realisation. Des progres sont constates.'
+                                else 'Action en cours de realisation.'
                                 if etat_nom == 'En cours'
-                                else 'Action partiellement realisee. Des points restent a traiter.'
+                                else 'Action partiellement realisee.'
                             ),
-                            'appreciation': appre,
-                            'preuve': preuve_obj,
-                            'statut': statut_cloture,
-                            'date_mise_en_oeuvre_effective': date_effective,
-                            'date_cloture': date_cloture,
-                            'cree_par': user,
+                            'appreciation':                appre,
+                            'preuve':                      preuve_obj,
+                            'statut':                      statut_obj,
+                            'date_mise_en_oeuvre_effective': date_eff,
+                            'date_cloture':                date_clo,
+                            'cree_par':                    user,
                         }
                     )
                     if s_created:
                         count_suivis += 1
 
-        self.stdout.write(
-            f'    -> {count_details} details, {count_traitements} traitements, {count_suivis} suivis'
-        )
+        self.stdout.write(f'    -> {count_details} details, {count_traitements} traitements, {count_suivis} suivis')
 
     # -----------------------------------------------------------------------
     # Preuve PDF helper
     # -----------------------------------------------------------------------
 
     def _get_or_create_preuve(self):
-        """Retourne une Preuve existante ou en crée une nouvelle avec le PDF."""
         existing = Preuve.objects.filter(medias__fichier__icontains='preuve').first()
         if existing:
             return existing
-
         if not os.path.exists(PREUVE_PDF_PATH):
             self.stdout.write(self.style.WARNING(f'  ! Fichier preuve.pdf introuvable: {PREUVE_PDF_PATH}'))
             return None
-
         with open(PREUVE_PDF_PATH, 'rb') as f:
             media = Media()
             media.fichier.save('preuve.pdf', File(f), save=True)
-
-        preuve = Preuve.objects.create(description='Preuve PDF seed PAC')
+        preuve = Preuve.objects.create(titre='Preuve PDF seed PAC')
         preuve.medias.add(media)
         return preuve

@@ -48,13 +48,9 @@ class Pac(models.Model):
         blank=True,
         help_text='Année associée au PAC'
     )
-    type_tableau = models.ForeignKey(
-        'parametre.Versions',
-        on_delete=models.SET_NULL,
-        related_name='pacs',
-        null=True,
-        blank=True,
-        help_text='Version associée au PAC (Initial, Amendement, etc.)'
+    num_amendement = models.PositiveIntegerField(
+        default=0,
+        help_text="0 = PAC Initial, 1 = Amendement 1, N = Amendement N"
     )
     initial_ref = models.ForeignKey(
         'self',
@@ -76,13 +72,23 @@ class Pac(models.Model):
         verbose_name_plural = 'PACs'
         constraints = [
             models.UniqueConstraint(
-                fields=['processus', 'annee', 'type_tableau'],
-                name='unique_pac_per_processus_annee_type_tableau'
+                fields=['processus', 'annee', 'num_amendement'],
+                name='unique_pac_per_processus_annee_num_amendement'
             )
         ]
 
+    @property
+    def is_initial(self):
+        return self.num_amendement == 0
+
+    @property
+    def nom_version(self):
+        if self.num_amendement == 0:
+            return "PAC Initial"
+        return f"Amendement {self.num_amendement}"
+
     def __str__(self):
-        return f"PAC {self.uuid}"
+        return f"PAC {self.uuid} - {self.nom_version}"
 
 
 class DetailsPac(models.Model):

@@ -5,7 +5,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from .models import CDR, DetailsCDR, EvaluationRisque, PlanAction, SuiviAction, PlanActionResponsable
-from parametre.models import Processus, Versions, Media, Direction, SousDirection, Service, VersionEvaluationCDR
+from parametre.models import Processus, Media, Direction, SousDirection, Service, VersionEvaluationCDR
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -46,9 +46,7 @@ class CDRSerializer(serializers.ModelSerializer):
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
     processus_numero = serializers.CharField(source='processus.numero_processus', read_only=True)
     processus_uuid = serializers.UUIDField(source='processus.uuid', read_only=True)
-    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
-    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
-    type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
+    nom_version = serializers.SerializerMethodField()
     cree_par_nom = serializers.SerializerMethodField()
     valide_par_nom = serializers.SerializerMethodField()
 
@@ -56,11 +54,14 @@ class CDRSerializer(serializers.ModelSerializer):
         model = CDR
         fields = [
             'uuid', 'annee', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
-            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
+            'num_amendement', 'nom_version',
             'is_validated', 'date_validation', 'valide_par', 'valide_par_nom',
             'cree_par', 'cree_par_nom', 'initial_ref', 'raison_amendement', 'created_at', 'updated_at'
         ]
         read_only_fields = ['uuid', 'is_validated', 'date_validation', 'valide_par', 'created_at', 'updated_at']
+
+    def get_nom_version(self, obj):
+        return obj.nom_version
 
     def get_cree_par_nom(self, obj):
         """Retourner le nom du créateur"""
@@ -79,40 +80,35 @@ class CDRCreateSerializer(serializers.ModelSerializer):
     """Serializer pour la création de CDR"""
     class Meta:
         model = CDR
-        fields = ['annee', 'processus', 'type_tableau', 'initial_ref', 'raison_amendement']
+        fields = ['annee', 'processus', 'num_amendement', 'initial_ref', 'raison_amendement']
         extra_kwargs = {
-            'type_tableau': {'required': False, 'allow_null': True},
+            'num_amendement': {'required': False},
             'initial_ref': {'required': False, 'allow_null': True},
             'raison_amendement': {'required': False, 'allow_blank': True, 'allow_null': True},
         }
 
     def validate(self, data):
-        """Valider la cohérence entre type_tableau et initial_ref"""
-        type_tableau = data.get('type_tableau')
+        """Valider la cohérence entre num_amendement et initial_ref"""
+        num_amendement = data.get('num_amendement', 0)
         initial_ref = data.get('initial_ref')
 
-        if type_tableau:
-            # Vérifier si c'est un amendement
-            if type_tableau.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
-                # Les amendements doivent avoir un initial_ref
-                if not initial_ref:
-                    raise serializers.ValidationError(
-                        f"Un amendement ({type_tableau.code}) doit être lié à un CDR initial. "
-                        "Le champ 'initial_ref' est requis."
-                    )
-
-                # Vérifier que le CDR initial est validé
-                if initial_ref and not initial_ref.is_validated:
-                    raise serializers.ValidationError(
-                        "Le CDR initial doit être validé avant de pouvoir créer un amendement. "
-                        "Veuillez d'abord valider tous les détails du CDR initial."
-                    )
-            elif type_tableau.code == 'INITIAL':
-                # Les CDR INITIAL ne doivent pas avoir d'initial_ref
-                if initial_ref:
-                    raise serializers.ValidationError(
-                        "Un CDR INITIAL ne peut pas avoir de référence initiale (initial_ref)."
-                    )
+        if num_amendement == 0:
+            # CDR initial ne doit pas avoir d'initial_ref
+            if initial_ref:
+                raise serializers.ValidationError(
+                    "Un CDR initial (num_amendement=0) ne peut pas avoir de référence initiale (initial_ref)."
+                )
+        else:
+            # Amendement doit avoir un initial_ref validé
+            if not initial_ref:
+                raise serializers.ValidationError(
+                    f"L'amendement {num_amendement} doit être lié à un CDR initial. "
+                    "Le champ 'initial_ref' est requis."
+                )
+            if not initial_ref.is_validated:
+                raise serializers.ValidationError(
+                    "Le CDR initial doit être validé avant de pouvoir créer un amendement."
+                )
 
         return data
 
@@ -191,10 +187,7 @@ class DetailsCDRCreateSerializer(serializers.ModelSerializer):
         cdr = validated_data.get('cdr')
 
         # Vérifier si le CDR est un amendement
-        is_amendment = False
-        if cdr and cdr.type_tableau:
-            type_code = cdr.type_tableau.code
-            is_amendment = type_code in ['AMENDEMENT_1', 'AMENDEMENT_2']
+        is_amendment = cdr and cdr.num_amendement > 0
 
         # CAS 1: Copie d'amendement avec numéro fourni - TOUJOURS utiliser le numéro fourni
         # Pour les amendements, on peut toujours réutiliser le même numéro que l'initial

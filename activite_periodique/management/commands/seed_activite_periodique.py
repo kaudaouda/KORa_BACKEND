@@ -4,7 +4,7 @@ from django.utils import timezone
 import datetime
 
 from parametre.models import (
-    Processus, Versions, Annee, Mois, Frequence,
+    Processus, Annee, Mois, Frequence,
     Direction, SousDirection, EtatMiseEnOeuvre,
 )
 from activite_periodique.models import ActivitePeriodique, DetailsAP, SuivisAP
@@ -244,8 +244,6 @@ class Command(BaseCommand):
     # -----------------------------------------------------------------------
 
     def _seed_activites(self, user):
-        version_initial = Versions.objects.get(code='INITIAL')
-        version_amend1 = Versions.objects.get(code='AMENDEMENT_1')
         annees = list(Annee.objects.filter(annee__in=[2024, 2025]).order_by('annee'))
         processus_list = list(Processus.objects.filter(nom__in=ACTIVITES_PAR_PROCESSUS.keys()))
         directions = list(Direction.objects.all())
@@ -273,7 +271,7 @@ class Command(BaseCommand):
                 ap_initial, created = ActivitePeriodique.objects.get_or_create(
                     processus=processus,
                     annee=annee,
-                    type_tableau=version_initial,
+                    num_amendement=0,
                     cree_par=user,
                     defaults={
                         'is_validated': True,
@@ -288,7 +286,7 @@ class Command(BaseCommand):
                 ap_amend, created_a = ActivitePeriodique.objects.get_or_create(
                     processus=processus,
                     annee=annee,
-                    type_tableau=version_amend1,
+                    num_amendement=1,
                     cree_par=user,
                     defaults={
                         'is_validated': True,

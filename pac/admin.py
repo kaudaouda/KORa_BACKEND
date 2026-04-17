@@ -11,18 +11,18 @@ from parametre.models import Processus
 
 @admin.register(Pac)
 class PacAdmin(admin.ModelAdmin):
-    list_display = ('uuid', 'processus', 'annee', 'type_tableau', 'is_validated', 'cree_par', 'validated_by', 'validated_at')
-    list_filter = ('annee', 'type_tableau', 'processus', 'is_validated', 'cree_par', 'validated_by')
+    list_display = ('uuid', 'processus', 'annee', 'num_amendement', 'is_validated', 'cree_par', 'validated_by', 'validated_at')
+    list_filter = ('annee', 'num_amendement', 'processus', 'is_validated', 'cree_par', 'validated_by')
     search_fields = ('uuid', 'processus__nom', 'cree_par__username', 'cree_par__email', 'validated_by__username')
     readonly_fields = ('uuid',)
-    raw_id_fields = ('processus', 'annee', 'type_tableau', 'cree_par', 'validated_by')
-    
+    raw_id_fields = ('processus', 'annee', 'cree_par', 'validated_by')
+
     fieldsets = (
         ('Informations générales', {
             'fields': ('uuid', 'processus')
         }),
         ('Classification', {
-            'fields': ('annee', 'type_tableau')
+            'fields': ('annee', 'num_amendement')
         }),
         ('Validation', {
             'fields': ('is_validated', 'validated_at', 'validated_by')

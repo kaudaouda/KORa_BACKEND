@@ -42,7 +42,7 @@ class ObjectivesAdmin(admin.ModelAdmin):
             obj.cree_par = request.user
         
         # Vérifier si le tableau initial a des amendements
-        if obj.tableau_bord and obj.tableau_bord.type_tableau and obj.tableau_bord.type_tableau.code == 'INITIAL':
+        if obj.tableau_bord and obj.tableau_bord.num_amendement == 0:
             if obj.tableau_bord.has_amendements():
                 from django.contrib import messages
                 messages.error(request, 'Impossible de modifier cet objectif : le tableau initial a des amendements associés.')
@@ -140,14 +140,14 @@ class ObservationAdmin(admin.ModelAdmin):
 @admin.register(TableauBord)
 class TableauBordAdmin(admin.ModelAdmin):
     """Administration pour Tableau de bord"""
-    list_display = ['annee', 'processus', 'type_tableau', 'is_validated', 'valide_par', 'date_validation', 'cree_par', 'created_at']
-    list_filter = ['annee', 'type_tableau', 'processus', 'is_validated', 'created_at']
+    list_display = ['annee', 'processus', 'num_amendement', 'is_validated', 'valide_par', 'date_validation', 'cree_par', 'created_at']
+    list_filter = ['annee', 'num_amendement', 'processus', 'is_validated', 'created_at']
     search_fields = ['processus__nom', 'processus__numero_processus']
     readonly_fields = ['uuid', 'created_at', 'updated_at', 'date_validation', 'valide_par']
-    ordering = ['-annee', 'processus__numero_processus', 'type_tableau']
+    ordering = ['-annee', 'processus__numero_processus', 'num_amendement']
     fieldsets = (
         ('Informations', {
-            'fields': ('uuid', 'annee', 'processus', 'type_tableau', 'initial_ref')
+            'fields': ('uuid', 'annee', 'processus', 'num_amendement', 'initial_ref')
         }),
         ('Validation', {
             'fields': ('is_validated', 'date_validation', 'valide_par'),
@@ -164,7 +164,7 @@ class TableauBordAdmin(admin.ModelAdmin):
             obj.cree_par = request.user
         
         # Vérifier si c'est un tableau initial avec des amendements
-        if change and obj.type_tableau and obj.type_tableau.code == 'INITIAL':
+        if change and obj.num_amendement == 0:
             if obj.has_amendements():
                 from django.contrib import messages
                 messages.error(request, 'Impossible de modifier ce tableau initial : il a des amendements associés.')

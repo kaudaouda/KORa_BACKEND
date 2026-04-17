@@ -443,7 +443,7 @@ class Command(BaseCommand):
                         preuve = None
                         if preuve_media:
                             preuve = Preuve.objects.create(
-                                description=f"Preuve action: {action_data['action'][:60]}"
+                                titre=f"Preuve action: {action_data['action'][:60]}"
                             )
                             preuve.medias.add(preuve_media)
 

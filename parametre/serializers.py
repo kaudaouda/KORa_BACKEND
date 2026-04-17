@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus,
-    Service, EtatMiseEnOeuvre, Frequence, Versions, Annee, Risque, StatutActionCDR,
+    Service, EtatMiseEnOeuvre, Frequence, Annee, Risque, StatutActionCDR,
     Role, UserProcessus, UserProcessusRole
 )
 
@@ -243,12 +243,6 @@ class FrequenceSerializer(serializers.ModelSerializer):
         fields = ['uuid', 'nom', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
-
-class VersionsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Versions
-        fields = ['uuid', 'code', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
-        read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
 class AnneeSerializer(serializers.ModelSerializer):

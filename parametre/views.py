@@ -299,7 +299,7 @@ def log_pac_creation(user, pac, ip_address=None, user_agent=None):
     # Ces informations sont dans les relations
     processus_nom = pac.processus.nom if pac.processus else "Processus inconnu"
     annee_libelle = f"{pac.annee.annee}" if pac.annee else "Année non définie"
-    type_tableau_nom = pac.type_tableau.nom if pac.type_tableau else "Type non défini"
+    nom_version = pac.nom_version if hasattr(pac, 'nom_version') else f"Amendement {pac.num_amendement}"
 
     return log_activity(
         user=user,
@@ -307,7 +307,7 @@ def log_pac_creation(user, pac, ip_address=None, user_agent=None):
         entity_type='pac',
         entity_id=str(pac.uuid),
         entity_name=f"PAC {pac.uuid}",
-        description=f"Création du PAC pour {processus_nom} - {annee_libelle} ({type_tableau_nom})",
+        description=f"Création du PAC pour {processus_nom} - {annee_libelle} ({nom_version})",
         ip_address=ip_address,
         user_agent=user_agent
     )
@@ -417,7 +417,7 @@ def log_activite_periodique_creation(user, ap, ip_address=None, user_agent=None)
     """
     processus_nom = ap.processus.nom if hasattr(ap, 'processus') and ap.processus else 'N/A'
     annee = ap.annee_valeur if hasattr(ap, 'annee_valeur') else (ap.annee.libelle if hasattr(ap, 'annee') and ap.annee else 'N/A')
-    type_tableau = ap.type_tableau.nom if hasattr(ap, 'type_tableau') and ap.type_tableau else 'N/A'
+    nom_version = ap.nom_version if hasattr(ap, 'nom_version') else f"Amendement {ap.num_amendement}"
 
     return log_activity(
         user=user,
@@ -425,7 +425,7 @@ def log_activite_periodique_creation(user, ap, ip_address=None, user_agent=None)
         entity_type='activite_periodique',
         entity_id=str(ap.uuid),
         entity_name=f"{processus_nom} - {annee}",
-        description=f"Création de l'Activité Périodique pour {processus_nom} - {annee} ({type_tableau})",
+        description=f"Création de l'Activité Périodique pour {processus_nom} - {annee} ({nom_version})",
         ip_address=ip_address,
         user_agent=user_agent
     )
@@ -479,7 +479,7 @@ def log_cdr_creation(user, cdr, ip_address=None, user_agent=None):
     """
     processus_nom = cdr.processus.nom if hasattr(cdr, 'processus') and cdr.processus else 'N/A'
     annee = cdr.annee if hasattr(cdr, 'annee') else 'N/A'
-    type_tableau = cdr.type_tableau.nom if hasattr(cdr, 'type_tableau') and cdr.type_tableau else 'N/A'
+    nom_version = cdr.nom_version if hasattr(cdr, 'nom_version') else f"Amendement {cdr.num_amendement}"
 
     return log_activity(
         user=user,
@@ -487,7 +487,7 @@ def log_cdr_creation(user, cdr, ip_address=None, user_agent=None):
         entity_type='cdr',
         entity_id=str(cdr.uuid),
         entity_name=f"{processus_nom} - {annee}",
-        description=f"Création de la Cartographie de Risque pour {processus_nom} - {annee} ({type_tableau})",
+        description=f"Création de la Cartographie de Risque pour {processus_nom} - {annee} ({nom_version})",
         ip_address=ip_address,
         user_agent=user_agent
     )
@@ -2448,105 +2448,8 @@ def annees_all_list(request):
 
 # ==================== TYPES DE TABLEAU ====================
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def types_tableau_list(request):
-    """
-    Liste des versions actives pour les formulaires
-    """
-    try:
-        from .models import Versions
-        from .serializers import VersionsSerializer
-        
-        versions = Versions.objects.filter(is_active=True).order_by('nom')
-        serializer = VersionsSerializer(versions, many=True)
-        
-        return Response({
-            'success': True,
-            'data': serializer.data
-        }, status=status.HTTP_200_OK)
-    except Exception as e:
-        logger.error(f"Erreur lors de la liste des versions: {str(e)}")
-        return Response({'error': 'Impossible de lister les versions'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def types_tableau_all_list(request):
-    """
-    Liste de toutes les versions (actives et inactives)
-    """
-    try:
-        from .models import Versions
-        from .serializers import VersionsSerializer
-
-        versions = Versions.objects.all().order_by('nom')
-        serializer = VersionsSerializer(versions, many=True)
-
-        return Response({
-            'success': True,
-            'data': serializer.data
-        }, status=status.HTTP_200_OK)
-    except Exception as e:
-        logger.error(f"Erreur lors de la liste des types de tableau: {str(e)}")
-        return Response({'error': 'Impossible de lister les types de tableau'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# Types de Tableau (Versions) CRUD
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def type_tableau_create(request):
-    """Créer une nouvelle version de tableau"""
-    try:
-        from .models import Versions
-        from .serializers import VersionsSerializer
-
-        serializer = VersionsSerializer(data=request.data)
-        if serializer.is_valid():
-            version = serializer.save()
-            return Response(VersionsSerializer(version).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        logger.error(f"Erreur lors de la création de la version: {str(e)}")
-        return Response({'error': 'Impossible de créer la version'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def type_tableau_update(request, uuid):
-    """Mettre à jour une version de tableau"""
-    try:
-        from .models import Versions
-        from .serializers import VersionsSerializer
-
-        version = Versions.objects.get(uuid=uuid)
-        serializer = VersionsSerializer(version, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    except Versions.DoesNotExist:
-        return Response({'error': 'Version non trouvée'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la version: {str(e)}")
-        return Response({'error': 'Impossible de mettre à jour la version'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def type_tableau_delete(request, uuid):
-    """Supprimer une version de tableau"""
-    try:
-        from .models import Versions
-
-        version = Versions.objects.get(uuid=uuid)
-        version.delete()
-        return Response({'message': 'Version supprimée avec succès'}, status=status.HTTP_200_OK)
-    except Versions.DoesNotExist:
-        return Response({'error': 'Version non trouvée'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la version: {str(e)}")
-        return Response({'error': 'Impossible de supprimer la version'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# Les endpoints types_tableau_* ont été supprimés avec le modèle Versions.
+# Les versions sont maintenant gérées via num_amendement (entier) sur chaque modèle.
 
 
 # ==================== CARTOGRAPHIE DES RISQUES ====================

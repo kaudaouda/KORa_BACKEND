@@ -5,7 +5,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from parametre.models import Processus, Versions, Media, FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Direction, VersionEvaluationCDR
+from parametre.models import Processus, Media, FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Direction, VersionEvaluationCDR
 import uuid
 
 
@@ -32,11 +32,9 @@ class CDR(BaseModel):
         related_name='cdrs',
         help_text="Processus associé à la cartographie"
     )
-    type_tableau = models.ForeignKey(
-        Versions,
-        on_delete=models.CASCADE,
-        related_name='cdrs',
-        help_text="Type de tableau (Initial, Amendement, etc.)"
+    num_amendement = models.PositiveIntegerField(
+        default=0,
+        help_text="0 = CDR Initial, 1 = Amendement 1, N = Amendement N"
     )
     is_validated = models.BooleanField(
         default=False,
@@ -80,10 +78,20 @@ class CDR(BaseModel):
         verbose_name = 'Cartographie des Risques'
         verbose_name_plural = 'Cartographies des Risques'
         ordering = ['-annee', 'processus']
-        unique_together = ['annee', 'processus', 'type_tableau']
+        unique_together = ['annee', 'processus', 'num_amendement']
+
+    @property
+    def is_initial(self):
+        return self.num_amendement == 0
+
+    @property
+    def nom_version(self):
+        if self.num_amendement == 0:
+            return "CDR Initial"
+        return f"Amendement {self.num_amendement}"
 
     def __str__(self):
-        return f"CDR {self.annee} - {self.processus.nom} - {self.type_tableau.nom}"
+        return f"CDR {self.annee} - {self.processus.nom} - {self.nom_version}"
 
 
 class DetailsCDR(BaseModel):

@@ -67,9 +67,7 @@ class PacSerializer(serializers.ModelSerializer):
     annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
     annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
     annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
-    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
-    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
-    type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
+    nom_version = serializers.SerializerMethodField()
     initial_ref_uuid = serializers.UUIDField(source='initial_ref.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     validateur_nom = serializers.SerializerMethodField()
@@ -80,13 +78,16 @@ class PacSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
-            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
+            'num_amendement', 'nom_version',
             'initial_ref', 'initial_ref_uuid',
             'raison_amendement',
             'is_validated', 'validated_at', 'validated_by', 'validateur_nom',
             'cree_par', 'createur_nom', 'created_at'
         ]
         read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by', 'created_at']
+
+    def get_nom_version(self, obj):
+        return obj.nom_version
 
     def get_numero_pac(self, obj):
         """Retourner le numéro du premier détail PAC associé, ou None"""
@@ -115,43 +116,36 @@ class PacCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pac
         fields = [
-            'processus', 'annee', 'type_tableau', 'initial_ref', 'raison_amendement'
+            'processus', 'annee', 'num_amendement', 'initial_ref', 'raison_amendement'
         ]
         extra_kwargs = {
             'annee': {'required': False, 'allow_null': True},
-            'type_tableau': {'required': False, 'allow_null': True},
+            'num_amendement': {'required': False},
             'initial_ref': {'required': False, 'allow_null': True},
             'raison_amendement': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
-    
+
     def validate(self, data):
-        """Valider la cohérence entre type_tableau et initial_ref"""
-        type_tableau = data.get('type_tableau')
+        """Valider la cohérence entre num_amendement et initial_ref"""
+        num_amendement = data.get('num_amendement', 0)
         initial_ref = data.get('initial_ref')
-        
-        if type_tableau:
-            # Vérifier si c'est un amendement
-            if type_tableau.code in ['AMENDEMENT_1', 'AMENDEMENT_2']:
-                # Les amendements doivent avoir un initial_ref
-                if not initial_ref:
-                    raise serializers.ValidationError(
-                        f"Un amendement ({type_tableau.code}) doit être lié à un PAC initial. "
-                        "Le champ 'initial_ref' est requis."
-                    )
-                
-                # Vérifier que le PAC initial est validé
-                if initial_ref and not initial_ref.is_validated:
-                    raise serializers.ValidationError(
-                        "Le PAC initial doit être validé avant de pouvoir créer un amendement. "
-                        "Veuillez d'abord valider tous les détails et traitements du PAC initial."
-                    )
-            elif type_tableau.code == 'INITIAL':
-                # Les PACs INITIAL ne doivent pas avoir d'initial_ref
-                if initial_ref:
-                    raise serializers.ValidationError(
-                        "Un PAC INITIAL ne peut pas avoir de référence initiale (initial_ref)."
-                    )
-        
+
+        if num_amendement == 0:
+            if initial_ref:
+                raise serializers.ValidationError(
+                    "Un PAC initial (num_amendement=0) ne peut pas avoir de référence initiale (initial_ref)."
+                )
+        else:
+            if not initial_ref:
+                raise serializers.ValidationError(
+                    f"L'amendement {num_amendement} doit être lié à un PAC initial. "
+                    "Le champ 'initial_ref' est requis."
+                )
+            if not initial_ref.is_validated:
+                raise serializers.ValidationError(
+                    "Le PAC initial doit être validé avant de pouvoir créer un amendement."
+                )
+
         return data
     
     def create(self, validated_data):
@@ -171,11 +165,11 @@ class PacUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pac
         fields = [
-            'processus', 'annee', 'type_tableau', 'raison_amendement'
+            'processus', 'annee', 'num_amendement', 'raison_amendement'
         ]
         extra_kwargs = {
             'annee': {'required': False, 'allow_null': True},
-            'type_tableau': {'required': False, 'allow_null': True},
+            'num_amendement': {'required': False},
             'raison_amendement': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
     
@@ -602,9 +596,7 @@ class PacCompletSerializer(serializers.ModelSerializer):
     annee_valeur = serializers.IntegerField(source='annee.annee', read_only=True, allow_null=True)
     annee_libelle = serializers.CharField(source='annee.libelle', read_only=True, allow_null=True)
     annee_uuid = serializers.UUIDField(source='annee.uuid', read_only=True, allow_null=True)
-    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True, allow_null=True)
-    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True, allow_null=True)
-    type_tableau_uuid = serializers.UUIDField(source='type_tableau.uuid', read_only=True, allow_null=True)
+    nom_version = serializers.SerializerMethodField()
     initial_ref_uuid = serializers.UUIDField(source='initial_ref.uuid', read_only=True, allow_null=True)
     createur_nom = serializers.SerializerMethodField()
     numero_pac = serializers.SerializerMethodField()
@@ -617,13 +609,16 @@ class PacCompletSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'numero_pac', 'processus', 'processus_nom', 'processus_numero', 'processus_uuid',
             'annee', 'annee_valeur', 'annee_libelle', 'annee_uuid',
-            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 'type_tableau_uuid',
+            'num_amendement', 'nom_version',
             'initial_ref', 'initial_ref_uuid',
             'raison_amendement',
             'cree_par', 'createur_nom', 'is_validated', 'validated_at', 'validated_by',
             'created_at', 'details'
         ]
         read_only_fields = ['uuid', 'numero_pac', 'is_validated', 'validated_at', 'validated_by', 'created_at']
+
+    def get_nom_version(self, obj):
+        return obj.nom_version
 
     def get_numero_pac(self, obj):
         """Retourner le numéro du premier détail PAC associé, ou None"""
@@ -1029,12 +1024,9 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
         pac = validated_data.get('pac')
         
         # Vérifier si le PAC est un amendement
-        is_amendment = False
-        if pac and pac.type_tableau:
-            type_code = pac.type_tableau.code
-            is_amendment = type_code in ['AMENDEMENT_1', 'AMENDEMENT_2']
-        
-        logger.info(f"[DetailsPacCreateSerializer] Création détail - from_amendment_copy: {from_amendment_copy}, is_amendment: {is_amendment}, numero_pac_provided: {numero_pac_provided}, pac_type: {pac.type_tableau.code if pac and pac.type_tableau else None}")
+        is_amendment = pac and pac.num_amendement > 0
+
+        logger.info(f"[DetailsPacCreateSerializer] Création détail - from_amendment_copy: {from_amendment_copy}, is_amendment: {is_amendment}, numero_pac_provided: {numero_pac_provided}, pac_num_amendement: {pac.num_amendement if pac else None}")
         
         # CAS 1: Copie d'amendement avec numéro fourni - TOUJOURS utiliser le numéro fourni
         # Pour les amendements, on peut toujours réutiliser le même numéro que l'initial
