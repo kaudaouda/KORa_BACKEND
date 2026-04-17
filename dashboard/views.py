@@ -79,8 +79,8 @@ def tableaux_bord_list_create(request):
             # Il peut voir tous les tableaux de bord sans filtre
             if user_processus_uuids is None:
                 # Super admin : voir tous les tableaux de bord
-                qs = TableauBord.objects.all().select_related('processus', 'initial_ref', 'type_tableau').order_by(
-                    '-annee', 'processus__numero_processus', 'type_tableau__code'
+                qs = TableauBord.objects.all().select_related('processus', 'initial_ref').order_by(
+                    '-annee', 'processus__numero_processus', 'num_amendement'
                 )
             elif not user_processus_uuids:
                 # Si l'utilisateur n'a aucun processus, retourner une liste vide
@@ -94,8 +94,8 @@ def tableaux_bord_list_create(request):
                 # Filtrer les tableaux de bord pour ne montrer que ceux des processus de l'utilisateur
                 qs = TableauBord.objects.filter(
                     processus__uuid__in=user_processus_uuids
-                ).select_related('processus', 'initial_ref', 'type_tableau').order_by(
-                    '-annee', 'processus__numero_processus', 'type_tableau__code'
+                ).select_related('processus', 'initial_ref').order_by(
+                    '-annee', 'processus__numero_processus', 'num_amendement'
                 )
             # ========== FIN FILTRAGE ==========
             
@@ -109,115 +109,61 @@ def tableaux_bord_list_create(request):
             data = request.data.copy()
             # Option facultative: clone=true|false contrôle la copie depuis l'initial
             clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
-            
+
             # ========== VALIDATION STRICTE ==========
-            from parametre.models import Versions
-            
             annee = data.get('annee')
             processus_uuid = data.get('processus')
-            type_tableau_value = data.get('type_tableau')
-            
-            # Gérer le type de tableau (peut être un UUID ou un code)
             try:
-                if type_tableau_value in ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']:
-                    # C'est un code, récupérer l'objet par code
-                    type_tableau_obj = Versions.objects.get(code=type_tableau_value)
-                else:
-                    # C'est probablement un UUID, récupérer par UUID
-                    type_tableau_obj = Versions.objects.get(uuid=type_tableau_value)
-                
-                # Mettre à jour les données avec l'UUID du type
-                data['type_tableau'] = type_tableau_obj.uuid
-                
-            except Versions.DoesNotExist:
-                return Response({
-                    'success': False,
-                    'error': f'Type de tableau introuvable: {type_tableau_value}'
-                }, status=status.HTTP_404_NOT_FOUND)
-            
-            type_code = type_tableau_obj.code
-            
-            # VALIDATION 1 : Si INITIAL, vérifier qu'il n'existe pas déjà
-            if type_code == 'INITIAL':
+                num_amendement = int(data.get('num_amendement', 0))
+            except (ValueError, TypeError):
+                num_amendement = 0
+
+            # VALIDATION 1 : Si initial (num_amendement == 0), vérifier qu'il n'existe pas déjà
+            if num_amendement == 0:
                 existing = TableauBord.objects.filter(
                     annee=annee,
                     processus=processus_uuid,
-                    type_tableau__code='INITIAL'
+                    num_amendement=0
                 ).exists()
                 if existing:
                     return Response({
                         'success': False,
-                        'error': f'Un tableau INITIAL existe déjà pour l\'année {annee} et ce processus. Vous ne pouvez créer que des amendements.'
+                        'error': f'Un tableau initial existe déjà pour l\'année {annee} et ce processus. Vous ne pouvez créer que des amendements.'
                     }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # VALIDATION 2 : Si AMENDEMENT_1, vérifier qu'INITIAL existe ET est validé
-            elif type_code == 'AMENDEMENT_1':
-                # Security by Design : Récupérer le tableau initial pour vérifier son statut de validation
+
+            # VALIDATION 2+ : Si amendement, vérifier que le précédent existe et est validé
+            else:
+                prev_num = num_amendement - 1
                 try:
-                    initial_tableau = TableauBord.objects.get(
+                    prev_tableau = TableauBord.objects.get(
                         annee=annee,
                         processus=processus_uuid,
-                        type_tableau__code='INITIAL'
+                        num_amendement=prev_num
                     )
                 except TableauBord.DoesNotExist:
                     return Response({
                         'success': False,
-                        'error': 'Impossible de créer AMENDEMENT_1 : aucun tableau INITIAL n\'existe pour cette année et ce processus'
+                        'error': f'Impossible de créer l\'amendement {num_amendement} : l\'amendement {prev_num} n\'existe pas pour cette année et ce processus.'
                     }, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Security by Design : Vérifier que le tableau initial est validé
-                if not initial_tableau.is_validated:
+
+                if not prev_tableau.is_validated:
                     return Response({
                         'success': False,
-                        'error': 'Impossible de créer AMENDEMENT_1 : le tableau initial doit être validé avant de pouvoir créer un amendement.'
+                        'error': f'Impossible de créer l\'amendement {num_amendement} : l\'amendement {prev_num} doit être validé d\'abord.'
                     }, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Vérifier aussi qu'AMENDEMENT_1 n'existe pas déjà
-                existing_a1 = TableauBord.objects.filter(
+
+                existing_num = TableauBord.objects.filter(
                     annee=annee,
                     processus=processus_uuid,
-                    type_tableau__code='AMENDEMENT_1'
+                    num_amendement=num_amendement
                 ).exists()
-                if existing_a1:
+                if existing_num:
                     return Response({
                         'success': False,
-                        'error': 'AMENDEMENT_1 existe déjà pour cette année et ce processus. Vous pouvez créer AMENDEMENT_2.'
+                        'error': f'L\'amendement {num_amendement} existe déjà pour cette année et ce processus.'
                     }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # VALIDATION 3 : Si AMENDEMENT_2, vérifier qu'AMENDEMENT_1 existe ET est validé
-            elif type_code == 'AMENDEMENT_2':
-                # Security by Design : Récupérer AMENDEMENT_1 pour vérifier son statut de validation
-                try:
-                    amendement_1 = TableauBord.objects.get(
-                        annee=annee,
-                        processus=processus_uuid,
-                        type_tableau__code='AMENDEMENT_1'
-                    )
-                except TableauBord.DoesNotExist:
-                    return Response({
-                        'success': False,
-                        'error': 'Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 n\'existe pas. Créez d\'abord AMENDEMENT_1.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Security by Design : Vérifier que AMENDEMENT_1 est validé
-                if not amendement_1.is_validated:
-                    return Response({
-                        'success': False,
-                        'error': 'Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 doit être validé avant de pouvoir créer AMENDEMENT_2.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Vérifier aussi qu'AMENDEMENT_2 n'existe pas déjà
-                existing_a2 = TableauBord.objects.filter(
-                    annee=annee,
-                    processus=processus_uuid,
-                    type_tableau__code='AMENDEMENT_2'
-                ).exists()
-                if existing_a2:
-                    return Response({
-                        'success': False,
-                        'error': 'AMENDEMENT_2 existe déjà pour cette année et ce processus. Maximum 2 amendements autorisés.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-            
+
+            data['num_amendement'] = num_amendement
             # ========== FIN VALIDATION ==========
             
             # Note: La vérification des permissions est maintenant gérée par DashboardTableauCreatePermission
@@ -241,24 +187,23 @@ def tableaux_bord_list_create(request):
                         logger.error(f"Erreur lors du logging de la création du tableau: {log_error}")
 
                     # Si amendement et clone demandé, copier les objectifs (+ éléments associés)
-                    if instance.type_tableau.code in ('AMENDEMENT_1', 'AMENDEMENT_2') and clone and instance.initial_ref:
-                        # Déterminer le tableau source : le dernier tableau existant pour cette année et ce processus
-                        # (INITIAL, puis AMENDEMENT_1, puis AMENDEMENT_2 si jamais étendu)
+                    if instance.num_amendement > 0 and clone and instance.initial_ref:
+                        # Déterminer le tableau source : le tableau avec le num_amendement précédent
                         source_tableau = TableauBord.objects.filter(
                             annee=instance.annee,
                             processus=instance.processus,
-                            type_tableau__code__in=['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
-                        ).exclude(pk=instance.pk).order_by('-created_at').first()
+                            num_amendement=instance.num_amendement - 1
+                        ).first()
 
-                        # Par sécurité, repli sur le tableau initial si aucune autre version n'est trouvée
+                        # Par sécurité, repli sur le tableau initial si aucun autre tableau n'est trouvé
                         if not source_tableau:
                             source_tableau = instance.initial_ref
 
                         logger.info(
-                            "Clonage des objectifs pour l'amendement %s depuis le tableau source %s (%s)",
+                            "Clonage des objectifs pour l'amendement %s depuis le tableau source %s (num_amendement=%s)",
                             instance.uuid,
                             getattr(source_tableau, 'uuid', None),
-                            getattr(source_tableau.type_tableau, 'code', None)
+                            getattr(source_tableau, 'num_amendement', None)
                         )
 
                         # cloner objectifs du tableau source (dernier tableau : initial ou dernier amendement)
@@ -343,7 +288,7 @@ def tableau_bord_detail(request, uuid):
 
     if request.method == 'GET':
         serializer_data = TableauBordSerializer(tb).data
-        logger.info(f"tableau_bord_detail GET - UUID: {uuid}, Type: {tb.type_tableau.code}, is_validated: {tb.is_validated}, serializer is_validated: {serializer_data.get('is_validated')}")
+        logger.info(f"tableau_bord_detail GET - UUID: {uuid}, num_amendement: {tb.num_amendement}, is_validated: {tb.is_validated}, serializer is_validated: {serializer_data.get('is_validated')}")
         return Response({'success': True, 'data': serializer_data})
     elif request.method == 'PATCH':
         # Note: La vérification des permissions est maintenant gérée par DashboardTableauUpdatePermission
@@ -382,155 +327,86 @@ def create_amendement(request, tableau_initial_uuid):
         # Récupérer le tableau initial
         try:
             initial_tableau = TableauBord.objects.select_related('processus').get(
-                uuid=tableau_initial_uuid, 
-                type_tableau__code='INITIAL'
+                uuid=tableau_initial_uuid,
+                num_amendement=0
             )
         except TableauBord.DoesNotExist:
             return Response({
-                'success': False, 
+                'success': False,
                 'error': 'Tableau initial introuvable'
             }, status=status.HTTP_404_NOT_FOUND)
-        
+
         # Security by Design : Vérifier la permission APRÈS avoir récupéré le tableau initial
-        # pour pouvoir extraire le processus_uuid depuis l'objet
         permission_checker = DashboardAmendementCreatePermission()
         if not permission_checker.has_object_permission(request, None, initial_tableau):
             return Response({
                 'success': False,
                 'error': 'Vous n\'avez pas les permissions nécessaires pour créer un amendement.'
             }, status=status.HTTP_403_FORBIDDEN)
-        
+
         data = request.data.copy()
         clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
-        
-        # Déterminer le type d'amendement
-        from parametre.models import Versions
-        
-        # Récupérer tous les amendements existants (validés et non validés)
+
+        # Récupérer tous les amendements existants (num_amendement > 0)
+        from django.db.models import Max
         existing_amendements_all = TableauBord.objects.filter(
             annee=initial_tableau.annee,
             processus=initial_tableau.processus,
-            type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
+            num_amendement__gt=0
         )
-        
+
         # Vérifier s'il y a des amendements non validés
         amendements_non_valides = existing_amendements_all.filter(is_validated=False)
         if amendements_non_valides.exists():
             amendement_non_valide = amendements_non_valides.first()
             return Response({
                 'success': False,
-                'error': f'Impossible de créer un nouvel amendement : l\'amendement "{amendement_non_valide.type_tableau.nom}" n\'est pas encore validé. Vous devez valider l\'amendement précédent avant de pouvoir en créer un nouveau.'
+                'error': f'Impossible de créer un nouvel amendement : l\'amendement {amendement_non_valide.nom_version} n\'est pas encore validé. Vous devez valider l\'amendement précédent avant de pouvoir en créer un nouveau.'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Compter les amendements validés
-        existing_amendements = existing_amendements_all.filter(is_validated=True).count()
-        
-        logger.info(f"Nombre d'amendements validés existants: {existing_amendements}")
 
-        try:
-            if existing_amendements == 0:
-                # Créer AMENDEMENT_1 si aucun amendement validé n'existe
-                # MAIS le tableau initial DOIT être validé avant de créer le premier amendement
-                if not initial_tableau.is_validated:
-                    return Response({
-                        'success': False,
-                        'error': 'Impossible de créer un amendement : le tableau initial doit être validé avant de pouvoir créer un amendement.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Essayer d'abord avec is_active=True, puis sans si non trouvé
-                try:
-                    type_amendement = Versions.objects.get(code='AMENDEMENT_1', is_active=True)
-                except Versions.DoesNotExist:
-                    # Si non trouvé avec is_active=True, essayer sans
-                    type_amendement = Versions.objects.get(code='AMENDEMENT_1')
-                data['type_tableau'] = type_amendement.uuid
-            elif existing_amendements == 1:
-                # Créer AMENDEMENT_2 si AMENDEMENT_1 est validé
-                # Vérifier que AMENDEMENT_1 existe et est validé
-                amendement_1 = existing_amendements_all.filter(
-                    type_tableau__code='AMENDEMENT_1',
-                    is_validated=True
-                ).first()
-                
-                if not amendement_1:
-                    return Response({
-                        'success': False,
-                        'error': 'Impossible de créer AMENDEMENT_2 : AMENDEMENT_1 doit être validé avant de pouvoir créer AMENDEMENT_2'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-                
-                # Essayer d'abord avec is_active=True, puis sans si non trouvé
-                try:
-                    type_amendement = Versions.objects.get(code='AMENDEMENT_2', is_active=True)
-                except Versions.DoesNotExist:
-                    # Si non trouvé avec is_active=True, essayer sans
-                    type_amendement = Versions.objects.get(code='AMENDEMENT_2')
-                data['type_tableau'] = type_amendement.uuid
-            else:
-                return Response({
-                    'success': False, 
-                    'error': 'Maximum 2 amendements autorisés par tableau initial'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        except Versions.DoesNotExist as e:
-            logger.error(f"Type d'amendement non trouvé: {str(e)}")
+        # Tableau initial doit être validé
+        if not initial_tableau.is_validated:
             return Response({
                 'success': False,
-                'error': f'Type d\'amendement (AMENDEMENT_1 ou AMENDEMENT_2) non trouvé dans la base de données. Veuillez contacter l\'administrateur pour créer ces types de tableaux.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+                'error': 'Impossible de créer un amendement : le tableau initial doit être validé d\'abord.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculer le prochain num_amendement
+        result = existing_amendements_all.aggregate(max_num=Max('num_amendement'))
+        max_existing = result['max_num'] or 0
+        next_num = max_existing + 1
+
+        logger.info(f"Prochain num_amendement: {next_num}")
+
         # Créer l'amendement
-        # Le champ 'annee' est un PositiveIntegerField, donc on passe directement la valeur
-        # Le champ 'processus' est un ForeignKey, donc on passe l'UUID
-        # Le champ 'initial_ref' est un ForeignKey vers 'self', donc on passe l'UUID
         data.update({
-            'annee': initial_tableau.annee,  # C'est déjà un entier
+            'annee': initial_tableau.annee,
             'processus': initial_tableau.processus.uuid,
             'initial_ref': initial_tableau.uuid,
-            'is_validated': False  # Les amendements commencent toujours non validés
+            'num_amendement': next_num,
+            'is_validated': False
         })
-        
+
         logger.info(f"Données pour création amendement: {data}")
-        
+
         serializer = TableauBordSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             try:
                 instance = serializer.save()
                 logger.info(f"Amendement créé avec succès: {instance.uuid}")
-                
+
                 # Si clone demandé, copier les objectifs et éléments associés
                 if clone:
-                    # Déterminer le tableau source pour le clonage
-                    # Si c'est le premier amendement, copier depuis l'initial
-                    # Sinon, copier depuis le dernier amendement créé
-                    if existing_amendements == 0:
-                        source_tableau = initial_tableau
-                    else:
-                        # Trouver le dernier amendement créé pour ce processus/année
-                        # Exclure l'amendement qu'on vient de créer
-                        last_amendement = TableauBord.objects.filter(
-                            annee=initial_tableau.annee,
-                            processus=initial_tableau.processus,
-                            type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
-                        ).exclude(uuid=instance.uuid).order_by('-created_at').first()
-                        source_tableau = last_amendement
-                        
-                        # Si aucun amendement trouvé, utiliser l'initial comme source
-                        if source_tableau is None:
-                            logger.warning(f"Aucun amendement trouvé pour le clonage, utilisation du tableau initial")
-                            source_tableau = initial_tableau
-                    
-                    # Vérifier que source_tableau n'est pas None avant de cloner
-                    if source_tableau is None:
-                        logger.error(f"Impossible de déterminer le tableau source pour le clonage")
-                        return Response({
-                            'success': False,
-                            'error': 'Impossible de déterminer le tableau source pour le clonage'
-                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                    
-                    # Log pour déboguer
-                    logger.info(f"Clonage depuis {source_tableau.uuid} ({source_tableau.type_tableau.code})")
+                    # Source = tableau avec le num_amendement précédent
+                    source_tableau = TableauBord.objects.filter(
+                        annee=initial_tableau.annee,
+                        processus=initial_tableau.processus,
+                        num_amendement=next_num - 1
+                    ).first() or initial_tableau
+
+                    logger.info(f"Clonage depuis {source_tableau.uuid} (num_amendement={source_tableau.num_amendement})")
                     logger.info(f"Nombre d'objectifs à cloner: {source_tableau.objectives.count()}")
-                    
-                    # Cloner objectifs depuis le tableau source
+
                     for obj in source_tableau.objectives.all():
                         new_obj = Objectives.objects.create(
                             number=obj.number,
@@ -538,7 +414,6 @@ def create_amendement(request, tableau_initial_uuid):
                             cree_par=request.user,
                             tableau_bord=instance
                         )
-                        # Cloner indicateurs et leur structure
                         indicateurs = Indicateur.objects.filter(objective_id=obj)
                         for ind in indicateurs:
                             new_ind = Indicateur.objects.create(
@@ -546,7 +421,6 @@ def create_amendement(request, tableau_initial_uuid):
                                 objective_id=new_obj,
                                 frequence_id=ind.frequence_id
                             )
-                            # Cloner cibles et périodicités
                             try:
                                 from parametre.models import Cible as ParamCible, Periodicite as ParamPeriodicite
                                 cible = ParamCible.objects.filter(indicateur_id=ind).first()
@@ -556,7 +430,6 @@ def create_amendement(request, tableau_initial_uuid):
                                         condition=cible.condition,
                                         indicateur_id=new_ind
                                     )
-                                # Cloner périodicités
                                 for p in ParamPeriodicite.objects.filter(indicateur_id=ind):
                                     ParamPeriodicite.objects.create(
                                         indicateur_id=new_ind,
@@ -566,33 +439,25 @@ def create_amendement(request, tableau_initial_uuid):
                                     )
                             except Exception as e:
                                 logger.warning(f"Erreur lors du clonage des éléments annexes: {str(e)}")
-                                # Continue même en cas d'erreur
                                 pass
-                
-                # Récupérer le nom du type d'amendement de manière sécurisée
-                try:
-                    type_display = instance.get_type_display()
-                except Exception as e:
-                    logger.warning(f"Erreur lors de la récupération du type d'affichage: {str(e)}")
-                    type_display = instance.type_tableau.nom if instance.type_tableau else "Amendement"
-                
+
                 return Response({
                     'success': True,
-                    'message': f'Amendement {type_display} créé avec succès',
+                    'message': f'Amendement {instance.nom_version} créé avec succès',
                     'data': TableauBordSerializer(instance).data
                 }, status=status.HTTP_201_CREATED)
-                
+
             except Exception as e:
                 logger.error(f"Erreur lors de la création de l'amendement: {str(e)}")
                 return Response({
-                    'success': False, 
+                    'success': False,
                     'error': f'Erreur lors de la création: {str(e)}'
                 }, status=status.HTTP_400_BAD_REQUEST)
-                
+
         logger.error(f"Erreur de validation du serializer: {serializer.errors}")
         logger.error(f"Données envoyées au serializer: {data}")
         return Response({
-            'success': False, 
+            'success': False,
             'errors': serializer.errors,
             'error': 'Erreur de validation des données',
             'data_sent': data
@@ -617,24 +482,20 @@ def get_amendements_by_initial(request, tableau_initial_uuid):
     try:
         # Vérifier que le tableau initial existe
         try:
-            initial_tableau = TableauBord.objects.get(uuid=tableau_initial_uuid, type_tableau__code='INITIAL')
-            
-            # Security by Design : La vérification d'accès au processus est gérée par les permissions DRF
-            # (cet endpoint clone un amendement, la vérification se fait via l'accès au tableau initial)
-            
+            initial_tableau = TableauBord.objects.get(uuid=tableau_initial_uuid, num_amendement=0)
         except TableauBord.DoesNotExist:
             return Response({
-                'success': False, 
+                'success': False,
                 'error': 'Tableau initial introuvable'
             }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Récupérer tous les amendements liés, triés par date de création (du plus récent au plus ancien)
+
+        # Récupérer tous les amendements liés, triés par num_amendement
         amendements = TableauBord.objects.filter(
             initial_ref=initial_tableau
-        ).order_by('-created_at')
-        
+        ).order_by('num_amendement')
+
         serializer = TableauBordSerializer(amendements, many=True)
-        
+
         return Response({
             'success': True,
             'data': serializer.data,
@@ -643,7 +504,7 @@ def get_amendements_by_initial(request, tableau_initial_uuid):
                 'uuid': str(initial_tableau.uuid),
                 'annee': initial_tableau.annee,
                 'processus_nom': initial_tableau.processus.nom,
-                'type_tableau': initial_tableau.type_tableau.code
+                'nom_version': initial_tableau.nom_version
             }
         }, status=status.HTTP_200_OK)
         
@@ -749,31 +610,18 @@ def devalidate_tableau_bord(request, uuid):
                 'error': 'Ce tableau n\'est pas validé'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Vérifier qu'il n'y a pas d'amendements validés qui dépendent de ce tableau
-        # Si c'est un tableau initial, vérifier les amendements
-        if tableau.type_tableau and tableau.type_tableau.code == 'INITIAL':
-            amendements_valides = TableauBord.objects.filter(
-                initial_ref=tableau,
-                is_validated=True
-            ).exists()
-            if amendements_valides:
-                return Response({
-                    'success': False,
-                    'error': 'Impossible de dévalider ce tableau : il existe des amendements validés qui en dépendent'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        # Si c'est un amendement 1, vérifier l'amendement 2
-        elif tableau.type_tableau and tableau.type_tableau.code == 'AMENDEMENT_1':
-            amendement_2_valide = TableauBord.objects.filter(
-                annee=tableau.annee,
-                processus=tableau.processus,
-                type_tableau__code='AMENDEMENT_2',
-                is_validated=True
-            ).exists()
-            if amendement_2_valide:
-                return Response({
-                    'success': False,
-                    'error': 'Impossible de dévalider cet amendement : l\'amendement 2 est validé'
-                }, status=status.HTTP_400_BAD_REQUEST)
+        # Vérifier qu'il n'existe pas de tableau suivant validé qui dépend de ce tableau
+        has_validated_successor = TableauBord.objects.filter(
+            annee=tableau.annee,
+            processus=tableau.processus,
+            num_amendement=tableau.num_amendement + 1,
+            is_validated=True
+        ).exists()
+        if has_validated_successor:
+            return Response({
+                'success': False,
+                'error': 'Impossible de dévalider ce tableau : un amendement suivant validé en dépend'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Dévalider le tableau
         tableau.is_validated = False
@@ -937,27 +785,17 @@ def objectives_create(request):
                         'error': 'Impossible de créer un objectif : le tableau est déjà validé'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                # Bloquer selon le type de tableau et les amendements suivants de manière précise
-                from django.db.models import Q
-                if tableau.type_tableau and tableau.type_tableau.code == 'INITIAL':
-                    # L'initial ne peut pas être modifié s'il a des amendements (A1 ou A2)
-                    if tableau.has_amendements():
-                        return Response({
-                            'success': False,
-                            'error': 'Impossible de créer un objectif : ce tableau initial a des amendements'
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                elif tableau.type_tableau and tableau.type_tableau.code == 'AMENDEMENT_1':
-                    # A1 est modifiable UNIQUEMENT s'il n'existe pas déjà un A2 pour le même initial
-                    if TableauBord.objects.filter(
-                        annee=tableau.annee,
-                        processus=tableau.processus,
-                        type_tableau__code='AMENDEMENT_2'
-                    ).exists():
-                        return Response({
-                            'success': False,
-                            'error': "Impossible de créer un objectif : l'amendement 1 a un amendement 2 suivant"
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                # AMENDEMENT_2: autorisé (pas d'amendements suivants possibles)
+                # Bloquer si un amendement suivant existe pour ce tableau
+                has_successor = TableauBord.objects.filter(
+                    annee=tableau.annee,
+                    processus=tableau.processus,
+                    num_amendement=tableau.num_amendement + 1
+                ).exists()
+                if has_successor:
+                    return Response({
+                        'success': False,
+                        'error': 'Impossible de créer un objectif : un amendement suivant existe pour ce tableau'
+                    }, status=status.HTTP_400_BAD_REQUEST)
                     
             except TableauBord.DoesNotExist:
                 return Response({
@@ -1178,27 +1016,20 @@ def dashboard_stats(request):
         # ========== SCOPE : DERNIER TABLEAU PAR PROCESSUS ==========
         last_tableau_uuids = None
         if scope == 'dernier':
-            from django.db.models import Case, When, IntegerField, Max
-            type_priority = Case(
-                When(type_tableau__code='AMENDEMENT_2', then=3),
-                When(type_tableau__code='AMENDEMENT_1', then=2),
-                When(type_tableau__code='INITIAL', then=1),
-                default=0,
-                output_field=IntegerField()
-            )
+            from django.db.models import Max
             if user_processus_uuids is None:
-                all_tb = TableauBord.objects.filter(annee=year_to_use).annotate(priority=type_priority)
+                all_tb = TableauBord.objects.filter(annee=year_to_use)
             elif user_processus_uuids:
                 all_tb = TableauBord.objects.filter(
                     processus__uuid__in=user_processus_uuids, annee=year_to_use
-                ).annotate(priority=type_priority)
+                )
             else:
-                all_tb = TableauBord.objects.none().annotate(priority=type_priority)
+                all_tb = TableauBord.objects.none()
 
             last_tableau_uuids = []
             for proc_uuid in all_tb.values_list('processus', flat=True).distinct():
-                max_p = all_tb.filter(processus=proc_uuid).aggregate(max_p=Max('priority'))['max_p']
-                last_tb_obj = all_tb.filter(processus=proc_uuid, priority=max_p).first()
+                max_num = all_tb.filter(processus=proc_uuid).aggregate(m=Max('num_amendement'))['m']
+                last_tb_obj = all_tb.filter(processus=proc_uuid, num_amendement=max_num).first()
                 if last_tb_obj:
                     last_tableau_uuids.append(last_tb_obj.uuid)
 
@@ -2609,14 +2440,12 @@ def observations_by_indicateur(request, indicateur_uuid):
 @permission_classes([IsAuthenticated])
 def get_last_tableau_bord_previous_year(request):
     """
-    Récupérer le dernier Tableau de Bord (INITIAL, AMENDEMENT_1 ou AMENDEMENT_2) de l'année précédente
-    pour un processus donné.
+    Récupérer le dernier Tableau de Bord de l'année précédente pour un processus donné.
+    Retourne le tableau avec le num_amendement le plus élevé.
 
     Query params:
     - annee: année actuelle (nombre entier, ex: 2025)
     - processus: UUID du processus
-
-    Retourne le dernier type de tableau (ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL)
     """
     try:
         annee = request.query_params.get('annee')
@@ -2646,21 +2475,16 @@ def get_last_tableau_bord_previous_year(request):
             }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION ==========
 
-        # Chercher tous les Tableaux de Bord de l'année précédente pour ce processus
-        # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
-        codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
+        # Récupérer le tableau avec le num_amendement le plus élevé pour l'année précédente
+        tableau = TableauBord.objects.filter(
+            annee=annee_precedente,
+            processus__uuid=processus_uuid,
+        ).select_related('processus', 'cree_par', 'valide_par').order_by('-num_amendement').first()
 
-        for code in codes_order:
-            tableau = TableauBord.objects.filter(
-                annee=annee_precedente,
-                processus__uuid=processus_uuid,
-                type_tableau__code=code
-            ).select_related('processus', 'type_tableau', 'cree_par', 'valide_par').first()
-
-            if tableau:
-                logger.info(f"[get_last_tableau_bord_previous_year] Tableau de Bord trouvé: {tableau.uuid} (type: {code})")
-                serializer = TableauBordSerializer(tableau)
-                return Response(serializer.data, status=status.HTTP_200_OK)
+        if tableau:
+            logger.info(f"[get_last_tableau_bord_previous_year] Tableau de Bord trouvé: {tableau.uuid} (num_amendement={tableau.num_amendement})")
+            serializer = TableauBordSerializer(tableau)
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Aucun Tableau de Bord trouvé pour l'année précédente
         logger.info(f"[get_last_tableau_bord_previous_year] Aucun Tableau de Bord trouvé pour l'année {annee_precedente}")

@@ -105,13 +105,6 @@ urlpatterns = [
     path('annees/', views.annees_list, name='annees_list'),
     path('annees/all/', views.annees_all_list, name='annees_all_list'),
     
-    # ==================== TYPES DE TABLEAU ====================
-    path('types-tableau/', views.types_tableau_list, name='types_tableau_list'),
-    path('types-tableau/all/', views.types_tableau_all_list, name='types_tableau_all_list'),
-    path('types-tableau/create/', views.type_tableau_create, name='type_tableau_create'),
-    path('types-tableau/<uuid:uuid>/update/', views.type_tableau_update, name='type_tableau_update'),
-    path('types-tableau/<uuid:uuid>/delete/', views.type_tableau_delete, name='type_tableau_delete'),
-    
     # ==================== CARTOGRAPHIE DES RISQUES ====================
     path('frequences-risque/', views.frequences_risque_list, name='frequences_risque_list'),
     path('gravites-risque/', views.gravites_risque_list, name='gravites_risque_list'),

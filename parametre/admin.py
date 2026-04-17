@@ -9,7 +9,7 @@ from .models import (
     EtatMiseEnOeuvre, Appreciation, Media, Preuve, StatutActionCDR,
     Direction, SousDirection, Service, Processus,
     ActivityLog, EmailSettings, ReminderEmailLog, Notification,
-    DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Versions, Annee,
+    DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
     Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy
@@ -397,37 +397,6 @@ class CibleAdmin(admin.ModelAdmin):
         """Optimiser les requêtes avec select_related"""
         return super().get_queryset(request).select_related('indicateur_id')
 
-
-@admin.register(Versions)
-class VersionsAdmin(admin.ModelAdmin):
-    """Configuration de l'interface d'administration pour les versions"""
-    
-    list_display = [
-        'code', 'nom', 'is_active', 'created_at'
-    ]
-    list_filter = [
-        'is_active', 'created_at', 'updated_at'
-    ]
-    search_fields = [
-        'code', 'nom', 'description'
-    ]
-    readonly_fields = [
-        'uuid', 'created_at', 'updated_at'
-    ]
-    ordering = ['nom']
-    
-    fieldsets = (
-        ('Informations générales', {
-            'fields': ('uuid', 'code', 'nom', 'description')
-        }),
-        ('Statut', {
-            'fields': ('is_active',)
-        }),
-        ('Métadonnées', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
 
 
 @admin.register(Annee)

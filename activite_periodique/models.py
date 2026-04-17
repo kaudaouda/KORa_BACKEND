@@ -44,13 +44,9 @@ class ActivitePeriodique(models.Model):
         blank=True,
         help_text='Année associée à l\'activité périodique'
     )
-    type_tableau = models.ForeignKey(
-        'parametre.Versions',
-        on_delete=models.SET_NULL,
-        related_name='activites_periodiques',
-        null=True,
-        blank=True,
-        help_text='Version associée à l\'activité périodique (Initial, Amendement, etc.)'
+    num_amendement = models.PositiveIntegerField(
+        default=0,
+        help_text="0 = Activité Initiale, 1 = Amendement 1, N = Amendement N"
     )
     initial_ref = models.ForeignKey(
         'self',
@@ -74,13 +70,23 @@ class ActivitePeriodique(models.Model):
         verbose_name_plural = 'Activités Périodiques'
         constraints = [
             models.UniqueConstraint(
-                fields=['processus', 'annee', 'type_tableau', 'cree_par'],
-                name='unique_activite_periodique_per_processus_annee_type_tableau_user'
+                fields=['processus', 'annee', 'num_amendement', 'cree_par'],
+                name='unique_activite_periodique_per_processus_annee_num_amendement_user'
             )
         ]
 
+    @property
+    def is_initial(self):
+        return self.num_amendement == 0
+
+    @property
+    def nom_version(self):
+        if self.num_amendement == 0:
+            return "Activité Initiale"
+        return f"Amendement {self.num_amendement}"
+
     def __str__(self):
-        return f"Activité Périodique {self.uuid}"
+        return f"Activité Périodique {self.uuid} - {self.nom_version}"
 
 
 class DetailsAP(models.Model):

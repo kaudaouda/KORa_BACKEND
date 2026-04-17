@@ -40,7 +40,7 @@ try:
     from parametre.models import MediaLivrable
 except (ImportError, AttributeError):
     MediaLivrable = None
-from parametre.models import Processus, Annee, Versions
+from parametre.models import Processus, Annee
 from parametre.views import (
     log_activite_periodique_creation,
     log_activite_periodique_update,
@@ -56,72 +56,39 @@ logger = logging.getLogger(__name__)
 # ==================== UTILITAIRES TYPE TABLEAU ====================
 
 def _has_amendements_following(ap):
-    """
-    Vérifier si un AP a des amendements suivants (doit être verrouillé).
-    Un tableau doit être verrouillé si un tableau plus récent a été créé pour le même contexte.
-    """
+    """Vérifier si un AP a un amendement suivant (num_amendement + 1 existe)."""
     try:
-        type_code = ap.type_tableau.code if ap.type_tableau else None
-        
-        if type_code == 'INITIAL':
-            # Pour INITIAL : vérifier s'il y a AMENDEMENT_1 ou AMENDEMENT_2 pour le même processus/année
-            return ActivitePeriodique.objects.filter(
-                processus=ap.processus,
-                annee=ap.annee,
-                type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2'],
-                cree_par=ap.cree_par
-            ).exists()
-        elif type_code == 'AMENDEMENT_1':
-            # Pour AMENDEMENT_1 : vérifier s'il y a AMENDEMENT_2 créé après lui pour le même processus/année
-            return ActivitePeriodique.objects.filter(
-                processus=ap.processus,
-                annee=ap.annee,
-                type_tableau__code='AMENDEMENT_2',
-                cree_par=ap.cree_par,
-                created_at__gt=ap.created_at  # Créé après cet AMENDEMENT_1
-            ).exists()
-        elif type_code == 'AMENDEMENT_2':
-            # AMENDEMENT_2 ne peut pas avoir d'amendements suivants
-            return False
-        else:
-            # Par défaut, vérifier les amendements directs (relation inverse)
-            return ap.amendements.exists()
+        return ActivitePeriodique.objects.filter(
+            processus=ap.processus,
+            annee=ap.annee,
+            cree_par=ap.cree_par,
+            num_amendement=ap.num_amendement + 1
+        ).exists()
     except Exception as e:
         logger.error(f'Erreur dans _has_amendements_following: {str(e)}')
         return False
 
-def _get_next_type_tableau_for_ap(user, annee, processus_uuid):
+
+def _get_next_num_amendement_for_ap(user, annee, processus_uuid):
     """
-    Retourne l'instance Versions à utiliser automatiquement pour (annee, processus) d'un user.
-    Ordre: INITIAL -> AMENDEMENT_1 -> AMENDEMENT_2. Si tous existent déjà, retourne AMENDEMENT_2.
+    Retourne le prochain num_amendement à utiliser pour (annee, processus, user).
+    0 si aucun AP n'existe encore, sinon max_existant + 1.
     """
     try:
-        logger.info(f"[_get_next_type_tableau_for_ap] user={user}, annee={annee}, processus_uuid={processus_uuid}")
-        codes_order = ['INITIAL', 'AMENDEMENT_1', 'AMENDEMENT_2']
-        existing_types = set(
-            ActivitePeriodique.objects.filter(
-                cree_par=user,
-                annee__annee=annee,
-                processus_id=processus_uuid
-            ).values_list('type_tableau__code', flat=True)
-        )
-        logger.info(f"[_get_next_type_tableau_for_ap] existing_types={existing_types}")
-        for code in codes_order:
-            if code not in existing_types:
-                version = Versions.objects.get(code=code)
-                logger.info(f"[_get_next_type_tableau_for_ap] Retourne version {code}: {version}")
-                return version
-        # Tous déjà présents: retourner le dernier
-        version = Versions.objects.get(code=codes_order[-1])
-        logger.info(f"[_get_next_type_tableau_for_ap] Tous présents, retourne {version}")
-        return version
-    except Versions.DoesNotExist as e:
-        logger.error(f"[_get_next_type_tableau_for_ap] Versions.DoesNotExist: {e}")
-        fallback = Versions.objects.order_by('nom').first()
-        logger.info(f"[_get_next_type_tableau_for_ap] Fallback sur {fallback}")
-        return fallback
+        logger.info(f"[_get_next_num_amendement_for_ap] user={user}, annee={annee}, processus_uuid={processus_uuid}")
+        existing = ActivitePeriodique.objects.filter(
+            cree_par=user,
+            annee__annee=annee,
+            processus_id=processus_uuid
+        ).order_by('-num_amendement').first()
+        if not existing:
+            logger.info("[_get_next_num_amendement_for_ap] Aucun AP existant, retourne 0 (initial)")
+            return 0
+        next_num = existing.num_amendement + 1
+        logger.info(f"[_get_next_num_amendement_for_ap] Retourne {next_num}")
+        return next_num
     except Exception as e:
-        logger.error(f"[_get_next_type_tableau_for_ap] Erreur: {e}")
+        logger.error(f"[_get_next_num_amendement_for_ap] Erreur: {e}")
         import traceback
         logger.error(traceback.format_exc())
         raise
@@ -163,7 +130,7 @@ def activites_periodiques_list(request):
         if user_processus_uuids is None:
             # Super admin : voir toutes les Activités Périodiques sans filtre
             aps = ActivitePeriodique.objects.all().select_related(
-                'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
+                'processus', 'annee', 'cree_par', 'validated_by'
             ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
         elif not user_processus_uuids:
             # Aucun processus assigné
@@ -177,7 +144,7 @@ def activites_periodiques_list(request):
         else:
             # Filtrer les Activités Périodiques par les processus où l'utilisateur a un rôle actif
             aps = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids).select_related(
-                'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
+                'processus', 'annee', 'cree_par', 'validated_by'
             ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
         # ========== FIN FILTRAGE ==========
         
@@ -204,7 +171,7 @@ def activite_periodique_detail(request, uuid):
     """Détails d'une Activité Périodique spécifique"""
     try:
         ap = ActivitePeriodique.objects.select_related(
-            'processus', 'type_tableau', 'annee', 'cree_par', 'validated_by'
+            'processus', 'annee', 'cree_par', 'validated_by'
         ).prefetch_related(
             'details__frequence',
             'details__suivis__mois',
@@ -240,14 +207,13 @@ def activite_periodique_detail(request, uuid):
 @permission_classes([IsAuthenticated, ActivitePeriodiqueCreatePermission])
 def activite_periodique_get_or_create(request):
     """
-    Récupérer ou créer une Activité Périodique unique pour (processus, annee, type_tableau).
+    Récupérer ou créer une Activité Périodique unique pour (processus, annee, num_amendement).
     """
     try:
         logger.info(f"[activite_periodique_get_or_create] Début - données reçues: {request.data}")
         data = request.data.copy()
         annee_value = data.get('annee')
         processus_uuid = data.get('processus')
-        type_tableau_uuid = data.get('type_tableau')
 
         # Convertir annee en entier si c'est une chaîne
         if annee_value:
@@ -258,25 +224,29 @@ def activite_periodique_get_or_create(request):
                     'error': "Le champ 'annee' doit être un nombre entier"
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-        logger.info(f"[activite_periodique_get_or_create] annee={annee_value}, processus_uuid={processus_uuid}, type_tableau_uuid={type_tableau_uuid}")
-
-        # Si type_tableau est absent mais annee + processus sont fournis, l'attribuer automatiquement
-        initial_ref_uuid = data.get('initial_ref')
-        if annee_value and processus_uuid and not type_tableau_uuid:
-            logger.info("[activite_periodique_get_or_create] type_tableau absent, appel à _get_next_type_tableau_for_ap")
+        # Déterminer num_amendement : utiliser la valeur fournie ou l'attribuer automatiquement
+        num_amendement_raw = data.get('num_amendement')
+        if num_amendement_raw is None and annee_value and processus_uuid:
             try:
-                auto_tt = _get_next_type_tableau_for_ap(request.user, annee_value, processus_uuid)
-                if auto_tt:
-                    data['type_tableau'] = str(auto_tt.uuid)
-                    type_tableau_uuid = data['type_tableau']
-                    logger.info(f"[activite_periodique_get_or_create] type_tableau automatique défini: {type_tableau_uuid} (code: {auto_tt.code})")
+                num_amendement_value = _get_next_num_amendement_for_ap(request.user, annee_value, processus_uuid)
+                data['num_amendement'] = num_amendement_value
             except Exception as tt_error:
-                logger.error(f"[activite_periodique_get_or_create] Erreur lors de la détermination automatique du type_tableau: {tt_error}")
+                logger.error(f"[activite_periodique_get_or_create] Erreur détermination automatique num_amendement: {tt_error}")
+                num_amendement_value = 0
+                data['num_amendement'] = num_amendement_value
+        else:
+            try:
+                num_amendement_value = int(num_amendement_raw) if num_amendement_raw is not None else 0
+            except (ValueError, TypeError):
+                num_amendement_value = 0
+            data['num_amendement'] = num_amendement_value
+
+        logger.info(f"[activite_periodique_get_or_create] annee={annee_value}, processus_uuid={processus_uuid}, num_amendement={num_amendement_value}")
 
         if not (annee_value and processus_uuid):
             logger.warning("[activite_periodique_get_or_create] annee ou processus manquant")
             return Response({
-                'error': "Les champs 'annee' et 'processus' sont requis. 'type_tableau' peut être omis et sera déterminé automatiquement."
+                'error': "Les champs 'annee' et 'processus' sont requis."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # ========== VÉRIFICATION DES PERMISSIONS (Security by Design) ==========
@@ -299,7 +269,7 @@ def activite_periodique_get_or_create(request):
             ap = ActivitePeriodique.objects.get(
                 processus__uuid=processus_uuid,
                 annee=annee_obj,
-                type_tableau__uuid=type_tableau_uuid,
+                num_amendement=num_amendement_value,
                 cree_par=request.user
             )
             logger.info(f"[activite_periodique_get_or_create] AP existante trouvée: {ap.uuid}")
@@ -403,7 +373,7 @@ def activite_periodique_create(request):
 def activite_periodique_update(request, uuid):
     """Mettre à jour une Activité Périodique"""
     try:
-        ap = ActivitePeriodique.objects.select_related('type_tableau', 'processus', 'annee').get(uuid=uuid)
+        ap = ActivitePeriodique.objects.select_related('processus', 'annee').get(uuid=uuid)
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not user_has_access_to_processus(request.user, ap.processus.uuid):
@@ -498,7 +468,7 @@ def activite_periodique_delete(request, uuid):
 def activite_periodique_validate(request, uuid):
     """Valider une Activité Périodique"""
     try:
-        ap = ActivitePeriodique.objects.select_related('processus', 'annee', 'type_tableau').prefetch_related(
+        ap = ActivitePeriodique.objects.select_related('processus', 'annee').prefetch_related(
             'details__frequence',
             'details__responsables_directions',
             'details__responsables_sous_directions',
@@ -597,7 +567,7 @@ def activite_periodique_validate(request, uuid):
 def activite_periodique_unvalidate(request, uuid):
     """Dévalider une Activité Périodique (déverrouille les champs)"""
     try:
-        ap = ActivitePeriodique.objects.select_related('validated_by', 'cree_par', 'processus', 'annee', 'type_tableau').get(uuid=uuid)
+        ap = ActivitePeriodique.objects.select_related('validated_by', 'cree_par', 'processus', 'annee').get(uuid=uuid)
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         # Note: La permission DRF ActivitePeriodiqueUnvalidatePermission vérifie déjà
@@ -799,7 +769,7 @@ def details_ap_create(request):
 def details_ap_update(request, uuid):
     """Mettre à jour un détail AP"""
     try:
-        detail = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__type_tableau', 'activite_periodique__processus', 'activite_periodique__annee').get(
+        detail = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__processus', 'activite_periodique__annee').get(
             uuid=uuid
         )
         
@@ -851,7 +821,7 @@ def details_ap_update(request, uuid):
 def details_ap_delete(request, uuid):
     """Supprimer un détail AP"""
     try:
-        detail = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__type_tableau', 'activite_periodique__processus', 'activite_periodique__annee').get(
+        detail = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__processus', 'activite_periodique__annee').get(
             uuid=uuid
         )
         
@@ -993,7 +963,7 @@ def suivi_ap_create(request):
         
         # Vérifier que le détail AP existe
         try:
-            detail_ap = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__type_tableau', 'activite_periodique__processus', 'activite_periodique__annee').get(
+            detail_ap = DetailsAP.objects.select_related('activite_periodique', 'activite_periodique__processus', 'activite_periodique__annee').get(
                 uuid=detail_ap_uuid
             )
         except DetailsAP.DoesNotExist:
@@ -1056,7 +1026,7 @@ def suivi_ap_update(request, uuid):
     """Mettre à jour un suivi AP"""
     try:
         suivi = SuivisAP.objects.select_related(
-            'details_ap__activite_periodique', 'details_ap__activite_periodique__type_tableau', 
+            'details_ap__activite_periodique', 
             'details_ap__activite_periodique__processus', 'details_ap__activite_periodique__annee',
             'mois', 'etat_mise_en_oeuvre'
         ).get(uuid=uuid)
@@ -1199,10 +1169,6 @@ def get_last_ap_previous_year(request):
 
         logger.info(f"[get_last_ap_previous_year] Recherche du dernier AP pour processus={processus_uuid}, année={annee_precedente.annee}")
 
-        # Chercher tous les APs de l'année précédente pour ce processus
-        # Ordre de priorité: AMENDEMENT_2 > AMENDEMENT_1 > INITIAL
-        codes_order = ['AMENDEMENT_2', 'AMENDEMENT_1', 'INITIAL']
-
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not user_has_access_to_processus(request.user, processus_uuid):
             return Response({
@@ -1211,17 +1177,16 @@ def get_last_ap_previous_year(request):
             }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION ==========
 
-        for code in codes_order:
-            ap = ActivitePeriodique.objects.filter(
-                annee=annee_precedente,
-                processus__uuid=processus_uuid,
-                type_tableau__code=code
-            ).select_related('processus', 'annee', 'type_tableau', 'cree_par', 'validated_by').first()
+        # Retourner le dernier AP (num_amendement le plus élevé)
+        ap = ActivitePeriodique.objects.filter(
+            annee=annee_precedente,
+            processus__uuid=processus_uuid,
+        ).select_related('processus', 'annee', 'cree_par', 'validated_by').order_by('-num_amendement').first()
 
-            if ap:
-                logger.info(f"[get_last_ap_previous_year] AP trouvé: {ap.uuid} (type: {code})")
-                serializer = ActivitePeriodiqueSerializer(ap)
-                return Response(serializer.data, status=status.HTTP_200_OK)
+        if ap:
+            logger.info(f"[get_last_ap_previous_year] AP trouvé: {ap.uuid} (num_amendement: {ap.num_amendement})")
+            serializer = ActivitePeriodiqueSerializer(ap)
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Aucun AP trouvé pour l'année précédente
         logger.info(f"[get_last_ap_previous_year] Aucun AP trouvé pour l'année {annee_precedente.annee}")
@@ -1286,12 +1251,12 @@ def activite_periodique_stats(request):
         if scope == 'dernier':
             from django.db.models import Case, When, IntegerField, Max
             type_priority = Case(
-                When(type_tableau__code='AMENDEMENT_2', then=3),
-                When(type_tableau__code='AMENDEMENT_1', then=2),
-                When(type_tableau__code__in=['INITIAL', 'INITIALE'], then=1),
+                When(num_amendement=2, then=3),
+                When(num_amendement=1, then=2),
+                When(num_amendement=0, then=1),
                 default=0, output_field=IntegerField()
             )
-            annotated = aps_base.filter(type_tableau__isnull=False).annotate(priority=type_priority)
+            annotated = aps_base.annotate(priority=type_priority)
             last_uuids = []
             for proc_uuid in annotated.values_list('processus', flat=True).distinct():
                 max_p = annotated.filter(processus=proc_uuid).aggregate(max_p=Max('priority'))['max_p']
@@ -1301,8 +1266,7 @@ def activite_periodique_stats(request):
             aps_initiaux = aps_base.filter(uuid__in=last_uuids)
         else:
             aps_initiaux = aps_base.filter(
-                type_tableau__isnull=False,
-                type_tableau__code__in=['INITIAL', 'INITIALE']
+                num_amendement=0
             )
         logger.info(f"[activite_periodique_stats] Nombre d'APs initiaux: {aps_initiaux.count()}")
 

@@ -7,7 +7,7 @@ import os
 import datetime
 
 from parametre.models import (
-    Processus, Versions, Direction, SousDirection,
+    Processus, Direction, SousDirection,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque,
     VersionEvaluationCDR, StatutActionCDR,
     Media, Preuve,
@@ -293,8 +293,6 @@ class Command(BaseCommand):
     # -----------------------------------------------------------------------
 
     def _seed_cdrs(self, user):
-        version_initial = Versions.objects.get(code='INITIAL')
-        version_amend1 = Versions.objects.get(code='AMENDEMENT_1')
         processus_list = list(Processus.objects.filter(nom__in=DETAILS_PAR_PROCESSUS.keys()))
 
         if not processus_list:
@@ -309,7 +307,7 @@ class Command(BaseCommand):
                 cdr_initial, created = CDR.objects.get_or_create(
                     processus=processus,
                     annee=annee,
-                    type_tableau=version_initial,
+                    num_amendement=0,
                     defaults={
                         'cree_par': user,
                         'is_validated': True,
@@ -324,7 +322,7 @@ class Command(BaseCommand):
                 cdr_amend, created_a = CDR.objects.get_or_create(
                     processus=processus,
                     annee=annee,
-                    type_tableau=version_amend1,
+                    num_amendement=1,
                     defaults={
                         'cree_par': user,
                         'is_validated': True,
@@ -584,6 +582,6 @@ class Command(BaseCommand):
             media = Media()
             media.fichier.save('preuve.pdf', File(f), save=True)
 
-        preuve = Preuve.objects.create(description='Preuve PDF seed CDR')
+        preuve = Preuve.objects.create(titre='Preuve PDF seed CDR')
         preuve.medias.add(media)
         return preuve

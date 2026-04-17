@@ -110,18 +110,20 @@ class ObjectivesUpdateSerializer(serializers.ModelSerializer):
 
 class TableauBordSerializer(serializers.ModelSerializer):
     processus_nom = serializers.CharField(source='processus.nom', read_only=True)
-    type_label = serializers.CharField(source='get_type_display', read_only=True)
-    type_tableau_code = serializers.CharField(source='type_tableau.code', read_only=True)
-    type_tableau_nom = serializers.CharField(source='type_tableau.nom', read_only=True)
+    nom_version = serializers.SerializerMethodField()
     valide_par_nom = serializers.SerializerMethodField()
     
+    def get_nom_version(self, obj):
+        return obj.nom_version
+
     def get_valide_par_nom(self, obj):
         """Retourne le nom complet de l'utilisateur qui a validé"""
         if obj.valide_par:
             return f"{obj.valide_par.first_name} {obj.valide_par.last_name}".strip() or obj.valide_par.username
         return None
+
     has_amendements = serializers.SerializerMethodField()
-    
+
     def get_has_amendements(self, obj):
         """Vérifier si le tableau initial a des amendements"""
         return obj.has_amendements()
@@ -130,8 +132,8 @@ class TableauBordSerializer(serializers.ModelSerializer):
         model = TableauBord
         fields = [
             'uuid', 'annee', 'processus', 'processus_nom',
-            'type_tableau', 'type_tableau_code', 'type_tableau_nom', 
-            'type_label', 'initial_ref', 'cree_par', 'created_at', 'updated_at',
+            'num_amendement', 'nom_version',
+            'initial_ref', 'cree_par', 'created_at', 'updated_at',
             'is_validated', 'date_validation', 'valide_par', 'valide_par_nom', 'has_amendements',
             'raison_amendement'
         ]

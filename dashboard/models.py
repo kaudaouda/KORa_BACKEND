@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 import uuid
-from parametre.models import Processus, Versions
+from parametre.models import Processus
 
 
 class Objectives(models.Model):
@@ -158,7 +158,8 @@ class Observation(models.Model):
 
 class TableauBord(models.Model):
     """
-    Tableau de bord par année et processus, avec types: Initial, Amendement 1, Amendement 2
+    Tableau de bord par année et processus.
+    num_amendement=0 → Tableau Initial, num_amendement=N → Amendement N (illimité).
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     annee = models.PositiveIntegerField(help_text="Année du tableau de bord (ex: 2025)")
@@ -167,11 +168,9 @@ class TableauBord(models.Model):
         on_delete=models.CASCADE,
         related_name='tableaux_bord'
     )
-    type_tableau = models.ForeignKey(
-        Versions,
-        on_delete=models.CASCADE,
-        related_name='tableaux_bord',
-        help_text="Type de tableau de bord"
+    num_amendement = models.PositiveIntegerField(
+        default=0,
+        help_text="0 = Tableau Initial, 1 = Amendement 1, N = Amendement N"
     )
     initial_ref = models.ForeignKey(
         'self',
@@ -180,8 +179,6 @@ class TableauBord(models.Model):
         null=True,
         blank=True
     )
-
-    # Raison de l'amendement (optionnelle pour INITIAL, utile pour AMENDEMENT_1 / AMENDEMENT_2)
     raison_amendement = models.TextField(
         null=True,
         blank=True,
@@ -192,19 +189,15 @@ class TableauBord(models.Model):
         on_delete=models.CASCADE,
         related_name='tableaux_bord_crees'
     )
-    
-    # Nouveaux champs pour l'état de validation
     is_validated = models.BooleanField(
         default=False,
         help_text="Indique si le tableau de bord est validé pour la saisie des trimestres"
     )
-    
     date_validation = models.DateTimeField(
         null=True,
         blank=True,
         help_text="Date de validation du tableau"
     )
-    
     valide_par = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -213,7 +206,6 @@ class TableauBord(models.Model):
         related_name='tableaux_valides',
         help_text="Utilisateur qui a validé le tableau"
     )
-    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -223,79 +215,70 @@ class TableauBord(models.Model):
         verbose_name_plural = 'Tableaux de bord'
         constraints = [
             models.UniqueConstraint(
-                fields=['annee', 'processus', 'type_tableau'],
-                name='uniq_tableau_per_annee_processus_type'
+                fields=['annee', 'processus', 'num_amendement'],
+                name='uniq_tableau_per_annee_processus_num_amendement'
             )
         ]
-        ordering = ['-annee', 'processus__numero_processus', 'type_tableau__code']
+        ordering = ['-annee', 'processus__numero_processus', 'num_amendement']
+
+    @property
+    def is_initial(self):
+        return self.num_amendement == 0
+
+    @property
+    def nom_version(self):
+        if self.num_amendement == 0:
+            return "Tableau Initial"
+        return f"Amendement {self.num_amendement}"
 
     def __str__(self):
-        return f"{self.processus.nom} - {self.annee} - {self.type_tableau.nom}"
-
-    def get_type_display(self):
-        """Retourne le nom d'affichage du type avec icône"""
-        return self.type_tableau.get_display_name()
+        return f"{self.processus.nom} - {self.annee} - {self.nom_version}"
 
     def clean(self):
         """
-        Validation personnalisée pour s'assurer de la cohérence des données
+        Validation : un amendement doit avoir un initial_ref pointant vers num_amendement=0.
+        Auto-assigne initial_ref si absent.
         """
-        from django.core.exceptions import ValidationError
-        
-        # Si c'est un amendement, initial_ref doit être défini
-        if self.type_tableau and self.type_tableau.code != 'INITIAL':
+        if self.num_amendement > 0:
             if not self.initial_ref:
-                # Auto-assigner l'initial si pas défini
                 initial = TableauBord.objects.filter(
                     annee=self.annee,
                     processus=self.processus,
-                    type_tableau__code='INITIAL'
+                    num_amendement=0
                 ).first()
                 if not initial:
-                    raise ValidationError("Aucun tableau de bord initial n'existe pour ce processus et cette année.")
+                    raise ValidationError(
+                        "Aucun tableau de bord initial n'existe pour ce processus et cette année."
+                    )
                 self.initial_ref = initial
-            
-            # L'initial_ref doit être un tableau initial
-            if self.initial_ref.type_tableau.code != 'INITIAL':
+
+            if self.initial_ref.num_amendement != 0:
                 raise ValidationError({
-                    'initial_ref': 'La référence doit pointer vers un tableau initial.'
+                    'initial_ref': 'La référence doit pointer vers un tableau initial (num_amendement=0).'
                 })
+
+            # Le précédent amendement doit exister
+            if self.num_amendement > 1:
+                precedent_existe = TableauBord.objects.filter(
+                    annee=self.annee,
+                    processus=self.processus,
+                    num_amendement=self.num_amendement - 1
+                ).exists()
+                if not precedent_existe:
+                    raise ValidationError(
+                        f"L'amendement {self.num_amendement - 1} doit exister avant de créer "
+                        f"l'amendement {self.num_amendement}."
+                    )
         else:
-            # Si c'est un tableau initial, initial_ref doit être null
             self.initial_ref = None
 
-        # Optionnel: empêcher Amendement 2 sans Amendement 1
-        if self.type_tableau and self.type_tableau.code == 'AMENDEMENT_2':
-            has_a1 = TableauBord.objects.filter(
-                annee=self.annee,
-                processus=self.processus,
-                type_tableau__code='AMENDEMENT_1'
-            ).exists()
-            if not has_a1:
-                raise ValidationError("Amendement 2 nécessite un Amendement 1 existant.")
-
     def has_amendements(self):
-        """
-        Vérifier si ce tableau a des amendements suivants
-        """
-        if self.type_tableau and self.type_tableau.code == 'INITIAL':
-            # Pour un tableau initial, vérifier s'il a des amendements
-            return TableauBord.objects.filter(
-                annee=self.annee,
-                processus=self.processus,
-                type_tableau__code__in=['AMENDEMENT_1', 'AMENDEMENT_2']
-            ).exists()
-        elif self.type_tableau and self.type_tableau.code == 'AMENDEMENT_1':
-            # Pour un amendement 1, vérifier s'il y a un amendement 2
-            return TableauBord.objects.filter(
-                annee=self.annee,
-                processus=self.processus,
-                type_tableau__code='AMENDEMENT_2'
-            ).exists()
-        elif self.type_tableau and self.type_tableau.code == 'AMENDEMENT_2':
-            # L'amendement 2 ne peut pas avoir d'amendements suivants
-            return False
-        return False
+        """Vérifie si ce tableau a au moins un amendement suivant."""
+        return TableauBord.objects.filter(
+            annee=self.annee,
+            processus=self.processus,
+            num_amendement=self.num_amendement + 1
+        ).exists()
 
     def save(self, *args, **kwargs):
         """

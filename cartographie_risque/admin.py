@@ -7,10 +7,10 @@ class CDRAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les CDR"""
     
     list_display = [
-        'annee', 'processus', 'type_tableau', 'is_validated', 'valide_par', 'date_validation', 'cree_par', 'created_at'
+        'annee', 'processus', 'num_amendement', 'is_validated', 'valide_par', 'date_validation', 'cree_par', 'created_at'
     ]
     list_filter = [
-        'annee', 'type_tableau', 'processus', 'is_validated', 'created_at'
+        'annee', 'num_amendement', 'processus', 'is_validated', 'created_at'
     ]
     search_fields = [
         'processus__nom', 'processus__numero_processus', 'cree_par__username', 'raison_amendement'
@@ -18,11 +18,11 @@ class CDRAdmin(admin.ModelAdmin):
     readonly_fields = [
         'uuid', 'created_at', 'updated_at', 'date_validation', 'valide_par'
     ]
-    ordering = ['-annee', 'processus__numero_processus', 'type_tableau']
+    ordering = ['-annee', 'processus__numero_processus', 'num_amendement']
 
     fieldsets = (
         ('Informations', {
-            'fields': ('uuid', 'annee', 'processus', 'type_tableau')
+            'fields': ('uuid', 'annee', 'processus', 'num_amendement')
         }),
         ('Amendement', {
             'fields': ('initial_ref', 'raison_amendement'),
@@ -53,7 +53,7 @@ class CDRAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         """Optimiser les requêtes avec select_related"""
-        return super().get_queryset(request).select_related('processus', 'type_tableau', 'cree_par', 'valide_par')
+        return super().get_queryset(request).select_related('processus', 'cree_par', 'valide_par')
 
 
 @admin.register(DetailsCDR)
