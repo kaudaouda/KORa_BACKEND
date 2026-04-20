@@ -418,9 +418,9 @@ class Command(BaseCommand):
                 )
                 if created:
                     stats['analyses'] += 1
-                    self.stdout.write(self.style.SUCCESS(f'  + Analyse creee: {tableau.type_tableau.nom}'))
+                    self.stdout.write(self.style.SUCCESS(f'  + Analyse creee: {tableau.processus.nom}'))
                 else:
-                    self.stdout.write(f'  o Analyse existante: {tableau.type_tableau.nom}')
+                    self.stdout.write(f'  o Analyse existante: {tableau.processus.nom}')
 
                 for ligne_data in lignes_data:
                     ligne, created = AnalyseLigne.objects.get_or_create(
