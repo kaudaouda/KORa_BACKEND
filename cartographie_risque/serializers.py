@@ -316,28 +316,35 @@ class EvaluationRisqueCreateSerializer(serializers.ModelSerializer):
     def calculate_criticite(self, frequence, gravite):
         """Calculer automatiquement la criticité à partir de la fréquence et de la gravité"""
         from parametre.models import CriticiteRisque
-        
+
+        CRITICITE_MATRIX = {
+            ('1', 'N'): 'Faible',      ('1', 'M'): 'Faible',      ('1', 'MO'): 'Faible',
+            ('1', 'MJ'): 'Moyenne',    ('1', 'C'): 'Elevee',
+            ('2', 'N'): 'Faible',      ('2', 'M'): 'Faible',      ('2', 'MO'): 'Moyenne',
+            ('2', 'MJ'): 'Elevee',     ('2', 'C'): 'Tres elevee',
+            ('3', 'N'): 'Faible',      ('3', 'M'): 'Moyenne',     ('3', 'MO'): 'Elevee',
+            ('3', 'MJ'): 'Tres elevee', ('3', 'C'): 'Tres elevee',
+            ('4', 'N'): 'Moyenne',     ('4', 'M'): 'Elevee',      ('4', 'MO'): 'Elevee',
+            ('4', 'MJ'): 'Tres elevee', ('4', 'C'): 'Tres elevee',
+        }
+
         if not frequence or not gravite:
             return None
-        
-        # Récupérer les valeurs de la fréquence et de la gravité
-        # Utiliser le libellé comme fallback si valeur/code est null
-        freq_valeur = frequence.valeur if hasattr(frequence, 'valeur') and frequence.valeur else (frequence.libelle if hasattr(frequence, 'libelle') else None)
-        grav_code = gravite.code if hasattr(gravite, 'code') and gravite.code else (gravite.libelle if hasattr(gravite, 'libelle') else None)
-        
+
+        freq_valeur = frequence.valeur if hasattr(frequence, 'valeur') and frequence.valeur else None
+        grav_code = gravite.code if hasattr(gravite, 'code') and gravite.code else None
+
         if not freq_valeur or not grav_code:
             return None
-        
-        # Calculer la criticité : combinaison de la valeur de fréquence et du code de gravité
-        criticite_libelle = f"{freq_valeur}{grav_code}"
-        
-        # Chercher ou créer la CriticiteRisque correspondante
-        criticite, created = CriticiteRisque.objects.get_or_create(
-            libelle=criticite_libelle,
-            defaults={'is_active': True}
-        )
-        
-        return criticite
+
+        criticite_libelle = CRITICITE_MATRIX.get((str(freq_valeur), str(grav_code)))
+        if not criticite_libelle:
+            return None
+
+        try:
+            return CriticiteRisque.objects.get(libelle=criticite_libelle, is_active=True)
+        except CriticiteRisque.DoesNotExist:
+            return None
     
     def find_risque_by_criticite(self, criticite):
         """Trouver automatiquement le risque correspondant à une criticité"""
@@ -408,28 +415,35 @@ class EvaluationRisqueUpdateSerializer(serializers.ModelSerializer):
     def calculate_criticite(self, frequence, gravite):
         """Calculer automatiquement la criticité à partir de la fréquence et de la gravité"""
         from parametre.models import CriticiteRisque
-        
+
+        CRITICITE_MATRIX = {
+            ('1', 'N'): 'Faible',      ('1', 'M'): 'Faible',      ('1', 'MO'): 'Faible',
+            ('1', 'MJ'): 'Moyenne',    ('1', 'C'): 'Elevee',
+            ('2', 'N'): 'Faible',      ('2', 'M'): 'Faible',      ('2', 'MO'): 'Moyenne',
+            ('2', 'MJ'): 'Elevee',     ('2', 'C'): 'Tres elevee',
+            ('3', 'N'): 'Faible',      ('3', 'M'): 'Moyenne',     ('3', 'MO'): 'Elevee',
+            ('3', 'MJ'): 'Tres elevee', ('3', 'C'): 'Tres elevee',
+            ('4', 'N'): 'Moyenne',     ('4', 'M'): 'Elevee',      ('4', 'MO'): 'Elevee',
+            ('4', 'MJ'): 'Tres elevee', ('4', 'C'): 'Tres elevee',
+        }
+
         if not frequence or not gravite:
             return None
-        
-        # Récupérer les valeurs de la fréquence et de la gravité
-        # Utiliser le libellé comme fallback si valeur/code est null
-        freq_valeur = frequence.valeur if hasattr(frequence, 'valeur') and frequence.valeur else (frequence.libelle if hasattr(frequence, 'libelle') else None)
-        grav_code = gravite.code if hasattr(gravite, 'code') and gravite.code else (gravite.libelle if hasattr(gravite, 'libelle') else None)
-        
+
+        freq_valeur = frequence.valeur if hasattr(frequence, 'valeur') and frequence.valeur else None
+        grav_code = gravite.code if hasattr(gravite, 'code') and gravite.code else None
+
         if not freq_valeur or not grav_code:
             return None
-        
-        # Calculer la criticité : combinaison de la valeur de fréquence et du code de gravité
-        criticite_libelle = f"{freq_valeur}{grav_code}"
-        
-        # Chercher ou créer la CriticiteRisque correspondante
-        criticite, created = CriticiteRisque.objects.get_or_create(
-            libelle=criticite_libelle,
-            defaults={'is_active': True}
-        )
-        
-        return criticite
+
+        criticite_libelle = CRITICITE_MATRIX.get((str(freq_valeur), str(grav_code)))
+        if not criticite_libelle:
+            return None
+
+        try:
+            return CriticiteRisque.objects.get(libelle=criticite_libelle, is_active=True)
+        except CriticiteRisque.DoesNotExist:
+            return None
     
     def find_risque_by_criticite(self, criticite):
         """Trouver automatiquement le risque correspondant à une criticité"""
@@ -808,7 +822,7 @@ class SuiviActionSerializer(serializers.ModelSerializer):
     def get_element_preuve_nom(self, obj):
         """Retourner le nom/description de la preuve"""
         if obj.element_preuve:
-            return obj.element_preuve.description
+            return obj.element_preuve.titre
         return None
     
     def get_element_preuve_url(self, obj):

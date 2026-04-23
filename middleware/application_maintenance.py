@@ -51,38 +51,24 @@ class ApplicationMaintenanceMiddleware(MiddlewareMixin):
         # Vérifier si la route correspond à une application
         for url_prefix, app_name in self.APP_ROUTES.items():
             if request.path.startswith(url_prefix):
-                # Debug: Logger les infos de l'utilisateur
-                logger.info(
-                    f"[ApplicationMaintenance] Vérification pour {app_name} - "
-                    f"User: {request.user}, "
-                    f"is_authenticated: {request.user.is_authenticated}, "
-                    f"is_staff: {getattr(request.user, 'is_staff', False)}, "
-                    f"is_superuser: {getattr(request.user, 'is_superuser', False)}"
-                )
-                
-                # Security by Design : Super admin bypass
-                # Seuls les utilisateurs avec is_staff ET is_superuser peuvent bypasser
-                if request.user.is_authenticated and request.user.is_staff and request.user.is_superuser:
-                    logger.info(
-                        f"[ApplicationMaintenance] ✅ Super admin bypass pour {app_name} "
-                        f"(user: {request.user.username})"
-                    )
-                    return None  # Laisser passer
-                
+                user = request.user
+                is_auth = user.is_authenticated
+                is_admin = is_auth and getattr(user, 'is_staff', False) and getattr(user, 'is_superuser', False)
+
+                # Super admin bypass
+                if is_admin:
+                    return None
+
                 # Vérifier si l'app est activée
                 try:
                     config = ApplicationConfig.objects.get(app_name=app_name)
-                    
+
                     # Security by Design : Refus par défaut si is_enabled=False
                     if not config.is_enabled:
-                        # Logger la tentative d'accès bloquée
-                        user_info = f"user: {request.user.username}" if request.user.is_authenticated else "anonymous"
+                        user_info = f"user: {user.username}" if is_auth else "anonymous"
                         logger.warning(
-                            f"[ApplicationMaintenance] Accès bloqué à {app_name} "
-                            f"({user_info}, IP: {self._get_client_ip(request)})"
+                            f"[ApplicationMaintenance] Accès bloqué à {app_name} ({user_info})"
                         )
-                        
-                        # Application en maintenance - retourner 503
                         return JsonResponse({
                             'error': 'Application en maintenance',
                             'message': config.maintenance_message or 'Cette application est temporairement indisponible',
@@ -91,21 +77,12 @@ class ApplicationMaintenanceMiddleware(MiddlewareMixin):
                             'maintenance_end': config.maintenance_end.isoformat() if config.maintenance_end else None,
                             'code': 'APP_MAINTENANCE'
                         }, status=503)
-                    
-                    # Application activée, laisser passer
+
                     return None
-                    
+
                 except ApplicationConfig.DoesNotExist:
-                    # Security by Design : Si pas de config, laisser passer pour compatibilité
-                    # Cela permet de ne pas casser les apps qui n'ont pas encore de config
-                    logger.debug(
-                        f"[ApplicationMaintenance] Pas de config pour {app_name}, "
-                        f"accès autorisé par défaut"
-                    )
                     return None
                 except Exception as e:
-                    # Security by Design : En cas d'erreur, logger mais laisser passer
-                    # pour éviter de bloquer tout le système
                     logger.error(
                         f"[ApplicationMaintenance] Erreur lors de la vérification de {app_name}: {e}",
                         exc_info=True

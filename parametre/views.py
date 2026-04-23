@@ -6,8 +6,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views import View
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, renderer_classes
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import BaseRenderer
 from rest_framework.response import Response
 from django.db.models import Q
 from django.contrib.auth.tokens import default_token_generator
@@ -18,14 +19,18 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
 import json
+import time
+import hashlib
 import logging
+from django.http import StreamingHttpResponse
+from django.db.models import Max
 
 from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction,
     SousDirection, Service, Processus, Preuve, ActivityLog, StatutActionCDR,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
-    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque,
+    FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Mois, TypeDocument,
     Role, UserProcessus, UserProcessusRole, Notification, NotificationPolicy
 )
 from .utils.notification_policy import should_notify_pac
@@ -35,12 +40,28 @@ from .serializers import (
     DashboardNotificationSettingsSerializer, EmailSettingsSerializer, FrequenceSerializer,
     RisqueSerializer, StatutActionCDRSerializer,
     RoleSerializer, UserProcessusSerializer, UserProcessusRoleSerializer,
-    UserSerializer, UserCreateSerializer, UserInviteSerializer
+    UserSerializer, UserCreateSerializer, UserInviteSerializer,
+    CriticiteRisqueSerializer, DysfonctionnementRecommandationSerializer,
+    NatureSerializer, ProcessusSerializer, ServiceSerializer,
+    MoisSerializer, FrequenceRisqueSerializer, GraviteRisqueSerializer,
+    TypeDocumentSerializer,
 )
 from .utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 from .utils.email_config import load_email_settings_into_django
 
 logger = logging.getLogger(__name__)
+
+
+class ServerSentEventRenderer(BaseRenderer):
+    """Renderer passthrough pour les flux SSE (text/event-stream).
+    Permet à DRF d'accepter les requêtes EventSource sans négociation de contenu.
+    Le rendu réel est géré par StreamingHttpResponse, pas par ce renderer.
+    """
+    media_type = 'text/event-stream'
+    format = 'sse'
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return data
 
 
 def get_client_ip(request):
@@ -1275,7 +1296,9 @@ def dysfonctionnements_all_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def appreciation_create(request):
-    """Créer une nouvelle appréciation"""
+    """Créer une nouvelle appréciation — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         serializer = AppreciationSerializer(data=request.data)
         if serializer.is_valid():
@@ -1290,7 +1313,9 @@ def appreciation_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def appreciation_update(request, uuid):
-    """Mettre à jour une appréciation"""
+    """Mettre à jour une appréciation — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         appreciation = Appreciation.objects.get(uuid=uuid)
         serializer = AppreciationSerializer(appreciation, data=request.data, partial=True)
@@ -1308,7 +1333,9 @@ def appreciation_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def appreciation_delete(request, uuid):
-    """Supprimer une appréciation"""
+    """Supprimer une appréciation — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         appreciation = Appreciation.objects.get(uuid=uuid)
         appreciation.delete()
@@ -1324,7 +1351,9 @@ def appreciation_delete(request, uuid):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def categorie_create(request):
-    """Créer une nouvelle catégorie"""
+    """Créer une nouvelle catégorie — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         serializer = CategorieSerializer(data=request.data)
         if serializer.is_valid():
@@ -1339,7 +1368,9 @@ def categorie_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def categorie_update(request, uuid):
-    """Mettre à jour une catégorie"""
+    """Mettre à jour une catégorie — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         categorie = Categorie.objects.get(uuid=uuid)
         serializer = CategorieSerializer(categorie, data=request.data, partial=True)
@@ -1357,7 +1388,9 @@ def categorie_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def categorie_delete(request, uuid):
-    """Supprimer une catégorie"""
+    """Supprimer une catégorie — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         categorie = Categorie.objects.get(uuid=uuid)
         categorie.delete()
@@ -1373,7 +1406,9 @@ def categorie_delete(request, uuid):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def direction_create(request):
-    """Créer une nouvelle direction"""
+    """Créer une nouvelle direction — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         serializer = DirectionSerializer(data=request.data)
         if serializer.is_valid():
@@ -1388,7 +1423,9 @@ def direction_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def direction_update(request, uuid):
-    """Mettre à jour une direction"""
+    """Mettre à jour une direction — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         direction = Direction.objects.get(uuid=uuid)
         serializer = DirectionSerializer(direction, data=request.data, partial=True)
@@ -1406,7 +1443,9 @@ def direction_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def direction_delete(request, uuid):
-    """Supprimer une direction"""
+    """Supprimer une direction — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         direction = Direction.objects.get(uuid=uuid)
         direction.delete()
@@ -1422,7 +1461,9 @@ def direction_delete(request, uuid):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def sous_direction_create(request):
-    """Créer une nouvelle sous-direction"""
+    """Créer une nouvelle sous-direction — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         serializer = SousDirectionSerializer(data=request.data)
         if serializer.is_valid():
@@ -1437,7 +1478,9 @@ def sous_direction_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def sous_direction_update(request, uuid):
-    """Mettre à jour une sous-direction"""
+    """Mettre à jour une sous-direction — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         sous_direction = SousDirection.objects.get(uuid=uuid)
         serializer = SousDirectionSerializer(sous_direction, data=request.data, partial=True)
@@ -1455,7 +1498,9 @@ def sous_direction_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def sous_direction_delete(request, uuid):
-    """Supprimer une sous-direction"""
+    """Supprimer une sous-direction — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         sous_direction = SousDirection.objects.get(uuid=uuid)
         sous_direction.delete()
@@ -1471,7 +1516,9 @@ def sous_direction_delete(request, uuid):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def action_type_create(request):
-    """Créer un nouveau type d'action"""
+    """Créer un nouveau type d'action — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         serializer = ActionTypeSerializer(data=request.data)
         if serializer.is_valid():
@@ -1486,7 +1533,9 @@ def action_type_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def action_type_update(request, uuid):
-    """Mettre à jour un type d'action"""
+    """Mettre à jour un type d'action — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         action_type = ActionType.objects.get(uuid=uuid)
         serializer = ActionTypeSerializer(action_type, data=request.data, partial=True)
@@ -1504,7 +1553,9 @@ def action_type_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def action_type_delete(request, uuid):
-    """Supprimer un type d'action"""
+    """Supprimer un type d'action — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         action_type = ActionType.objects.get(uuid=uuid)
         action_type.delete()
@@ -2446,6 +2497,66 @@ def annees_all_list(request):
         return Response({'error': 'Impossible de lister les années'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# Années CRUD (super admin uniquement)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def annee_create(request):
+    """Créer une nouvelle année"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .models import Annee
+        from .serializers import AnneeSerializer
+        serializer = AnneeSerializer(data=request.data)
+        if serializer.is_valid():
+            annee = serializer.save()
+            return Response(AnneeSerializer(annee).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur annee_create: {e}")
+        return Response({'error': "Impossible de créer l'année"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def annee_update(request, uuid):
+    """Mettre à jour une année"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .models import Annee
+        from .serializers import AnneeSerializer
+        annee = Annee.objects.get(uuid=uuid)
+        serializer = AnneeSerializer(annee, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Annee.DoesNotExist:
+        return Response({'error': 'Année non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur annee_update: {e}")
+        return Response({'error': "Impossible de mettre à jour l'année"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def annee_delete(request, uuid):
+    """Supprimer une année"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        from .models import Annee
+        annee = Annee.objects.get(uuid=uuid)
+        annee.delete()
+        return Response({'message': 'Année supprimée avec succès'}, status=status.HTTP_200_OK)
+    except Annee.DoesNotExist:
+        return Response({'error': 'Année non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur annee_delete: {e}")
+        return Response({'error': "Impossible de supprimer l'année"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # ==================== TYPES DE TABLEAU ====================
 
 # Les endpoints types_tableau_* ont été supprimés avec le modèle Versions.
@@ -2509,6 +2620,129 @@ def criticités_risque_list(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def criticites_all_list(request):
+    """Liste toutes les criticités de risque (actives et inactives)"""
+    try:
+        criticites = CriticiteRisque.objects.all().order_by('libelle')
+        serializer = CriticiteRisqueSerializer(criticites, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la liste de toutes les criticités: {str(e)}")
+        return Response({'error': 'Impossible de lister les criticités'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def criticite_create(request):
+    """Créer une criticité de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = CriticiteRisqueSerializer(data=request.data)
+        if serializer.is_valid():
+            criticite = serializer.save()
+            return Response(CriticiteRisqueSerializer(criticite).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la criticité: {str(e)}")
+        return Response({'error': 'Impossible de créer la criticité'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def criticite_update(request, uuid):
+    """Mettre à jour une criticité de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        criticite = CriticiteRisque.objects.get(uuid=uuid)
+        serializer = CriticiteRisqueSerializer(criticite, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except CriticiteRisque.DoesNotExist:
+        return Response({'error': 'Criticité non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour de la criticité: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour la criticité'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def criticite_delete(request, uuid):
+    """Supprimer une criticité de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        criticite = CriticiteRisque.objects.get(uuid=uuid)
+        criticite.delete()
+        return Response({'message': 'Criticité supprimée avec succès'}, status=status.HTTP_200_OK)
+    except CriticiteRisque.DoesNotExist:
+        return Response({'error': 'Criticité non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la criticité: {str(e)}")
+        return Response({'error': 'Impossible de supprimer la criticité'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== DYSFONCTIONNEMENTS/RECOMMANDATIONS CRUD ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def dysfonctionnement_create(request):
+    """Créer un dysfonctionnement/recommandation — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = DysfonctionnementRecommandationSerializer(data=request.data)
+        if serializer.is_valid():
+            dysfn = serializer.save(cree_par=request.user)
+            return Response(DysfonctionnementRecommandationSerializer(dysfn).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du dysfonctionnement: {str(e)}")
+        return Response({'error': 'Impossible de créer le dysfonctionnement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def dysfonctionnement_update(request, uuid):
+    """Mettre à jour un dysfonctionnement/recommandation — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        dysfn = DysfonctionnementRecommandation.objects.get(uuid=uuid)
+        serializer = DysfonctionnementRecommandationSerializer(dysfn, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except DysfonctionnementRecommandation.DoesNotExist:
+        return Response({'error': 'Dysfonctionnement non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du dysfonctionnement: {str(e)}")
+        return Response({'error': 'Impossible de mettre à jour le dysfonctionnement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def dysfonctionnement_delete(request, uuid):
+    """Supprimer un dysfonctionnement/recommandation — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        dysfn = DysfonctionnementRecommandation.objects.get(uuid=uuid)
+        dysfn.delete()
+        return Response({'message': 'Dysfonctionnement supprimé avec succès'}, status=status.HTTP_200_OK)
+    except DysfonctionnementRecommandation.DoesNotExist:
+        return Response({'error': 'Dysfonctionnement non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du dysfonctionnement: {str(e)}")
+        return Response({'error': 'Impossible de supprimer le dysfonctionnement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def risques_list(request):
     """Liste tous les types de risques (actifs uniquement)"""
     try:
@@ -2536,7 +2770,9 @@ def risques_all_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def risque_create(request):
-    """Créer un nouveau risque"""
+    """Créer un nouveau risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         serializer = RisqueSerializer(data=request.data)
         if serializer.is_valid():
@@ -2551,7 +2787,9 @@ def risque_create(request):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def risque_update(request, uuid):
-    """Mettre à jour un risque"""
+    """Mettre à jour un risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         risque = Risque.objects.get(uuid=uuid)
         serializer = RisqueSerializer(risque, data=request.data, partial=True)
@@ -2569,7 +2807,9 @@ def risque_update(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def risque_delete(request, uuid):
-    """Supprimer un risque"""
+    """Supprimer un risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
         risque = Risque.objects.get(uuid=uuid)
         risque.delete()
@@ -2579,6 +2819,588 @@ def risque_delete(request, uuid):
     except Exception as e:
         logger.error(f"Erreur lors de la suppression du risque: {str(e)}")
         return Response({'error': 'Impossible de supprimer le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== NATURES CRUD ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def nature_create(request):
+    """Créer une nature — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = NatureSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(NatureSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur nature_create: {e}")
+        return Response({'error': 'Impossible de créer la nature'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def nature_update(request, uuid):
+    """Mettre à jour une nature — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Nature.objects.get(uuid=uuid)
+        serializer = NatureSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Nature.DoesNotExist:
+        return Response({'error': 'Nature non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur nature_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour la nature'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def nature_delete(request, uuid):
+    """Supprimer une nature — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Nature.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Nature supprimée avec succès'}, status=status.HTTP_200_OK)
+    except Nature.DoesNotExist:
+        return Response({'error': 'Nature non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur nature_delete: {e}")
+        return Response({'error': 'Impossible de supprimer la nature'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== SERVICES CRUD ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def service_create(request):
+    """Créer un service — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = ServiceSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(ServiceSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur service_create: {e}")
+        return Response({'error': 'Impossible de créer le service'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def service_update(request, uuid):
+    """Mettre à jour un service — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Service.objects.get(uuid=uuid)
+        serializer = ServiceSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Service.DoesNotExist:
+        return Response({'error': 'Service non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur service_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour le service'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def service_delete(request, uuid):
+    """Supprimer un service — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Service.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Service supprimé avec succès'}, status=status.HTTP_200_OK)
+    except Service.DoesNotExist:
+        return Response({'error': 'Service non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur service_delete: {e}")
+        return Response({'error': 'Impossible de supprimer le service'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== PROCESSUS CRUD ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def processus_create(request):
+    """Créer un processus — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = ProcessusSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save(cree_par=request.user)
+            return Response(ProcessusSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur processus_create: {e}")
+        return Response({'error': 'Impossible de créer le processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def processus_update(request, uuid):
+    """Mettre à jour un processus — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Processus.objects.get(uuid=uuid)
+        serializer = ProcessusSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Processus.DoesNotExist:
+        return Response({'error': 'Processus non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur processus_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour le processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def processus_delete(request, uuid):
+    """Supprimer un processus — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Processus.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Processus supprimé avec succès'}, status=status.HTTP_200_OK)
+    except Processus.DoesNotExist:
+        return Response({'error': 'Processus non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur processus_delete: {e}")
+        return Response({'error': 'Impossible de supprimer le processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== MOIS CRUD ====================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mois_create(request):
+    """Créer un mois — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = MoisSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(MoisSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur mois_create: {e}")
+        return Response({'error': 'Impossible de créer le mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def mois_update(request, uuid):
+    """Mettre à jour un mois — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Mois.objects.get(uuid=uuid)
+        serializer = MoisSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Mois.DoesNotExist:
+        return Response({'error': 'Mois non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur mois_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour le mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def mois_delete(request, uuid):
+    """Supprimer un mois — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Mois.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Mois supprimé avec succès'}, status=status.HTTP_200_OK)
+    except Mois.DoesNotExist:
+        return Response({'error': 'Mois non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur mois_delete: {e}")
+        return Response({'error': 'Impossible de supprimer le mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== FRÉQUENCES CRUD ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def frequences_all_list(request):
+    """Liste toutes les fréquences (admin)"""
+    try:
+        objs = Frequence.objects.all().order_by('nom')
+        serializer = FrequenceSerializer(objs, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur frequences_all_list: {e}")
+        return Response({'error': 'Impossible de lister les fréquences'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def frequence_create(request):
+    """Créer une fréquence — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = FrequenceSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(FrequenceSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur frequence_create: {e}")
+        return Response({'error': 'Impossible de créer la fréquence'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def frequence_update(request, uuid):
+    """Mettre à jour une fréquence — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Frequence.objects.get(uuid=uuid)
+        serializer = FrequenceSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Frequence.DoesNotExist:
+        return Response({'error': 'Fréquence non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur frequence_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour la fréquence'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def frequence_delete(request, uuid):
+    """Supprimer une fréquence — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = Frequence.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Fréquence supprimée avec succès'}, status=status.HTTP_200_OK)
+    except Frequence.DoesNotExist:
+        return Response({'error': 'Fréquence non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur frequence_delete: {e}")
+        return Response({'error': 'Impossible de supprimer la fréquence'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== FRÉQUENCES RISQUE CRUD ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def frequences_risque_all_list(request):
+    """Liste toutes les fréquences de risque (actives et inactives)"""
+    try:
+        objs = FrequenceRisque.objects.all().order_by('libelle')
+        serializer = FrequenceRisqueSerializer(objs, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur frequences_risque_all_list: {e}")
+        return Response({'error': 'Impossible de lister les fréquences de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def frequence_risque_create(request):
+    """Créer une fréquence de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = FrequenceRisqueSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(FrequenceRisqueSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur frequence_risque_create: {e}")
+        return Response({'error': 'Impossible de créer la fréquence de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def frequence_risque_update(request, uuid):
+    """Mettre à jour une fréquence de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = FrequenceRisque.objects.get(uuid=uuid)
+        serializer = FrequenceRisqueSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except FrequenceRisque.DoesNotExist:
+        return Response({'error': 'Fréquence de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur frequence_risque_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour la fréquence de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def frequence_risque_delete(request, uuid):
+    """Supprimer une fréquence de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = FrequenceRisque.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Fréquence de risque supprimée avec succès'}, status=status.HTTP_200_OK)
+    except FrequenceRisque.DoesNotExist:
+        return Response({'error': 'Fréquence de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur frequence_risque_delete: {e}")
+        return Response({'error': 'Impossible de supprimer la fréquence de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== GRAVITÉS RISQUE CRUD ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gravites_risque_all_list(request):
+    """Liste toutes les gravités de risque (actives et inactives)"""
+    try:
+        objs = GraviteRisque.objects.all().order_by('libelle')
+        serializer = GraviteRisqueSerializer(objs, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur gravites_risque_all_list: {e}")
+        return Response({'error': 'Impossible de lister les gravités de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gravite_risque_create(request):
+    """Créer une gravité de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = GraviteRisqueSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(GraviteRisqueSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur gravite_risque_create: {e}")
+        return Response({'error': 'Impossible de créer la gravité de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def gravite_risque_update(request, uuid):
+    """Mettre à jour une gravité de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = GraviteRisque.objects.get(uuid=uuid)
+        serializer = GraviteRisqueSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except GraviteRisque.DoesNotExist:
+        return Response({'error': 'Gravité de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur gravite_risque_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour la gravité de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def gravite_risque_delete(request, uuid):
+    """Supprimer une gravité de risque — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = GraviteRisque.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Gravité de risque supprimée avec succès'}, status=status.HTTP_200_OK)
+    except GraviteRisque.DoesNotExist:
+        return Response({'error': 'Gravité de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur gravite_risque_delete: {e}")
+        return Response({'error': 'Impossible de supprimer la gravité de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== STATUTS ACTION CDR CRUD ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def statuts_action_cdr_all_list(request):
+    """Liste tous les statuts d'action CDR (actifs et inactifs)"""
+    try:
+        objs = StatutActionCDR.objects.all().order_by('nom')
+        serializer = StatutActionCDRSerializer(objs, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur statuts_action_cdr_all_list: {e}")
+        return Response({'error': 'Impossible de lister les statuts'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def statut_action_cdr_create(request):
+    """Créer un statut d'action CDR — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = StatutActionCDRSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(StatutActionCDRSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur statut_action_cdr_create: {e}")
+        return Response({'error': 'Impossible de créer le statut'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def statut_action_cdr_update(request, uuid):
+    """Mettre à jour un statut d'action CDR — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = StatutActionCDR.objects.get(uuid=uuid)
+        serializer = StatutActionCDRSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except StatutActionCDR.DoesNotExist:
+        return Response({'error': 'Statut non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur statut_action_cdr_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour le statut'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def statut_action_cdr_delete(request, uuid):
+    """Supprimer un statut d'action CDR — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = StatutActionCDR.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Statut supprimé avec succès'}, status=status.HTTP_200_OK)
+    except StatutActionCDR.DoesNotExist:
+        return Response({'error': 'Statut non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur statut_action_cdr_delete: {e}")
+        return Response({'error': 'Impossible de supprimer le statut'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== TYPES DE DOCUMENT CRUD ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def types_document_list(request):
+    """Liste les types de document actifs"""
+    try:
+        objs = TypeDocument.objects.filter(is_active=True).order_by('nom')
+        serializer = TypeDocumentSerializer(objs, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur types_document_list: {e}")
+        return Response({'error': 'Impossible de lister les types de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def types_document_all_list(request):
+    """Liste tous les types de document (actifs et inactifs)"""
+    try:
+        objs = TypeDocument.objects.all().order_by('nom')
+        serializer = TypeDocumentSerializer(objs, many=True)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur types_document_all_list: {e}")
+        return Response({'error': 'Impossible de lister les types de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def type_document_create(request):
+    """Créer un type de document — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        serializer = TypeDocumentSerializer(data=request.data)
+        if serializer.is_valid():
+            obj = serializer.save()
+            return Response(TypeDocumentSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Erreur type_document_create: {e}")
+        return Response({'error': 'Impossible de créer le type de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def type_document_update(request, uuid):
+    """Mettre à jour un type de document — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = TypeDocument.objects.get(uuid=uuid)
+        serializer = TypeDocumentSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except TypeDocument.DoesNotExist:
+        return Response({'error': 'Type de document non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur type_document_update: {e}")
+        return Response({'error': 'Impossible de mettre à jour le type de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def type_document_delete(request, uuid):
+    """Supprimer un type de document — superadmin uniquement"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        obj = TypeDocument.objects.get(uuid=uuid)
+        obj.delete()
+        return Response({'message': 'Type de document supprimé avec succès'}, status=status.HTTP_200_OK)
+    except TypeDocument.DoesNotExist:
+        return Response({'error': 'Type de document non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur type_document_delete: {e}")
+        return Response({'error': 'Impossible de supprimer le type de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== SYSTÈME DE RÔLES ====================
@@ -3544,3 +4366,169 @@ def admin_get_user_processus(request):
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des processus utilisateur: {e}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# ==================== APPLICATION CONFIG ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def application_config_list(request):
+    """Liste toutes les configurations d'applications (super admin uniquement)"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return JsonResponse({'error': 'Accès non autorisé'}, status=403)
+    try:
+        from parametre.models import ApplicationConfig
+        configs = ApplicationConfig.objects.all().order_by('app_name')
+        data = [
+            {
+                'app_name': c.app_name,
+                'label': c.get_app_name_display(),
+                'is_enabled': c.is_enabled,
+                'maintenance_message': c.maintenance_message or '',
+                'updated_at': c.updated_at.isoformat() if c.updated_at else None,
+                'updated_by': c.updated_by.username if c.updated_by else None,
+            }
+            for c in configs
+        ]
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        logger.error(f"Erreur application_config_list: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def application_config_toggle(request, app_name):
+    """Active ou désactive une application (super admin uniquement)"""
+    if not (request.user.is_staff and request.user.is_superuser):
+        return JsonResponse({'error': 'Accès non autorisé'}, status=403)
+    try:
+        from parametre.models import ApplicationConfig
+        config = ApplicationConfig.objects.get(app_name=app_name)
+        config.is_enabled = not config.is_enabled
+        config.updated_by = request.user
+        config.save()
+        return JsonResponse({
+            'app_name': config.app_name,
+            'label': config.get_app_name_display(),
+            'is_enabled': config.is_enabled,
+        })
+    except ApplicationConfig.DoesNotExist:
+        return JsonResponse({'error': 'Application non trouvée'}, status=404)
+    except Exception as e:
+        logger.error(f"Erreur application_config_toggle: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@renderer_classes([ServerSentEventRenderer])
+def app_status_stream(request):
+    """SSE : pousse les changements de statut de maintenance en temps réel.
+
+    Security by Design :
+    - Authentification obligatoire (cookie JWT via DRF)
+    - Données filtrées selon le rôle (superadmin bypass)
+    - Aucune donnée sensible dans le stream
+    - Heartbeat toutes les 15 s pour détecter les déconnexions
+    - Détection de changements via updated_at (requête légère)
+    - GeneratorExit capturé pour libérer proprement la connexion
+    """
+    is_superadmin = request.user.is_staff and request.user.is_superuser
+    username = request.user.username
+
+    def _snapshot():
+        """Retourne (données_effectives, hash_de_changement)."""
+        from parametre.models import ApplicationConfig
+        configs = list(
+            ApplicationConfig.objects.all()
+            .values('app_name', 'is_enabled', 'maintenance_message', 'maintenance_end')
+            .order_by('app_name')
+        )
+        # Hash basé uniquement sur les champs métier (is_enabled suffit)
+        change_hash = hashlib.md5(
+            str([(c['app_name'], c['is_enabled']) for c in configs]).encode()
+        ).hexdigest()
+
+        data = {}
+        for c in configs:
+            data[c['app_name']] = {
+                'is_enabled': True if is_superadmin else c['is_enabled'],
+                'maintenance_message': c['maintenance_message'] or '',
+                'maintenance_end': (
+                    c['maintenance_end'].isoformat() if c['maintenance_end'] else None
+                ),
+            }
+        return data, change_hash
+
+    def _event(event_name, payload):
+        return f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
+
+    def stream():
+        last_hash = None
+        heartbeat_ticks = 0
+        POLL_INTERVAL = 3       # secondes entre chaque vérification DB
+        HEARTBEAT_EVERY = 5     # ticks → heartbeat toutes les 15 s
+
+        try:
+            # État initial envoyé immédiatement à la connexion
+            data, last_hash = _snapshot()
+            yield _event('status', data)
+        except Exception as e:
+            logger.error(f"[SSE] Erreur initialisation ({username}): {e}")
+            return
+
+        while True:
+            try:
+                time.sleep(POLL_INTERVAL)
+
+                data, current_hash = _snapshot()
+
+                if current_hash != last_hash:
+                    yield _event('status', data)
+                    last_hash = current_hash
+                    heartbeat_ticks = 0
+                else:
+                    heartbeat_ticks += 1
+                    if heartbeat_ticks >= HEARTBEAT_EVERY:
+                        yield ": heartbeat\n\n"
+                        heartbeat_ticks = 0
+
+            except GeneratorExit:
+                logger.info(f"[SSE] Client déconnecté : {username}")
+                break
+            except Exception as e:
+                logger.error(f"[SSE] Erreur stream ({username}): {e}")
+                break
+
+    response = StreamingHttpResponse(
+        streaming_content=stream(),
+        content_type='text/event-stream; charset=utf-8',
+    )
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response['X-Accel-Buffering'] = 'no'   # désactive le buffering Nginx
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def app_status(request):
+    """Statut effectif de toutes les apps pour l'utilisateur courant.
+    Superadmins voient toutes les apps comme actives (bypass maintenance)."""
+    try:
+        from parametre.models import ApplicationConfig
+        is_superadmin = request.user.is_staff and request.user.is_superuser
+        configs = ApplicationConfig.objects.all().values(
+            'app_name', 'is_enabled', 'maintenance_message', 'maintenance_end'
+        )
+        data = {}
+        for c in configs:
+            data[c['app_name']] = {
+                'is_enabled': True if is_superadmin else c['is_enabled'],
+                'maintenance_message': c['maintenance_message'] or '',
+                'maintenance_end': c['maintenance_end'].isoformat() if c['maintenance_end'] else None,
+            }
+        return JsonResponse(data)
+    except Exception as e:
+        logger.error(f"Erreur app_status: {e}")
+        return JsonResponse({}, status=200)

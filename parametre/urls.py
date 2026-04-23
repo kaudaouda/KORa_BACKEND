@@ -19,6 +19,16 @@ urlpatterns = [
     path('etats-mise-en-oeuvre/', views.etats_mise_en_oeuvre_list, name='etats_mise_en_oeuvre_list'),
     path('appreciations/', views.appreciations_list, name='appreciations_list'),
     path('statuts-action-cdr/', views.statuts_action_cdr_list, name='statuts_action_cdr_list'),
+    path('statuts-action-cdr/all/', views.statuts_action_cdr_all_list, name='statuts_action_cdr_all_list'),
+    path('statuts-action-cdr/create/', views.statut_action_cdr_create, name='statut_action_cdr_create'),
+    path('statuts-action-cdr/<uuid:uuid>/update/', views.statut_action_cdr_update, name='statut_action_cdr_update'),
+    path('statuts-action-cdr/<uuid:uuid>/delete/', views.statut_action_cdr_delete, name='statut_action_cdr_delete'),
+
+    path('types-document/', views.types_document_list, name='types_document_list'),
+    path('types-document/all/', views.types_document_all_list, name='types_document_all_list'),
+    path('types-document/create/', views.type_document_create, name='type_document_create'),
+    path('types-document/<uuid:uuid>/update/', views.type_document_update, name='type_document_update'),
+    path('types-document/<uuid:uuid>/delete/', views.type_document_delete, name='type_document_delete'),
     
     # Endpoints pour l'affichage des données existantes (tous les éléments)
     path('natures/all/', views.natures_all_list, name='natures_all_list'),
@@ -56,8 +66,20 @@ urlpatterns = [
     
     path('services/', views.services_list, name='services_list'),
     path('services/all/', views.services_all_list, name='services_all_list'),
+    path('services/create/', views.service_create, name='service_create'),
+    path('services/<uuid:uuid>/update/', views.service_update, name='service_update'),
+    path('services/<uuid:uuid>/delete/', views.service_delete, name='service_delete'),
+
     path('processus/', views.processus_list, name='processus_list'),
     path('processus/all/', views.processus_all_list, name='processus_all_list'),
+    path('processus/create/', views.processus_create, name='processus_create'),
+    path('processus/<uuid:uuid>/update/', views.processus_update, name='processus_update'),
+    path('processus/<uuid:uuid>/delete/', views.processus_delete, name='processus_delete'),
+
+    path('natures/create/', views.nature_create, name='nature_create'),
+    path('natures/<uuid:uuid>/update/', views.nature_update, name='nature_update'),
+    path('natures/<uuid:uuid>/delete/', views.nature_delete, name='nature_delete'),
+
     path('dysfonctionnements/', views.dysfonctionnements_list, name='dysfonctionnements_list'),
     path('dysfonctionnements/all/', views.dysfonctionnements_all_list, name='dysfonctionnements_all_list'),
 
@@ -94,9 +116,16 @@ urlpatterns = [
     
     # ==================== FRÉQUENCES ====================
     path('frequences/', views.frequences_list, name='frequences_list'),
-    
+    path('frequences/all/', views.frequences_all_list, name='frequences_all_list'),
+    path('frequences/create/', views.frequence_create, name='frequence_create'),
+    path('frequences/<uuid:uuid>/update/', views.frequence_update, name='frequence_update'),
+    path('frequences/<uuid:uuid>/delete/', views.frequence_delete, name='frequence_delete'),
+
     # ==================== MOIS ====================
     path('mois/', views.mois_list, name='mois_list'),
+    path('mois/create/', views.mois_create, name='mois_create'),
+    path('mois/<uuid:uuid>/update/', views.mois_update, name='mois_update'),
+    path('mois/<uuid:uuid>/delete/', views.mois_delete, name='mois_delete'),
     
     # ==================== PÉRIODICITÉS ====================
     path('periodicites/', views.periodicites_list, name='periodicites_list'),
@@ -104,11 +133,31 @@ urlpatterns = [
     # ==================== ANNÉES ====================
     path('annees/', views.annees_list, name='annees_list'),
     path('annees/all/', views.annees_all_list, name='annees_all_list'),
+    path('annees/create/', views.annee_create, name='annee_create'),
+    path('annees/<uuid:uuid>/update/', views.annee_update, name='annee_update'),
+    path('annees/<uuid:uuid>/delete/', views.annee_delete, name='annee_delete'),
     
+    # ==================== DYSFONCTIONNEMENTS/RECOMMANDATIONS ====================
+    path('dysfonctionnements/create/', views.dysfonctionnement_create, name='dysfonctionnement_create'),
+    path('dysfonctionnements/<uuid:uuid>/update/', views.dysfonctionnement_update, name='dysfonctionnement_update'),
+    path('dysfonctionnements/<uuid:uuid>/delete/', views.dysfonctionnement_delete, name='dysfonctionnement_delete'),
+
     # ==================== CARTOGRAPHIE DES RISQUES ====================
     path('frequences-risque/', views.frequences_risque_list, name='frequences_risque_list'),
+    path('frequences-risque/all/', views.frequences_risque_all_list, name='frequences_risque_all_list'),
+    path('frequences-risque/create/', views.frequence_risque_create, name='frequence_risque_create'),
+    path('frequences-risque/<uuid:uuid>/update/', views.frequence_risque_update, name='frequence_risque_update'),
+    path('frequences-risque/<uuid:uuid>/delete/', views.frequence_risque_delete, name='frequence_risque_delete'),
     path('gravites-risque/', views.gravites_risque_list, name='gravites_risque_list'),
+    path('gravites-risque/all/', views.gravites_risque_all_list, name='gravites_risque_all_list'),
+    path('gravites-risque/create/', views.gravite_risque_create, name='gravite_risque_create'),
+    path('gravites-risque/<uuid:uuid>/update/', views.gravite_risque_update, name='gravite_risque_update'),
+    path('gravites-risque/<uuid:uuid>/delete/', views.gravite_risque_delete, name='gravite_risque_delete'),
     path('criticites-risque/', views.criticités_risque_list, name='criticites_risque_list'),
+    path('criticites-risque/all/', views.criticites_all_list, name='criticites_all_list'),
+    path('criticites-risque/create/', views.criticite_create, name='criticite_create'),
+    path('criticites-risque/<uuid:uuid>/update/', views.criticite_update, name='criticite_update'),
+    path('criticites-risque/<uuid:uuid>/delete/', views.criticite_delete, name='criticite_delete'),
     path('risques/', views.risques_list, name='risques_list'),
     path('risques/all/', views.risques_all_list, name='risques_all_list'),
     path('risques/create/', views.risque_create, name='risque_create'),
@@ -139,4 +188,10 @@ urlpatterns = [
     path('users/', views.users_list, name='users_list'),
     path('users/create/', views.users_create, name='users_create'),
     path('users/invite/', views.users_invite, name='users_invite'),
+
+    # ==================== APPLICATION CONFIG ====================
+    path('application-configs/', views.application_config_list, name='application_config_list'),
+    path('application-configs/<str:app_name>/toggle/', views.application_config_toggle, name='application_config_toggle'),
+    path('app-status/', views.app_status, name='app_status'),
+    path('app-status/stream/', views.app_status_stream, name='app_status_stream'),
 ]

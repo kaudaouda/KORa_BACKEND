@@ -842,7 +842,7 @@ def evaluation_risque_update(request, uuid):
         
         # Protection : empêcher la modification si un amendement supérieur existe
         current_cdr = evaluation.details_cdr.cdr
-        current_type_code = getattr('num_amendement', None)
+        current_type_code = getattr(current_cdr, 'num_amendement', None)
 
         # Vérifier si un amendement supérieur existe
         has_superior_amendment = False
@@ -1030,7 +1030,7 @@ def suivi_action_create(request):
                     processus=cdr.processus,
                     annee=cdr.annee,
                     cree_par=request.user,
-                    num_amendement=cdr_num + 1
+                    num_amendement=cdr.num_amendement + 1
                 ).exists()
                 if has_superior:
                     return Response({
