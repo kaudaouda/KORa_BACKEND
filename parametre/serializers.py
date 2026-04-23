@@ -6,8 +6,29 @@ from .models import (
     Appreciation, Categorie, Direction, SousDirection, ActionType,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus,
     Service, EtatMiseEnOeuvre, Frequence, Annee, Risque, StatutActionCDR,
-    Role, UserProcessus, UserProcessusRole
+    Role, UserProcessus, UserProcessusRole, CriticiteRisque, DysfonctionnementRecommandation,
+    Mois, FrequenceRisque, GraviteRisque, TypeDocument,
 )
+
+
+class CriticiteRisqueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CriticiteRisque
+        fields = ['uuid', 'libelle', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class DysfonctionnementRecommandationSerializer(serializers.ModelSerializer):
+    cree_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DysfonctionnementRecommandation
+        fields = ['uuid', 'nom', 'description', 'is_active', 'cree_par', 'cree_par_nom', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'cree_par', 'created_at', 'updated_at']
+
+    def get_cree_par_nom(self, obj):
+        u = obj.cree_par
+        return f"{u.first_name} {u.last_name}".strip() or u.username
 
 
 class AppreciationSerializer(serializers.ModelSerializer):
@@ -62,10 +83,18 @@ class SourceSerializer(serializers.ModelSerializer):
 
 
 class ProcessusSerializer(serializers.ModelSerializer):
+    cree_par_nom = serializers.SerializerMethodField()
+
     class Meta:
         model = Processus
-        fields = ['uuid', 'numero_processus', 'nom', 'description', 'cree_par', 'is_active', 'created_at', 'updated_at']
-        read_only_fields = ['uuid', 'numero_processus', 'created_at', 'updated_at']
+        fields = ['uuid', 'numero_processus', 'nom', 'description', 'is_active', 'cree_par', 'cree_par_nom', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'numero_processus', 'cree_par', 'created_at', 'updated_at']
+
+    def get_cree_par_nom(self, obj):
+        u = obj.cree_par
+        if not u:
+            return None
+        return f"{u.first_name} {u.last_name}".strip() or u.username
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -89,6 +118,13 @@ class StatutActionCDRSerializer(serializers.ModelSerializer):
     class Meta:
         model = StatutActionCDR
         fields = ['uuid', 'nom', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class TypeDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TypeDocument
+        fields = ['uuid', 'nom', 'code', 'description', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
@@ -243,6 +279,26 @@ class FrequenceSerializer(serializers.ModelSerializer):
         fields = ['uuid', 'nom', 'created_at', 'updated_at']
         read_only_fields = ['uuid', 'created_at', 'updated_at']
 
+
+class MoisSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Mois
+        fields = ['uuid', 'numero', 'nom', 'abreviation']
+        read_only_fields = ['uuid']
+
+
+class FrequenceRisqueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FrequenceRisque
+        fields = ['uuid', 'libelle', 'valeur', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+
+class GraviteRisqueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GraviteRisque
+        fields = ['uuid', 'libelle', 'code', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['uuid', 'created_at', 'updated_at']
 
 
 class AnneeSerializer(serializers.ModelSerializer):
