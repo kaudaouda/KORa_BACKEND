@@ -1813,3 +1813,135 @@ class ApplicationConfig(models.Model):
     def __str__(self):
         status = "Activée" if self.is_enabled else "En maintenance"
         return f"{self.get_app_name_display()} - {status}"
+
+
+# ==================== SÉCURITÉ ====================
+
+class FailedLoginAttempt(models.Model):
+    REASON_CHOICES = [
+        ('user_not_found',   'Utilisateur introuvable'),
+        ('wrong_password',   'Mot de passe incorrect'),
+        ('inactive_account', 'Compte désactivé'),
+    ]
+
+    email_attempted = models.CharField(max_length=254)
+    ip_address      = models.GenericIPAddressField(blank=True, null=True)
+    user_agent      = models.TextField(blank=True, null=True)
+    device_type     = models.CharField(max_length=20,  blank=True, null=True)
+    browser         = models.CharField(max_length=100, blank=True, null=True)
+    os_name         = models.CharField(max_length=100, blank=True, null=True)
+    user            = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='failed_login_attempts',
+    )
+    reason          = models.CharField(max_length=20, choices=REASON_CHOICES)
+    created_at      = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'failed_login_attempt'
+        verbose_name = 'Tentative de connexion échouée'
+        verbose_name_plural = 'Tentatives de connexion échouées'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['ip_address', '-created_at']),
+            models.Index(fields=['email_attempted', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.email_attempted} — {self.get_reason_display()} ({self.ip_address})"
+
+
+class LoginSecurityConfig(models.Model):
+    """
+    Configuration singleton du rate-limiting de connexion.
+    Une seule ligne (id=1). Modifiable via Django admin.
+    """
+    enabled = models.BooleanField(
+        default=True,
+        verbose_name="Blocage actif",
+        help_text="Désactiver pour suspendre toute protection sans supprimer la config.",
+    )
+    ip_max_attempts = models.PositiveIntegerField(
+        default=10,
+        verbose_name="Seuil IP (tentatives)",
+        help_text="Nombre d'échecs depuis la même IP avant blocage.",
+    )
+    email_max_attempts = models.PositiveIntegerField(
+        default=5,
+        verbose_name="Seuil email (tentatives)",
+        help_text="Nombre d'échecs sur le même email avant blocage du compte.",
+    )
+    window_minutes = models.PositiveIntegerField(
+        default=15,
+        verbose_name="Fenêtre glissante (min)",
+        help_text="Durée de la fenêtre de comptage des échecs.",
+    )
+    ip_block_duration_minutes = models.PositiveIntegerField(
+        default=30,
+        verbose_name="Durée blocage IP (min)",
+    )
+    email_block_duration_minutes = models.PositiveIntegerField(
+        default=60,
+        verbose_name="Durée blocage email (min)",
+    )
+    whitelist_ips = models.TextField(
+        blank=True, default='',
+        verbose_name="IPs en liste blanche",
+        help_text="Une IP par ligne. Ces IPs ne seront jamais bloquées (ex: serveurs internes).",
+    )
+
+    class Meta:
+        db_table = 'login_security_config'
+        verbose_name = 'Configuration sécurité login'
+        verbose_name_plural = 'Configuration sécurité login'
+
+    def __str__(self):
+        state = 'activé' if self.enabled else 'désactivé'
+        return f"Config sécurité login ({state})"
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+    def get_whitelist(self):
+        return {ip.strip() for ip in self.whitelist_ips.splitlines() if ip.strip()}
+
+
+class LoginBlock(models.Model):
+    """Blocage actif d'une IP ou d'un email."""
+    TYPE_IP    = 'ip'
+    TYPE_EMAIL = 'email'
+    TYPE_CHOICES = [
+        ('ip',    'Adresse IP'),
+        ('email', 'Email'),
+    ]
+
+    block_type     = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    value          = models.CharField(max_length=254, db_index=True)
+    blocked_until  = models.DateTimeField()
+    attempts_count = models.PositiveIntegerField(default=0)
+    is_manual      = models.BooleanField(
+        default=False,
+        verbose_name="Blocage manuel",
+        help_text="Coché si ajouté manuellement via l'admin.",
+    )
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'login_block'
+        verbose_name = 'Blocage login'
+        verbose_name_plural = 'Blocages login'
+        unique_together = [('block_type', 'value')]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.get_block_type_display()}] {self.value} — jusqu'à {self.blocked_until:%d/%m %H:%M}"
+
+    @property
+    def is_active(self):
+        from django.utils import timezone
+        return self.blocked_until > timezone.now()

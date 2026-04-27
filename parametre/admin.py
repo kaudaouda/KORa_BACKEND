@@ -12,7 +12,8 @@ from .models import (
     DysfonctionnementRecommandation, Mois, Frequence, Periodicite, Cible, Annee,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
-    Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy
+    Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy,
+    FailedLoginAttempt, LoginSecurityConfig, LoginBlock,
 )
 
 
@@ -1527,3 +1528,109 @@ class ApplicationConfigAdmin(admin.ModelAdmin):
             level='SUCCESS' if obj.is_enabled else 'WARNING'
         )
     
+
+
+# ==================== SÉCURITÉ LOGIN ====================
+
+@admin.register(FailedLoginAttempt)
+class FailedLoginAttemptAdmin(admin.ModelAdmin):
+    list_display  = ('email_attempted', 'ip_address', 'reason_badge', 'device_info', 'created_at')
+    list_filter   = ('reason', 'device_type', 'created_at')
+    search_fields = ('email_attempted', 'ip_address', 'browser', 'os_name')
+    readonly_fields = ('email_attempted', 'ip_address', 'reason', 'user', 'user_agent',
+                       'device_type', 'browser', 'os_name', 'created_at')
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description='Raison')
+    def reason_badge(self, obj):
+        colors = {
+            'wrong_password':   '#dc2626',
+            'user_not_found':   '#6b7280',
+            'inactive_account': '#d97706',
+        }
+        color = colors.get(obj.reason, '#6b7280')
+        return format_html(
+            '<span style="background:{};color:#fff;padding:2px 8px;border-radius:9999px;font-size:11px">{}</span>',
+            color, obj.get_reason_display()
+        )
+
+    @admin.display(description='Appareil')
+    def device_info(self, obj):
+        parts = [p for p in [obj.device_type, obj.browser, obj.os_name] if p]
+        return ' · '.join(parts) or '—'
+
+
+@admin.register(LoginSecurityConfig)
+class LoginSecurityConfigAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ('État', {
+            'fields': ('enabled',),
+        }),
+        ('Seuils de déclenchement', {
+            'fields': ('window_minutes', 'ip_max_attempts', 'email_max_attempts'),
+            'description': 'Nombre d\'échecs dans la fenêtre glissante avant blocage.',
+        }),
+        ('Durées de blocage', {
+            'fields': ('ip_block_duration_minutes', 'email_block_duration_minutes'),
+        }),
+        ('Liste blanche', {
+            'fields': ('whitelist_ips',),
+            'description': 'Une IP par ligne. Ces IPs ne seront jamais bloquées.',
+            'classes': ('collapse',),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        # Singleton : empêcher la création d'une 2e ligne
+        return not LoginSecurityConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        from django.urls import reverse
+        from django.shortcuts import redirect
+        obj, _ = LoginSecurityConfig.objects.get_or_create(id=1)
+        url = reverse('admin:parametre_loginsecurityconfig_change', args=[obj.pk])
+        return redirect(url)
+
+
+@admin.register(LoginBlock)
+class LoginBlockAdmin(admin.ModelAdmin):
+    list_display  = ('block_type_badge', 'value', 'status_badge', 'blocked_until',
+                     'attempts_count', 'is_manual', 'created_at')
+    list_filter   = ('block_type', 'is_manual')
+    search_fields = ('value',)
+    readonly_fields = ('attempts_count', 'created_at')
+    ordering = ('-created_at',)
+    actions = ['unblock_selected']
+
+    @admin.display(description='Type')
+    def block_type_badge(self, obj):
+        color = '#2563eb' if obj.block_type == 'ip' else '#7c3aed'
+        return format_html(
+            '<span style="background:{};color:#fff;padding:2px 8px;border-radius:9999px;font-size:11px">{}</span>',
+            color, obj.get_block_type_display()
+        )
+
+    @admin.display(description='Statut')
+    def status_badge(self, obj):
+        if obj.is_active:
+            return format_html(
+                '<span style="background:#dc2626;color:#fff;padding:2px 8px;border-radius:9999px;font-size:11px">● Actif</span>'
+            )
+        return format_html(
+            '<span style="background:#6b7280;color:#fff;padding:2px 8px;border-radius:9999px;font-size:11px">Expiré</span>'
+        )
+
+    @admin.action(description='Débloquer la sélection')
+    def unblock_selected(self, request, queryset):
+        count = queryset.count()
+        queryset.delete()
+        self.message_user(request, f'{count} blocage(s) supprimé(s).', level='SUCCESS')

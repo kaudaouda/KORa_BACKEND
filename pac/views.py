@@ -22,7 +22,7 @@ from django.template.loader import render_to_string
 from django.conf import settings
 from datetime import datetime, timedelta
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
-from parametre.models import Processus, Media, Preuve, Notification
+from parametre.models import Processus, Media, Preuve, Notification, FailedLoginAttempt, LoginSecurityConfig, LoginBlock
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, log_user_logout, get_client_ip, log_activity
 from parametre.utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 from parametre.utils.email_config import load_email_settings_into_django
@@ -288,22 +288,93 @@ def login(request):
                 'error': 'Email et password sont requis'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Authentifier l'utilisateur avec l'email
-        try:
-            user = User.objects.get(email=email)
-            user = authenticate(username=user.username, password=password)
-        except User.DoesNotExist:
-            user = None
-        
-        if user is None:
-            return Response({
-                'error': 'Identifiants invalides'
-            }, status=status.HTTP_401_UNAUTHORIZED)
+        # ── Récupération IP / UA ──────────────────────────────────────────────
+        ip     = get_client_ip(request)
+        ua_str = request.META.get('HTTP_USER_AGENT')
 
-        if not user.is_active:
-            return Response({
-                'error': 'Compte utilisateur désactivé'
-            }, status=status.HTTP_401_UNAUTHORIZED)
+        # ── Vérification des blocages actifs ──────────────────────────────────
+        from django.utils import timezone as tz
+        cfg = LoginSecurityConfig.get_config()
+        if cfg.enabled:
+            now = tz.now()
+            whitelist = cfg.get_whitelist()
+            if ip not in whitelist:
+                if LoginBlock.objects.filter(block_type='ip', value=ip, blocked_until__gt=now).exists():
+                    return Response(
+                        {'error': 'Accès temporairement bloqué. Réessayez plus tard.', 'code': 'IP_BLOCKED'},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
+            if LoginBlock.objects.filter(block_type='email', value=email, blocked_until__gt=now).exists():
+                return Response(
+                    {'error': 'Ce compte est temporairement verrouillé. Réessayez plus tard.', 'code': 'EMAIL_BLOCKED'},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+
+        # ── Authentification ──────────────────────────────────────────────────
+        found_user = None
+        reason = None
+
+        try:
+            found_user = User.objects.get(email=email)
+            authed = authenticate(username=found_user.username, password=password)
+            if authed is None:
+                reason = 'wrong_password'
+            elif not authed.is_active:
+                reason = 'inactive_account'
+        except User.DoesNotExist:
+            reason = 'user_not_found'
+
+        if reason:
+            from parametre.views import _parse_user_agent
+            device_type, browser, os_name = _parse_user_agent(ua_str)
+            FailedLoginAttempt.objects.create(
+                email_attempted=email,
+                ip_address=ip,
+                user_agent=ua_str,
+                device_type=device_type,
+                browser=browser,
+                os_name=os_name,
+                user=found_user if reason != 'user_not_found' else None,
+                reason=reason,
+            )
+
+            # ── Créer/mettre à jour les blocs si seuils dépassés ─────────────
+            if cfg.enabled and ip not in whitelist:
+                window_start = tz.now() - timedelta(minutes=cfg.window_minutes)
+
+                ip_count = FailedLoginAttempt.objects.filter(
+                    ip_address=ip, created_at__gte=window_start
+                ).count()
+                if ip_count >= cfg.ip_max_attempts:
+                    LoginBlock.objects.update_or_create(
+                        block_type='ip', value=ip,
+                        defaults={
+                            'blocked_until':  tz.now() + timedelta(minutes=cfg.ip_block_duration_minutes),
+                            'attempts_count': ip_count,
+                            'is_manual':      False,
+                        }
+                    )
+                    logger.warning(f"[SECURITY] IP bloquée: {ip} ({ip_count} échecs)")
+
+                email_count = FailedLoginAttempt.objects.filter(
+                    email_attempted=email, created_at__gte=window_start
+                ).count()
+                if email_count >= cfg.email_max_attempts:
+                    LoginBlock.objects.update_or_create(
+                        block_type='email', value=email,
+                        defaults={
+                            'blocked_until':  tz.now() + timedelta(minutes=cfg.email_block_duration_minutes),
+                            'attempts_count': email_count,
+                            'is_manual':      False,
+                        }
+                    )
+                    logger.warning(f"[SECURITY] Email bloqué: {email} ({email_count} échecs)")
+
+            if reason == 'inactive_account':
+                return Response({'error': 'Compte utilisateur désactivé'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': 'Identifiants invalides'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        user = authed
 
         # Générer les tokens
         access_token, refresh_token = AuthService.create_tokens(user)

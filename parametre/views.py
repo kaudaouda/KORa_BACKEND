@@ -22,6 +22,7 @@ import json
 import time
 import hashlib
 import logging
+from datetime import timedelta
 from django.http import StreamingHttpResponse
 from django.db.models import Max, Subquery, OuterRef
 
@@ -32,7 +33,7 @@ from .models import (
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Mois, TypeDocument,
     Role, UserProcessus, UserProcessusRole, Notification, NotificationPolicy,
-    ReminderEmailLog,
+    ReminderEmailLog, FailedLoginAttempt, LoginSecurityConfig, LoginBlock,
 )
 from .utils.notification_policy import should_notify_pac
 from .serializers import (
@@ -4702,3 +4703,205 @@ def app_status(request):
     except Exception as e:
         logger.error(f"Erreur app_status: {e}")
         return JsonResponse({}, status=200)
+
+
+# ==================== MONITORING SÉCURITÉ ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_security(request):
+    """
+    Tableau de bord sécurité : tentatives de connexion échouées, IPs suspectes.
+    Réservé aux super-administrateurs.
+    """
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django.utils import timezone
+    from django.db.models import Count
+
+    now   = timezone.now()
+    t24h  = now - timedelta(hours=24)
+    t7d   = now - timedelta(days=7)
+    t30d  = now - timedelta(days=30)
+
+    base   = FailedLoginAttempt.objects.all()
+    today  = base.filter(created_at__gte=t24h)
+    week   = base.filter(created_at__gte=t7d)
+    month  = base.filter(created_at__gte=t30d)
+
+    # ── Résumé ────────────────────────────────────────────────────────────────
+    summary = {
+        'failed_today':         today.count(),
+        'failed_7d':            week.count(),
+        'failed_30d':           month.count(),
+        'unique_ips_today':     today.exclude(ip_address=None).values('ip_address').distinct().count(),
+        'unique_targets_today': today.values('email_attempted').distinct().count(),
+    }
+
+    # ── 20 dernières tentatives ────────────────────────────────────────────────
+    recent_qs = base.select_related('user').order_by('-created_at')[:20]
+    recent = [
+        {
+            'id':             str(a.pk),
+            'email_attempted': a.email_attempted,
+            'ip_address':     a.ip_address,
+            'reason':         a.reason,
+            'reason_label':   a.get_reason_display(),
+            'device_type':    a.device_type,
+            'browser':        a.browser,
+            'os_name':        a.os_name,
+            'created_at':     a.created_at.isoformat(),
+            'username':       a.user.username if a.user else None,
+        }
+        for a in recent_qs
+    ]
+
+    # ── Top 5 emails ciblés (30 derniers jours) ────────────────────────────────
+    top_targeted = list(
+        month.values('email_attempted')
+             .annotate(count=Count('id'))
+             .order_by('-count')[:5]
+    )
+
+    # ── Top 5 IPs suspectes (30 derniers jours) ────────────────────────────────
+    top_ips = list(
+        month.exclude(ip_address=None)
+             .values('ip_address')
+             .annotate(count=Count('id'))
+             .order_by('-count')[:5]
+    )
+
+    # ── Comptes ciblés plusieurs fois dans les 7 derniers jours ───────────────
+    suspicious_accounts = list(
+        week.exclude(user=None)
+            .values('user__id', 'user__username', 'user__email')
+            .annotate(attempts=Count('id'))
+            .filter(attempts__gte=3)
+            .order_by('-attempts')[:10]
+    )
+
+    return Response({
+        'summary':             summary,
+        'recent_attempts':     recent,
+        'top_targeted':        top_targeted,
+        'top_ips':             top_ips,
+        'suspicious_accounts': suspicious_accounts,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_security_blocks(request):
+    """Liste des blocages actifs."""
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django.utils import timezone
+    now = timezone.now()
+    blocks = LoginBlock.objects.filter(blocked_until__gt=now).order_by('-created_at')
+    data = [
+        {
+            'id':             b.pk,
+            'block_type':     b.block_type,
+            'block_type_label': b.get_block_type_display(),
+            'value':          b.value,
+            'blocked_until':  b.blocked_until.isoformat(),
+            'attempts_count': b.attempts_count,
+            'is_manual':      b.is_manual,
+            'created_at':     b.created_at.isoformat(),
+        }
+        for b in blocks
+    ]
+    config = LoginSecurityConfig.get_config()
+    return Response({
+        'blocks': data,
+        'config': {
+            'enabled':                    config.enabled,
+            'ip_max_attempts':            config.ip_max_attempts,
+            'email_max_attempts':         config.email_max_attempts,
+            'window_minutes':             config.window_minutes,
+            'ip_block_duration_minutes':  config.ip_block_duration_minutes,
+            'email_block_duration_minutes': config.email_block_duration_minutes,
+        },
+    })
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def admin_security_unblock(request, block_id):
+    """Débloquer manuellement un blocage."""
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        block = LoginBlock.objects.get(pk=block_id)
+        value = block.value
+        block.delete()
+        logger.info(f"[SECURITY] Déblocage manuel de '{value}' par {request.user.username}")
+        return Response({'success': True})
+    except LoginBlock.DoesNotExist:
+        return Response({'error': 'Blocage introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_security_config(request):
+    """Lire ou modifier la configuration de sécurité login."""
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    config = LoginSecurityConfig.get_config()
+
+    if request.method == 'GET':
+        return Response(_serialize_config(config))
+
+    # PATCH
+    allowed = {
+        'enabled', 'ip_max_attempts', 'email_max_attempts',
+        'window_minutes', 'ip_block_duration_minutes',
+        'email_block_duration_minutes', 'whitelist_ips',
+    }
+    errors = {}
+    for field in allowed & set(request.data.keys()):
+        value = request.data[field]
+        if field == 'enabled':
+            if not isinstance(value, bool):
+                errors[field] = 'Doit être un booléen.'
+                continue
+        elif field == 'whitelist_ips':
+            if not isinstance(value, str):
+                errors[field] = 'Doit être une chaîne.'
+                continue
+        else:
+            try:
+                value = int(value)
+                if value < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                errors[field] = 'Doit être un entier positif.'
+                continue
+        setattr(config, field, value)
+
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    config.save()
+    logger.info(f"[SECURITY] Config mise à jour par {request.user.username}")
+    return Response(_serialize_config(config))
+
+
+def _serialize_config(config):
+    return {
+        'enabled':                      config.enabled,
+        'ip_max_attempts':              config.ip_max_attempts,
+        'email_max_attempts':           config.email_max_attempts,
+        'window_minutes':               config.window_minutes,
+        'ip_block_duration_minutes':    config.ip_block_duration_minutes,
+        'email_block_duration_minutes': config.email_block_duration_minutes,
+        'whitelist_ips':                config.whitelist_ips,
+    }
