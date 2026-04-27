@@ -1866,8 +1866,10 @@ def notification_mark_read(request, uuid):
 @permission_classes([IsAuthenticated])
 def email_settings_detail(request):
     """
-    Récupérer les paramètres email globaux
+    Récupérer les paramètres email globaux — réservé aux super-admins.
     """
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
     try:
         settings = EmailSettings.get_solo()
         serializer = EmailSettingsSerializer(settings)
@@ -1881,8 +1883,10 @@ def email_settings_detail(request):
 @permission_classes([IsAuthenticated])
 def email_settings_update(request):
     """
-    Mettre à jour les paramètres email globaux
+    Mettre à jour les paramètres email globaux — réservé aux super-admins.
     """
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
     try:
         settings = EmailSettings.get_solo()
         serializer = EmailSettingsSerializer(settings, data=request.data, partial=True)
@@ -1918,9 +1922,11 @@ def email_settings_update(request):
 @permission_classes([IsAuthenticated])
 def test_email_configuration(request):
     """
-    Tester la configuration email (version sécurisée)
-    Security by Design : Validation stricte, logging sécurisé
+    Tester la configuration email (version sécurisée) — réservé aux super-admins.
+    Security by Design : Validation stricte, logging sécurisé, accès restreint.
     """
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
     try:
         from django.core.mail import send_mail
         from django.conf import settings
@@ -4773,14 +4779,27 @@ def admin_security(request):
              .order_by('-count')[:5]
     )
 
-    # ── Comptes ciblés plusieurs fois dans les 7 derniers jours ───────────────
-    suspicious_accounts = list(
-        week.exclude(user=None)
-            .values('user__id', 'user__username', 'user__email')
-            .annotate(attempts=Count('id'))
+    # ── Emails ciblés plusieurs fois dans les 7 derniers jours ──────────────
+    # Inclut les comptes existants ET les emails inconnus (user=None)
+    suspicious_qs = (
+        week.values('email_attempted')
+            .annotate(
+                attempts=Count('id'),
+                user_id=Max('user__id'),
+                username=Max('user__username'),
+            )
             .filter(attempts__gte=3)
             .order_by('-attempts')[:10]
     )
+    suspicious_accounts = [
+        {
+            'email_attempted': row['email_attempted'],
+            'attempts':        row['attempts'],
+            'user__id':        row['user_id'],
+            'user__username':  row['username'],
+        }
+        for row in suspicious_qs
+    ]
 
     return Response({
         'summary':             summary,
@@ -4905,3 +4924,242 @@ def _serialize_config(config):
         'email_block_duration_minutes': config.email_block_duration_minutes,
         'whitelist_ips':                config.whitelist_ips,
     }
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_throttle_config(request):
+    """Lire ou modifier la configuration du throttling DRF."""
+    from parametre.permissions import can_manage_users
+    from parametre.models import ThrottleConfig
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    config = ThrottleConfig.get_config()
+
+    if request.method == 'GET':
+        return Response(_serialize_throttle_config(config))
+
+    # PATCH — valide le format N/period avant de sauvegarder
+    import re
+    RATE_RE = re.compile(r'^\d+/(second|sec|minute|min|hour|hr|day)$')
+    RATE_NORMALIZE = {'sec': 'second', 'min': 'minute', 'hr': 'hour'}
+    allowed = {'enabled', 'anon_rate', 'user_rate', 'sensitive_rate'}
+    errors = {}
+
+    for field in allowed & set(request.data.keys()):
+        value = request.data[field]
+        if field == 'enabled':
+            if not isinstance(value, bool):
+                errors[field] = 'Doit être un booléen.'
+                continue
+        else:
+            if not isinstance(value, str) or not RATE_RE.match(value.strip()):
+                errors[field] = 'Format invalide. Exemples : 100/minute, 1000/hour'
+                continue
+            count, period = value.strip().split('/')
+            value = f'{count}/{RATE_NORMALIZE.get(period, period)}'
+        setattr(config, field, value)
+
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    config.save()  # invalide le cache throttle_config
+    logger.info(f"[THROTTLE] Config mise à jour par {request.user.username}")
+    return Response(_serialize_throttle_config(config))
+
+
+_RATE_NORMALIZE = {'sec': 'second', 'min': 'minute', 'hr': 'hour'}
+
+
+def _normalize_rate(rate):
+    if not rate or '/' not in rate:
+        return rate
+    count, period = rate.split('/', 1)
+    return f'{count}/{_RATE_NORMALIZE.get(period, period)}'
+
+
+def _serialize_throttle_config(config):
+    return {
+        'enabled':        config.enabled,
+        'anon_rate':      _normalize_rate(config.anon_rate),
+        'user_rate':      _normalize_rate(config.user_rate),
+        'sensitive_rate': _normalize_rate(config.sensitive_rate),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCHEDULER (APScheduler)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_job_info(job):
+    """Extrait name, hour, minute depuis le job_state picklé d'un DjangoJob."""
+    import pickle
+    from apscheduler.triggers.cron import CronTrigger
+
+    name = hour = minute = None
+    try:
+        job_state = pickle.loads(job.job_state) if isinstance(job.job_state, bytes) else job.job_state
+        name = job_state.get('name')
+        trigger = job_state.get('trigger')
+        if isinstance(trigger, CronTrigger):
+            for field in trigger.fields:
+                field_str = str(field)
+                if field.name == 'hour' and field_str != '*':
+                    try:
+                        hour = int(field_str)
+                    except ValueError:
+                        if '=' in field_str:
+                            try:
+                                hour = int(field_str.split('=')[1].strip("'"))
+                            except (ValueError, IndexError):
+                                pass
+                elif field.name == 'minute' and field_str != '*':
+                    try:
+                        minute = int(field_str)
+                    except ValueError:
+                        if '=' in field_str:
+                            try:
+                                minute = int(field_str.split('=')[1].strip("'"))
+                            except (ValueError, IndexError):
+                                pass
+    except Exception:
+        pass
+    return hour, minute, name
+
+
+def _serialize_job(job):
+    from django_apscheduler.models import DjangoJobExecution
+    hour, minute, name = _extract_job_info(job)
+    last_exec = (
+        DjangoJobExecution.objects
+        .filter(job=job)
+        .order_by('-run_time')
+        .values('run_time', 'status', 'exception', 'duration')
+        .first()
+    )
+    return {
+        'id':            job.id,
+        'name':          name or job.id,
+        'next_run_time': job.next_run_time,
+        'hour':          hour,
+        'minute':        minute,
+        'last_execution': last_exec,
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_scheduler_jobs(request):
+    """Liste des jobs du scheduler avec trigger info et dernière exécution."""
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django_apscheduler.models import DjangoJob
+    from parametre.scheduler import scheduler as _scheduler
+
+    jobs = DjangoJob.objects.all().order_by('id')
+    scheduler_running = bool(_scheduler and _scheduler.running)
+    return Response({
+        'scheduler_running': scheduler_running,
+        'jobs': [_serialize_job(j) for j in jobs],
+    })
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_scheduler_job_update(request, job_id):
+    """Modifie l'heure/minute cron d'un job."""
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django_apscheduler.models import DjangoJob
+    import pickle
+    from apscheduler.triggers.cron import CronTrigger
+
+    try:
+        job = DjangoJob.objects.get(id=job_id)
+    except DjangoJob.DoesNotExist:
+        return Response({'error': 'Job introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+    errors = {}
+    try:
+        hour = int(request.data.get('hour', -1))
+        if not (0 <= hour <= 23):
+            raise ValueError
+    except (TypeError, ValueError):
+        errors['hour'] = 'Heure invalide (0-23).'
+    try:
+        minute = int(request.data.get('minute', -1))
+        if not (0 <= minute <= 59):
+            raise ValueError
+    except (TypeError, ValueError):
+        errors['minute'] = 'Minute invalide (0-59).'
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        job_state = pickle.loads(job.job_state)
+        job_state['trigger'] = CronTrigger(hour=hour, minute=minute)
+        job.job_state = pickle.dumps(job_state)
+        job.save()  # post_save signal → reschedule_job dans apps.py
+        logger.info("[SCHEDULER] Job %s reprogrammé à %02d:%02d par %s", job_id, hour, minute, request.user.username)
+        job.refresh_from_db()
+        return Response(_serialize_job(job))
+    except Exception as e:
+        logger.error("[SCHEDULER] Erreur reprogrammation job %s: %s", job_id, e, exc_info=True)
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def admin_scheduler_job_trigger(request, job_id):
+    """Déclenche manuellement un job dans un thread séparé."""
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from parametre.scheduler import scheduler as _scheduler
+    import threading
+
+    if not _scheduler or not _scheduler.running:
+        return Response({'error': 'Le scheduler n\'est pas actif.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    job = _scheduler.get_job(job_id)
+    if not job:
+        return Response({'error': 'Job introuvable dans le scheduler.'}, status=status.HTTP_404_NOT_FOUND)
+
+    threading.Thread(target=job.func, daemon=True).start()
+    logger.info("[SCHEDULER] Job %s déclenché manuellement par %s", job_id, request.user.username)
+    return Response({'message': f'Job « {job.name} » déclenché.'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_scheduler_executions(request):
+    """Historique des 100 dernières exécutions."""
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django_apscheduler.models import DjangoJobExecution
+
+    rows = (
+        DjangoJobExecution.objects
+        .select_related('job')
+        .order_by('-run_time')[:100]
+    )
+    data = [
+        {
+            'id':        e.id,
+            'job_id':    e.job_id,
+            'run_time':  e.run_time,
+            'status':    e.status,
+            'duration':  float(e.duration) if e.duration else None,
+            'exception': e.exception,
+        }
+        for e in rows
+    ]
+    return Response(data)

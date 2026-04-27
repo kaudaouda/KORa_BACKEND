@@ -1945,3 +1945,51 @@ class LoginBlock(models.Model):
     def is_active(self):
         from django.utils import timezone
         return self.blocked_until > timezone.now()
+
+
+class ThrottleConfig(models.Model):
+    """
+    Singleton : configuration des taux de throttling DRF.
+    Modifiable via Django admin — les changements prennent effet en < 60s (TTL cache).
+    Format des taux : N/second | N/minute | N/hour | N/day  (ex: 100/min)
+    """
+    enabled        = models.BooleanField(
+        default=True,
+        verbose_name='Throttling actif',
+        help_text='Désactiver supprime toute limitation de débit.',
+    )
+    anon_rate      = models.CharField(
+        max_length=20, default='100/minute',
+        verbose_name='Taux anonymes',
+        help_text='Requêtes/période pour les IPs non authentifiées. Ex : 100/minute',
+    )
+    user_rate      = models.CharField(
+        max_length=20, default='600/minute',
+        verbose_name='Taux utilisateurs',
+        help_text='Requêtes/période pour les utilisateurs connectés. Ex : 600/minute',
+    )
+    sensitive_rate = models.CharField(
+        max_length=20, default='10/minute',
+        verbose_name='Taux endpoints sensibles',
+        help_text='Login, reset password, invitation. Ex : 10/minute',
+    )
+
+    class Meta:
+        db_table = 'throttle_config'
+        verbose_name = 'Configuration throttling'
+        verbose_name_plural = 'Configuration throttling'
+
+    def __str__(self):
+        status = 'actif' if self.enabled else 'inactif'
+        return f'ThrottleConfig ({status}) — anon:{self.anon_rate} user:{self.user_rate} sensible:{self.sensitive_rate}'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Invalide le cache immédiatement → changements effectifs à la prochaine requête
+        from django.core.cache import cache
+        cache.delete('throttle_config')
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj

@@ -12,6 +12,11 @@ urlpatterns = [
     path('admin/notifications/', views.admin_notifications_list, name='admin_notifications_list'),
     path('admin/security/', views.admin_security, name='admin_security'),
     path('admin/security/config/', views.admin_security_config, name='admin_security_config'),
+    path('admin/throttle/config/', views.admin_throttle_config, name='admin_throttle_config'),
+    path('admin/scheduler/jobs/', views.admin_scheduler_jobs, name='admin_scheduler_jobs'),
+    path('admin/scheduler/jobs/<str:job_id>/update/', views.admin_scheduler_job_update, name='admin_scheduler_job_update'),
+    path('admin/scheduler/jobs/<str:job_id>/trigger/', views.admin_scheduler_job_trigger, name='admin_scheduler_job_trigger'),
+    path('admin/scheduler/executions/', views.admin_scheduler_executions, name='admin_scheduler_executions'),
     path('admin/security/blocks/', views.admin_security_blocks, name='admin_security_blocks'),
     path('admin/security/blocks/<int:block_id>/unblock/', views.admin_security_unblock, name='admin_security_unblock'),
     

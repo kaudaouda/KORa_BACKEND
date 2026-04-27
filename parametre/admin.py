@@ -13,7 +13,7 @@ from .models import (
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, VersionEvaluationCDR,
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
     Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy,
-    FailedLoginAttempt, LoginSecurityConfig, LoginBlock,
+    FailedLoginAttempt, LoginSecurityConfig, LoginBlock, ThrottleConfig,
 )
 
 
@@ -1634,3 +1634,34 @@ class LoginBlockAdmin(admin.ModelAdmin):
         count = queryset.count()
         queryset.delete()
         self.message_user(request, f'{count} blocage(s) supprimé(s).', level='SUCCESS')
+
+
+@admin.register(ThrottleConfig)
+class ThrottleConfigAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ('État', {
+            'fields': ('enabled',),
+            'description': 'Désactiver supprime toute limitation de débit sur l\'API.',
+        }),
+        ('Taux de limitation', {
+            'fields': ('anon_rate', 'user_rate', 'sensitive_rate'),
+            'description': (
+                'Format : <strong>N/period</strong> — '
+                'period = second | minute | hour | day &nbsp;·&nbsp; '
+                'Ex : <code>100/min</code>, <code>1000/hour</code>. '
+                'Les modifications prennent effet en moins de 60 secondes (invalidation du cache).'
+            ),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return not ThrottleConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        from django.urls import reverse
+        from django.shortcuts import redirect
+        obj, _ = ThrottleConfig.objects.get_or_create(id=1)
+        return redirect(reverse('admin:parametre_throttleconfig_change', args=[obj.pk]))

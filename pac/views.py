@@ -2,7 +2,8 @@
 Vues API pour l'application PAC
 """
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from shared.throttles import KoraSensitiveThrottle
 from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
@@ -237,6 +238,7 @@ def register(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
 def login(request):
     """Connexion d'un utilisateur avec validation reCAPTCHA"""
     try:
@@ -687,6 +689,7 @@ def change_password(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
 def check_invitation(request):
     """
     Vérifie l'état d'un lien d'invitation sans nécessiter de mot de passe.
@@ -792,6 +795,7 @@ def check_invitation(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
 def complete_invitation(request):
     """
     Finalise l'invitation d'un utilisateur en lui permettant de définir son mot de passe.
@@ -1128,6 +1132,7 @@ def complete_invitation(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([KoraSensitiveThrottle])
 def password_reset_request(request):
     """
     Demande de réinitialisation de mot de passe par un administrateur.
@@ -1310,6 +1315,7 @@ def password_reset_request(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
 def password_reset_confirm(request):
     """
     Finalise la réinitialisation du mot de passe.
