@@ -20,35 +20,28 @@ class CookieJWTAuthentication(JWTAuthentication):
     def authenticate(self, request):
         # Essayer d'abord l'authentification par cookie
         access_token = request.COOKIES.get('access_token')
-        
+
         if access_token:
             try:
-                # Valider le token depuis le cookie
-                try:
-                    validated_token = self.get_validated_token(access_token)
-                    user = self.get_user(validated_token)
-                    return (user, validated_token)
-                except AuthenticationFailed as e:
-                    pass
-                except (InvalidToken, TokenError) as e:
-                    pass
-            except (InvalidToken, TokenError) as e:
-                # Essayer de rafraîchir le token
+                validated_token = self.get_validated_token(access_token)
+                user = self.get_user(validated_token)
+                return (user, validated_token)
+            except (InvalidToken, TokenError, AuthenticationFailed):
+                # Access token expiré ou invalide — tenter un refresh silencieux
                 refresh_token = request.COOKIES.get('refresh_token')
                 if refresh_token:
                     try:
                         refresh = RefreshToken(refresh_token)
                         new_access_token = refresh.access_token
-                        # Mettre à jour le cookie access_token
+                        # Le middleware JWTCookieMiddleware.process_response() posera
+                        # le nouveau cookie sur la réponse
                         request._new_access_token = str(new_access_token)
                         validated_token = self.get_validated_token(str(new_access_token))
                         user = self.get_user(validated_token)
                         return (user, validated_token)
-                    except AuthenticationFailed as e:
+                    except (InvalidToken, TokenError, AuthenticationFailed):
                         pass
-                    except (InvalidToken, TokenError) as e:
-                        pass
-        
+
         # Fallback sur l'authentification par header Authorization
         return super().authenticate(request)
 
@@ -87,7 +80,7 @@ class AuthService:
         response.set_cookie(
             'access_token',
             access_token,
-            max_age=60 * 60,  # 1 heure
+            max_age=30 * 60,  # 30 minutes — aligné sur ACCESS_TOKEN_LIFETIME
             httponly=True,
             secure=False,  # True en production avec HTTPS
             samesite='Lax',
@@ -96,7 +89,7 @@ class AuthService:
         response.set_cookie(
             'refresh_token',
             refresh_token,
-            max_age=7 * 24 * 60 * 60,  # 7 jours
+            max_age=8 * 60 * 60,  # 8 heures — aligné sur REFRESH_TOKEN_LIFETIME
             httponly=True,
             secure=False,  # True en production avec HTTPS
             samesite='Lax',

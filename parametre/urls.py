@@ -8,6 +8,8 @@ urlpatterns = [
     # ==================== ACTIVITÉS ====================
     path('activities/recent/', views.recent_activities, name='recent_activities'),
     path('activities/user/', views.user_activities, name='user_activities'),
+    path('admin/email-logs/', views.admin_email_logs, name='admin_email_logs'),
+    path('admin/notifications/', views.admin_notifications_list, name='admin_notifications_list'),
     
     # ==================== PARAMÈTRES ====================
     # Endpoints pour les formulaires (éléments actifs uniquement)

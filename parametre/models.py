@@ -478,6 +478,9 @@ class ActivityLog(models.Model):
     description = models.TextField()
     ip_address = models.GenericIPAddressField(blank=True, null=True)
     user_agent = models.TextField(blank=True, null=True)
+    device_type = models.CharField(max_length=20, blank=True, null=True)  # desktop / mobile / tablet
+    browser = models.CharField(max_length=100, blank=True, null=True)
+    os_name = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
