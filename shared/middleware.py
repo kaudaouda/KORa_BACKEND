@@ -45,7 +45,7 @@ class JWTCookieMiddleware(MiddlewareMixin):
             response.set_cookie(
                 'access_token',
                 request._new_access_token,
-                max_age=3600,  # 1 heure
+                max_age=30 * 60,  # 30 minutes — aligné sur ACCESS_TOKEN_LIFETIME
                 httponly=True,
                 samesite='Lax',
                 secure=False  # True en production avec HTTPS

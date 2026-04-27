@@ -23,7 +23,7 @@ from django.conf import settings
 from datetime import datetime, timedelta
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Notification
-from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, get_client_ip, log_activity
+from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, log_user_logout, get_client_ip, log_activity
 from parametre.utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 from parametre.utils.email_config import load_email_settings_into_django
 from parametre.permissions import (
@@ -353,6 +353,14 @@ def logout(request):
                 # Token déjà invalide ou expiré — pas bloquant
                 pass
 
+        # Logger la déconnexion avant d'effacer les cookies
+        if request.user.is_authenticated:
+            log_user_logout(
+                user=request.user,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT'),
+            )
+
         response = Response({
             'message': 'Déconnexion réussie'
         }, status=status.HTTP_200_OK)
@@ -402,7 +410,7 @@ def refresh_token(request):
             response.set_cookie(
                 'access_token',
                 str(new_access_token),
-                max_age=60 * 60,  # 1 heure
+                max_age=30 * 60,  # 30 minutes — aligné sur ACCESS_TOKEN_LIFETIME
                 httponly=True,
                 secure=False,  # True en production avec HTTPS
                 samesite='Lax',

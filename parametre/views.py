@@ -23,7 +23,7 @@ import time
 import hashlib
 import logging
 from django.http import StreamingHttpResponse
-from django.db.models import Max
+from django.db.models import Max, Subquery, OuterRef
 
 from .models import (
     Nature, Categorie, Source, ActionType, Statut,
@@ -31,7 +31,8 @@ from .models import (
     SousDirection, Service, Processus, Preuve, ActivityLog, StatutActionCDR,
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Mois, TypeDocument,
-    Role, UserProcessus, UserProcessusRole, Notification, NotificationPolicy
+    Role, UserProcessus, UserProcessusRole, Notification, NotificationPolicy,
+    ReminderEmailLog,
 )
 from .utils.notification_policy import should_notify_pac
 from .serializers import (
@@ -76,11 +77,32 @@ def get_client_ip(request):
     return ip
 
 
+def _parse_user_agent(ua_string):
+    """Parse un user-agent string et retourne (device_type, browser, os_name)."""
+    if not ua_string:
+        return None, None, None
+    try:
+        import user_agents
+        ua = user_agents.parse(ua_string)
+        if ua.is_mobile:
+            device_type = 'mobile'
+        elif ua.is_tablet:
+            device_type = 'tablet'
+        else:
+            device_type = 'desktop'
+        browser = ua.browser.family or None
+        os_name = ua.os.family or None
+        return device_type, browser, os_name
+    except Exception:
+        return None, None, None
+
+
 def log_activity(user, action, entity_type, entity_id=None, entity_name=None, description=None, ip_address=None, user_agent=None):
     """
     Enregistre une activité utilisateur
     """
     try:
+        device_type, browser, os_name = _parse_user_agent(user_agent)
         activity_log = ActivityLog.objects.create(
             user=user,
             action=action,
@@ -89,7 +111,10 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
             entity_name=entity_name,
             description=description or f"{user.username} a {action} {entity_type}",
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
+            device_type=device_type,
+            browser=browser,
+            os_name=os_name,
         )
         logger.info(f"Activité enregistrée: {activity_log}")
         return activity_log
@@ -809,6 +834,131 @@ def user_activities(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des activités',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_notifications_list(request):
+    """
+    API admin : toutes les notifications (tous utilisateurs).
+    Security by Design : is_staff ET is_superuser requis.
+    Filtres : source_app, is_read, limit, offset.
+    """
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'success': False, 'message': 'Accès refusé'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        qs = Notification.objects.select_related('user', 'content_type').order_by('-created_at')
+
+        source_app = request.GET.get('source_app')
+        if source_app:
+            qs = qs.filter(source_app=source_app)
+
+        is_read = request.GET.get('is_read')
+        if is_read == 'true':
+            qs = qs.filter(read_at__isnull=False)
+        elif is_read == 'false':
+            qs = qs.filter(read_at__isnull=True)
+
+        try:
+            limit = min(int(request.GET.get('limit', 50)), 200)
+            offset = max(0, int(request.GET.get('offset', 0)))
+        except ValueError:
+            limit, offset = 50, 0
+
+        total = qs.count()
+        data = []
+        for n in qs[offset:offset + limit]:
+            data.append({
+                'uuid': str(n.uuid),
+                'title': n.title,
+                'message': n.message,
+                'source_app': n.source_app,
+                'notification_type': n.notification_type,
+                'priority': n.priority,
+                'action_url': n.action_url,
+                'due_date': n.due_date.isoformat() if n.due_date else None,
+                'is_read': bool(n.read_at),
+                'is_dismissed': bool(n.dismissed_at),
+                'sent_by_email': bool(n.sent_by_email_at),
+                'created_at': n.created_at.isoformat(),
+                'user': {
+                    'username': n.user.username,
+                    'first_name': n.user.first_name,
+                    'last_name': n.user.last_name,
+                },
+            })
+
+        return Response({
+            'success': True,
+            'data': data,
+            'total': total,
+            'limit': limit,
+            'offset': offset,
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des notifications admin: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des notifications',
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_email_logs(request):
+    """
+    API admin pour récupérer les logs des emails de relance.
+    Security by Design : is_staff ET is_superuser requis (deny by default).
+    """
+    if not (request.user.is_staff and request.user.is_superuser):
+        return Response({'success': False, 'message': 'Accès refusé'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        limit = min(int(request.GET.get('limit', 50)), 200)
+        success_filter = request.GET.get('success')
+
+        queryset = ReminderEmailLog.objects.select_related('user').order_by('-sent_at')
+
+        if success_filter == 'true':
+            queryset = queryset.filter(success=True)
+        elif success_filter == 'false':
+            queryset = queryset.filter(success=False)
+
+        logs = queryset[:limit]
+
+        data = []
+        for log in logs:
+            data.append({
+                'uuid': str(log.uuid),
+                'recipient': log.recipient,
+                'subject': log.subject,
+                'sent_at': log.sent_at.isoformat(),
+                'success': log.success,
+                'error_message': log.error_message or '',
+                'ip_address': log.ip_address,
+                'user': {
+                    'username': log.user.username,
+                    'first_name': log.user.first_name,
+                    'last_name': log.user.last_name,
+                } if log.user else None,
+            })
+
+        return Response({
+            'success': True,
+            'data': data,
+            'count': len(data),
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des logs email: {e}")
+        return Response({
+            'success': False,
+            'message': 'Erreur lors de la récupération des logs email',
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -4075,8 +4225,17 @@ def users_list(request):
         search = request.GET.get('search', '')
         is_active = request.GET.get('is_active')
         
-        queryset = User.objects.all().order_by('-date_joined')
-        
+        _last_login_qs = ActivityLog.objects.filter(user=OuterRef('pk'), action='login').order_by('-created_at')
+        _last_logout_qs = ActivityLog.objects.filter(user=OuterRef('pk'), action='logout').order_by('-created_at')
+
+        queryset = User.objects.annotate(
+            last_login_activity=Subquery(_last_login_qs.values('created_at')[:1]),
+            last_login_device=Subquery(_last_login_qs.values('device_type')[:1]),
+            last_login_browser=Subquery(_last_login_qs.values('browser')[:1]),
+            last_login_os=Subquery(_last_login_qs.values('os_name')[:1]),
+            last_logout=Subquery(_last_logout_qs.values('created_at')[:1]),
+        ).order_by('-date_joined')
+
         if search:
             queryset = queryset.filter(
                 Q(username__icontains=search) |
@@ -4084,14 +4243,25 @@ def users_list(request):
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search)
             )
-        
+
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
-        
+
         serializer = UserSerializer(queryset, many=True)
+        data = [
+            {
+                **dict(d),
+                'last_login':         u.last_login_activity.isoformat() if u.last_login_activity else None,
+                'last_login_device':  u.last_login_device,
+                'last_login_browser': u.last_login_browser,
+                'last_login_os':      u.last_login_os,
+                'last_logout':        u.last_logout.isoformat()          if u.last_logout          else None,
+            }
+            for d, u in zip(serializer.data, queryset)
+        ]
         return Response({
             'success': True,
-            'data': serializer.data,
+            'data': data,
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
