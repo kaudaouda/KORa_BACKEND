@@ -1,4 +1,4 @@
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils.deprecation import MiddlewareMixin
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -7,6 +7,89 @@ import logging
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+class IPBlockMiddleware(MiddlewareMixin):
+    """
+    Security by Design: bloque toutes les requêtes provenant d'IPs avec un LoginBlock actif.
+    - S'exécute tôt dans la chaîne, avant toute authentification ou logique métier.
+    - Exempt /admin/ : les admins peuvent toujours accéder pour débloquer.
+    - Respecte la liste blanche de LoginSecurityConfig.
+    - Utilise le cache Django pour éviter une requête DB à chaque requête.
+    """
+    EXEMPT_PREFIXES = ('/admin/',)
+    _CACHE_PREFIX    = 'ip_block_check:'
+    _CACHE_TTL       = 30   # secondes — assez court pour que le déblocage prenne effet rapidement
+    _CONFIG_CACHE_KEY = 'ip_block_config'
+    _CONFIG_CACHE_TTL = 60
+
+    def process_request(self, request):
+        # Toujours laisser passer l'admin Django (pour débloquer depuis l'interface)
+        if any(request.path.startswith(p) for p in self.EXEMPT_PREFIXES):
+            return None
+
+        ip = self._get_ip(request)
+        if not ip:
+            return None
+
+        config = self._get_config()
+        if not config['enabled']:
+            return None
+
+        # IPs en liste blanche : jamais bloquées
+        if ip in config['whitelist']:
+            return None
+
+        if self._is_blocked(ip):
+            return JsonResponse(
+                {'error': 'Votre accès a été temporairement suspendu.', 'code': 'IP_BLOCKED'},
+                status=403,
+            )
+
+        return None
+
+    # ── Helpers ────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _get_ip(request):
+        xff = request.META.get('HTTP_X_FORWARDED_FOR')
+        if xff:
+            return xff.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR')
+
+    @classmethod
+    def _get_config(cls):
+        from django.core.cache import cache
+        cached = cache.get(cls._CONFIG_CACHE_KEY)
+        if cached is not None:
+            return cached
+        try:
+            from parametre.models import LoginSecurityConfig
+            cfg = LoginSecurityConfig.get_config()
+            result = {'enabled': cfg.enabled, 'whitelist': cfg.get_whitelist()}
+        except Exception:
+            result = {'enabled': False, 'whitelist': []}
+        cache.set(cls._CONFIG_CACHE_KEY, result, cls._CONFIG_CACHE_TTL)
+        return result
+
+    @classmethod
+    def _is_blocked(cls, ip):
+        from django.core.cache import cache
+        cache_key = f'{cls._CACHE_PREFIX}{ip}'
+        result = cache.get(cache_key)
+        if result is None:
+            try:
+                from django.utils import timezone
+                from parametre.models import LoginBlock
+                result = LoginBlock.objects.filter(
+                    block_type='ip',
+                    value=ip,
+                    blocked_until__gt=timezone.now(),
+                ).exists()
+            except Exception:
+                result = False
+            cache.set(cache_key, result, cls._CACHE_TTL)
+        return result
 
 
 class JWTCookieMiddleware(MiddlewareMixin):
