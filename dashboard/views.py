@@ -967,6 +967,16 @@ def dashboard_stats(request):
         # Récupérer les processus accessibles par l'utilisateur
         user_processus_uuids = get_user_processus_list(request.user)
 
+        # Filtre optionnel sur un seul processus (navigation multi-processus côté frontend)
+        processus_uuid_filter = request.query_params.get('processus_uuid', None)
+        if processus_uuid_filter:
+            if user_processus_uuids is None:
+                # Super admin : autoriser le filtre unique
+                user_processus_uuids = [processus_uuid_filter]
+            elif str(processus_uuid_filter) in [str(u) for u in user_processus_uuids]:
+                user_processus_uuids = [processus_uuid_filter]
+            # Si l'utilisateur n'a pas accès au processus demandé, ignorer le filtre (sécurité)
+
         # Année en cours
         current_year = timezone.now().year
 

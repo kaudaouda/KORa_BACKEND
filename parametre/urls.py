@@ -197,6 +197,8 @@ urlpatterns = [
     
     # ==================== GESTION DES UTILISATEURS ====================
     path('users/', views.users_list, name='users_list'),
+    path('users/<int:user_id>/detail/', views.admin_user_detail, name='admin_user_detail'),
+    path('users/<int:user_id>/toggle-active/', views.admin_user_toggle_active, name='admin_user_toggle_active'),
     path('users/create/', views.users_create, name='users_create'),
     path('users/invite/', views.users_invite, name='users_invite'),
 

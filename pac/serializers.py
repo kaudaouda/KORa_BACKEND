@@ -13,18 +13,28 @@ logger = logging.getLogger(__name__)
 class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les utilisateurs"""
     full_name = serializers.SerializerMethodField()
-    
+    role_labels = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
-            'id', 'first_name', 'last_name', 'email', 'username', 
-            'is_active', 'is_staff', 'is_superuser', 'date_joined', 'full_name'
+            'id', 'first_name', 'last_name', 'email', 'username',
+            'is_active', 'is_staff', 'is_superuser', 'date_joined', 'full_name', 'role_labels'
         ]
         read_only_fields = ['id', 'date_joined', 'is_staff', 'is_superuser']
-    
+
     def get_full_name(self, obj):
-        """Retourner le nom complet"""
         return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
+    def get_role_labels(self, obj):
+        from parametre.models import UserProcessusRole
+        return list(
+            UserProcessusRole.objects
+            .filter(user=obj)
+            .select_related('role')
+            .values_list('role__nom', flat=True)
+            .distinct()
+        )
 
 
 class ProcessusSerializer(serializers.ModelSerializer):

@@ -1,20 +1,30 @@
 """
 Définitions des actions de permissions pour l'application Dashboard
+
+Roles :
+  admin                   — creation, suppression, devalidation, amendement, objectifs, indicateurs, cibles
+  RESPONSABLE DE PROCESSUS — lecture + modification + suppression de tous les sous-elements
+  PILOTE DE PROCESSUS      — lecture + modification partielle (analyse, observation, periodicite, tableau)
+                             refus explicite sur : objective, indicateur, cible, frequence, delete_tableau, delete_analyse_action
+  CO-PILOTE DE APROCESSUS  — lecture seule
+  superviseur_smi          — tout (géré par seed_superviseur_smi_permissions)
 """
+
+RP = 'RESPONSABLE DE PROCESSUS'
+PP = 'PILOTE DE PROCESSUS'
+CP = 'CO-PILOTE DE APROCESSUS'
 
 
 def get_dashboard_actions():
     """Définit les actions pour l'application Dashboard"""
     return [
+        # ==================== TABLEAU DE BORD ====================
         {
             'code': 'create_tableau_bord',
             'nom': 'Créer un tableau de bord',
             'description': 'Permet de créer un nouveau tableau de bord',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -24,10 +34,9 @@ def get_dashboard_actions():
             'description': 'Permet de modifier un tableau de bord existant',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -36,10 +45,9 @@ def get_dashboard_actions():
             'description': 'Permet de supprimer un tableau de bord',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
         {
@@ -48,10 +56,9 @@ def get_dashboard_actions():
             'description': 'Permet de valider un tableau de bord',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -60,9 +67,6 @@ def get_dashboard_actions():
             'description': 'Permet de dévalider un tableau de bord',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -72,10 +76,10 @@ def get_dashboard_actions():
             'description': 'Permet de consulter un tableau de bord',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': True, 'priority': 5},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
+                CP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -84,21 +88,16 @@ def get_dashboard_actions():
             'description': 'Permet de créer un amendement pour un tableau de bord',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
+        # ==================== OBJECTIFS ====================
         {
             'code': 'create_objective',
             'nom': 'Créer un objectif',
             'description': 'Permet de créer un objectif dans un tableau de bord',
             'category': 'objectives',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -108,10 +107,9 @@ def get_dashboard_actions():
             'description': 'Permet de modifier un objectif',
             'category': 'objectives',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
         {
@@ -120,21 +118,18 @@ def get_dashboard_actions():
             'description': 'Permet de supprimer un objectif',
             'category': 'objectives',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
+        # ==================== INDICATEURS ====================
         {
             'code': 'create_indicateur',
             'nom': 'Créer un indicateur',
             'description': 'Permet de créer un indicateur pour un objectif',
             'category': 'indicateurs',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -144,11 +139,10 @@ def get_dashboard_actions():
             'description': 'Permet de modifier un indicateur',
             'category': 'indicateurs',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
-            }   
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
+            }
         },
         {
             'code': 'delete_indicateur',
@@ -156,21 +150,18 @@ def get_dashboard_actions():
             'description': 'Permet de supprimer un indicateur',
             'category': 'indicateurs',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
+        # ==================== CIBLES ====================
         {
             'code': 'create_cible',
             'nom': 'Créer une cible',
             'description': 'Permet de créer une cible pour un indicateur',
             'category': 'cibles',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -180,10 +171,9 @@ def get_dashboard_actions():
             'description': 'Permet de modifier une cible',
             'category': 'cibles',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
         {
@@ -192,22 +182,20 @@ def get_dashboard_actions():
             'description': 'Permet de supprimer une cible',
             'category': 'cibles',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
+        # ==================== PERIODICITES ====================
         {
             'code': 'create_periodicite',
             'nom': 'Créer une périodicité',
             'description': 'Permet de créer une périodicité pour un indicateur',
             'category': 'periodicites',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -216,10 +204,9 @@ def get_dashboard_actions():
             'description': 'Permet de modifier une périodicité',
             'category': 'periodicites',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -228,34 +215,30 @@ def get_dashboard_actions():
             'description': 'Permet de supprimer une périodicité',
             'category': 'periodicites',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
+        # ==================== FREQUENCES ====================
         {
             'code': 'update_frequence',
             'nom': 'Modifier la fréquence',
             'description': 'Permet de modifier la fréquence d\'un indicateur',
             'category': 'frequences',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
-                'responsable_processus': {'granted': True, 'priority': 12},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
+        # ==================== OBSERVATIONS ====================
         {
             'code': 'create_observation',
             'nom': 'Créer une observation',
             'description': 'Permet de créer une observation pour un objectif',
             'category': 'observations',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -265,10 +248,9 @@ def get_dashboard_actions():
             'description': 'Permet de modifier une observation',
             'category': 'observations',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -277,10 +259,9 @@ def get_dashboard_actions():
             'description': 'Permet de supprimer une observation',
             'category': 'observations',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         # ==================== ANALYSE TABLEAU ====================
@@ -290,9 +271,6 @@ def get_dashboard_actions():
             'description': 'Permet de créer une analyse pour un tableau de bord',
             'category': 'analyse',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -302,9 +280,6 @@ def get_dashboard_actions():
             'description': 'Permet de créer une ligne d\'analyse pour un tableau de bord',
             'category': 'analyse',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -314,10 +289,9 @@ def get_dashboard_actions():
             'description': 'Permet de modifier une ligne d\'analyse (causes)',
             'category': 'analyse',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -326,9 +300,6 @@ def get_dashboard_actions():
             'description': 'Permet de créer une action pour une ligne d\'analyse',
             'category': 'analyse',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -338,10 +309,9 @@ def get_dashboard_actions():
             'description': 'Permet de modifier une action d\'analyse',
             'category': 'analyse',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -350,11 +320,9 @@ def get_dashboard_actions():
             'description': 'Permet de supprimer une action d\'analyse',
             'category': 'analyse',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
     ]
-
