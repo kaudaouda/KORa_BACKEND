@@ -50,6 +50,11 @@ from .serializers import (
 )
 from .utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 from .utils.email_config import load_email_settings_into_django
+from permissions.permissions import (
+    DashboardPreuveUpdatePermission,
+    DashboardMediaUpdatePermission,
+    DashboardMediaCreatePermission,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2321,7 +2326,7 @@ def processus_all_list(request):
 # ==================== MEDIAS ====================
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, DashboardMediaCreatePermission])
 def media_create(request):
     """
     Créer un nouveau média (upload de fichier)
@@ -2360,7 +2365,7 @@ def media_create(request):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, DashboardMediaUpdatePermission])
 def media_update_description(request, uuid):
     """Mettre à jour la description d'un média"""
     try:
@@ -2411,7 +2416,7 @@ def media_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, DashboardMediaCreatePermission])
 def preuve_create_with_medias(request):
     """Créer une preuve et y associer une liste de médias (uuids)."""
     try:
@@ -2435,7 +2440,7 @@ def preuve_create_with_medias(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, DashboardPreuveUpdatePermission])
 def preuve_add_medias(request, uuid):
     """Ajouter des médias à une preuve existante"""
     try:
@@ -2473,7 +2478,7 @@ def preuve_add_medias(request, uuid):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, DashboardPreuveUpdatePermission])
 def preuve_remove_media(request, uuid, media_uuid):
     """Supprimer un média d'une preuve"""
     try:
@@ -4279,6 +4284,241 @@ def users_list(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_user_detail(request, user_id):
+    """
+    Détail complet d'un utilisateur pour l'interface d'administration.
+    Security by Design : is_staff + is_superuser requis.
+    """
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django.contrib.auth.models import User
+    from parametre.models import (
+        ActivityLog, FailedLoginAttempt, LoginBlock,
+        UserProcessus, UserProcessusRole, ReminderEmailLog,
+    )
+
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return Response({'error': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+    # ── Infos de base ─────────────────────────────────────────────────────────
+    full_name = f"{user.first_name} {user.last_name}".strip() or user.username
+    user_data = {
+        'id':           user.id,
+        'username':     user.username,
+        'email':        user.email,
+        'first_name':   user.first_name,
+        'last_name':    user.last_name,
+        'full_name':    full_name,
+        'is_active':    user.is_active,
+        'is_staff':     user.is_staff,
+        'is_superuser': user.is_superuser,
+        'date_joined':  user.date_joined,
+        'last_login':   user.last_login,
+    }
+
+    # ── Dernière session (depuis ActivityLog) ─────────────────────────────────
+    last_login_log = (
+        ActivityLog.objects
+        .filter(user=user, action='login')
+        .order_by('-created_at')
+        .values('ip_address', 'device_type', 'browser', 'os_name', 'created_at')
+        .first()
+    )
+
+    # ── Statistiques ──────────────────────────────────────────────────────────
+    total_logins  = ActivityLog.objects.filter(user=user, action='login').count()
+    total_actions = ActivityLog.objects.filter(user=user).count()
+    last_activity = (
+        ActivityLog.objects.filter(user=user)
+        .order_by('-created_at')
+        .values_list('created_at', flat=True)
+        .first()
+    )
+    failed_logins_count = FailedLoginAttempt.objects.filter(
+        Q(user=user) | Q(email_attempted=user.email)
+    ).count()
+
+    stats = {
+        'total_logins':       total_logins,
+        'total_actions':      total_actions,
+        'failed_logins_count': failed_logins_count,
+        'last_activity_at':   last_activity,
+    }
+
+    # ── Sécurité ─────────────────────────────────────────────────────────────
+    from django.utils import timezone
+    active_block = (
+        LoginBlock.objects
+        .filter(block_type='email', value=user.email, blocked_until__gt=timezone.now())
+        .values('block_type', 'blocked_until', 'attempts_count', 'is_manual', 'created_at')
+        .first()
+    )
+    failed_attempts = list(
+        FailedLoginAttempt.objects
+        .filter(Q(user=user) | Q(email_attempted=user.email))
+        .order_by('-created_at')
+        .values('email_attempted', 'ip_address', 'reason', 'device_type', 'browser', 'os_name', 'created_at')
+        [:20]
+    )
+
+    security = {
+        'active_block':    active_block,
+        'failed_attempts': failed_attempts,
+    }
+
+    # ── Processus & Rôles ─────────────────────────────────────────────────────
+    up_qs = (
+        UserProcessus.objects
+        .filter(user=user, is_active=True)
+        .select_related('processus', 'attribue_par')
+        .prefetch_related('processus__user_processus_roles')
+    )
+    processus_roles = []
+    for up in up_qs:
+        roles_for_proc = list(
+            UserProcessusRole.objects
+            .filter(user=user, processus=up.processus, is_active=True, is_global=False)
+            .select_related('role')
+            .values('uuid', 'role__code', 'role__nom', 'date_attribution')
+        )
+        processus_roles.append({
+            'uuid':              str(up.uuid),
+            'processus_uuid':    str(up.processus.uuid),
+            'processus_nom':     up.processus.nom,
+            'processus_numero':  up.processus.numero_processus,
+            'date_attribution':  up.date_attribution,
+            'attribue_par':      up.attribue_par.username if up.attribue_par else None,
+            'roles':             [
+                {
+                    'uuid':             str(r['uuid']),
+                    'role_code':        r['role__code'],
+                    'role_nom':         r['role__nom'],
+                    'date_attribution': r['date_attribution'],
+                }
+                for r in roles_for_proc
+            ],
+        })
+
+    global_roles = list(
+        UserProcessusRole.objects
+        .filter(user=user, is_global=True, is_active=True)
+        .select_related('role', 'attribue_par')
+        .values('uuid', 'role__code', 'role__nom', 'date_attribution', 'attribue_par__username')
+    )
+    global_roles_data = [
+        {
+            'uuid':             str(r['uuid']),
+            'role_code':        r['role__code'],
+            'role_nom':         r['role__nom'],
+            'date_attribution': r['date_attribution'],
+            'attribue_par':     r['attribue_par__username'],
+        }
+        for r in global_roles
+    ]
+
+    # ── Activité récente ──────────────────────────────────────────────────────
+    recent_activity = list(
+        ActivityLog.objects
+        .filter(user=user)
+        .order_by('-created_at')
+        .values(
+            'uuid', 'action', 'entity_type', 'entity_name',
+            'description', 'ip_address', 'device_type', 'browser', 'created_at',
+        )
+        [:30]
+    )
+
+    # ── Emails envoyés ────────────────────────────────────────────────────────
+    email_logs = list(
+        ReminderEmailLog.objects
+        .filter(Q(user=user) | Q(recipient=user.email))
+        .order_by('-sent_at')
+        .values('uuid', 'recipient', 'subject', 'sent_at', 'success', 'error_message')
+        [:20]
+    )
+
+    # ── Historique CRUD (create / update / delete uniquement) ─────────────────
+    crud_activity = list(
+        ActivityLog.objects
+        .filter(user=user, action__in=['create', 'update', 'delete'])
+        .order_by('-created_at')
+        .values(
+            'uuid', 'action', 'entity_type', 'entity_name',
+            'description', 'ip_address', 'browser', 'created_at',
+        )
+        [:100]
+    )
+
+    return Response({
+        'user':           user_data,
+        'last_session':   last_login_log,
+        'stats':          stats,
+        'security':       security,
+        'processus_roles': processus_roles,
+        'global_roles':   global_roles_data,
+        'recent_activity': recent_activity,
+        'crud_activity':  crud_activity,
+        'email_logs':     email_logs,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def admin_user_toggle_active(request, user_id):
+    """
+    Active ou désactive un utilisateur.
+    Security by Design :
+      - is_staff + is_superuser requis
+      - Impossible de se désactiver soi-même
+      - Impossible de désactiver un autre superuser
+    """
+    from parametre.permissions import can_manage_users
+    if not can_manage_users(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django.contrib.auth.models import User
+
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return Response({'error': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if user.pk == request.user.pk:
+        return Response({'error': 'Vous ne pouvez pas modifier votre propre statut.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if user.is_superuser and not user.is_active is False:
+        return Response({'error': 'Impossible de désactiver un super-administrateur.'}, status=status.HTTP_403_FORBIDDEN)
+
+    user.is_active = not user.is_active
+    user.save(update_fields=['is_active'])
+
+    action_label = 'activé' if user.is_active else 'désactivé'
+    ActivityLog.objects.create(
+        user=request.user,
+        action='update',
+        entity_type='user',
+        entity_id=str(user.pk),
+        entity_name=user.username,
+        description=f'Compte de {user.username} {action_label} par {request.user.username}',
+        ip_address=get_client_ip(request),
+        user_agent=request.META.get('HTTP_USER_AGENT', ''),
+    )
+    logger.info('[USER] %s %s par %s', user.username, action_label, request.user.username)
+
+    return Response({
+        'id':        user.pk,
+        'username':  user.username,
+        'is_active': user.is_active,
+        'message':   f'Compte {action_label} avec succès.',
+    })
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def users_create(request):
@@ -4684,6 +4924,17 @@ def app_status_stream(request):
     )
     response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response['X-Accel-Buffering'] = 'no'   # désactive le buffering Nginx
+
+    # Headers CORS explicites : StreamingHttpResponse peut contourner le middleware
+    # corsheaders dans certaines configurations WSGI dev. On les pose directement.
+    from django.conf import settings as _settings
+    origin = request.META.get('HTTP_ORIGIN', '')
+    allowed = getattr(_settings, 'CORS_ALLOWED_ORIGINS', [])
+    if origin in allowed:
+        response['Access-Control-Allow-Origin'] = origin
+        response['Access-Control-Allow-Credentials'] = 'true'
+        response['Vary'] = 'Origin'
+
     return response
 
 

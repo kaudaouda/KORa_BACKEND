@@ -1,21 +1,29 @@
 """
 Définitions des actions de permissions pour l'application Activité Périodique
-Similaire à la structure de PAC
+
+Roles :
+  admin                   — creation, suppression, validation, devalidation, amendement
+  RESPONSABLE DE PROCESSUS — lecture + modification + suppression des sous-elements
+  PILOTE DE PROCESSUS      — lecture + modification des sous-elements (update_activite_periodique refusé)
+  CO-PILOTE DE APROCESSUS  — lecture seule
+  superviseur_smi          — tout (géré par seed_superviseur_smi_permissions)
 """
+
+RP = 'RESPONSABLE DE PROCESSUS'
+PP = 'PILOTE DE PROCESSUS'
+CP = 'CO-PILOTE DE APROCESSUS'
 
 
 def get_activite_periodique_actions():
     """Définit les actions pour l'application Activité Périodique"""
     return [
+        # ==================== ENTITE PRINCIPALE ====================
         {
             'code': 'create_activite_periodique',
             'nom': 'Créer une Activité Périodique',
             'description': 'Permet de créer une nouvelle Activité Périodique',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -25,10 +33,9 @@ def get_activite_periodique_actions():
             'description': 'Permet de modifier une Activité Périodique existante',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': False, 'priority': 0},
             }
         },
         {
@@ -37,10 +44,7 @@ def get_activite_periodique_actions():
             'description': 'Permet de supprimer une Activité Périodique',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
             }
         },
         {
@@ -49,9 +53,6 @@ def get_activite_periodique_actions():
             'description': 'Permet de valider une Activité Périodique pour permettre la création des suivis',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -61,10 +62,10 @@ def get_activite_periodique_actions():
             'description': 'Permet de consulter une Activité Périodique',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': True, 'priority': 5},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
+                CP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -73,9 +74,6 @@ def get_activite_periodique_actions():
             'description': 'Permet de dévalider une Activité Périodique pour permettre les modifications',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -85,21 +83,16 @@ def get_activite_periodique_actions():
             'description': 'Permet de créer un amendement pour une Activité Périodique',
             'category': 'main',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
+        # ==================== DETAILS ====================
         {
             'code': 'create_detail_activite_periodique',
             'nom': 'Créer un détail d\'Activité Périodique',
             'description': 'Permet de créer un détail pour une Activité Périodique',
             'category': 'details',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -109,10 +102,9 @@ def get_activite_periodique_actions():
             'description': 'Permet de modifier un détail d\'Activité Périodique',
             'category': 'details',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -121,21 +113,17 @@ def get_activite_periodique_actions():
             'description': 'Permet de supprimer un détail d\'Activité Périodique',
             'category': 'details',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
             }
         },
+        # ==================== SUIVIS ====================
         {
             'code': 'create_suivi_activite_periodique',
             'nom': 'Créer un suivi d\'Activité Périodique',
             'description': 'Permet de créer un suivi pour une Activité Périodique',
             'category': 'suivis',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
             }
         },
@@ -145,10 +133,9 @@ def get_activite_periodique_actions():
             'description': 'Permet de modifier un suivi d\'Activité Périodique',
             'category': 'suivis',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
-                'contributeur': {'granted': True, 'priority': 5, 'conditions': {'can_edit_when_validated': True}},
-                'lecteur': {'granted': False, 'priority': 0},
                 'admin': {'granted': True, 'priority': 8},
+                RP: {'granted': True, 'priority': 0},
+                PP: {'granted': True, 'priority': 0},
             }
         },
         {
@@ -157,10 +144,8 @@ def get_activite_periodique_actions():
             'description': 'Permet de supprimer un suivi d\'Activité Périodique',
             'category': 'suivis',
             'role_mappings': {
-                'validateur': {'granted': True, 'priority': 10},
                 'admin': {'granted': True, 'priority': 8},
-                'contributeur': {'granted': False, 'priority': 0},
-                'lecteur': {'granted': False, 'priority': 0},
+                RP: {'granted': True, 'priority': 0},
             }
         },
     ]
