@@ -2829,27 +2829,51 @@ class DashboardPreuveUpdatePermission(AppActionPermission):
         return super()._extract_processus_uuid(request, view, obj)
 
 
-class DashboardMediaUpdatePermission(AppActionPermission):
-    """Permission pour modifier la description d'un média de preuve."""
-    app_name = 'dashboard'
-    action = 'update_periodicite'
+class DashboardMediaUpdatePermission(BasePermission):
+    """
+    Permission pour modifier la description d'un média de preuve.
+    Vérifie que l'utilisateur a update_periodicite (dashboard), update_traitement
+    ou update_suivi (pac) dans AU MOINS UN de ses processus actifs.
+    Cohérent avec DashboardMediaCreatePermission (même pattern any-processus).
+    La sécurité objet est déjà garantie par les vues parentes (dashboard / PAC)
+    qui contrôlent l'accès au processus avant que l'utilisateur atteigne cette vue.
+    """
 
-    def _extract_processus_uuid(self, request, view, obj=None):
-        media_uuid = view.kwargs.get('uuid') if hasattr(view, 'kwargs') else None
-        if media_uuid:
-            try:
-                from parametre.models import Periodicite
-                periodicite = Periodicite.objects.select_related(
-                    'indicateur_id__objective_id__tableau_bord__processus'
-                ).filter(preuve__medias__uuid=media_uuid).first()
-                if (periodicite and periodicite.indicateur_id
-                        and periodicite.indicateur_id.objective_id
-                        and periodicite.indicateur_id.objective_id.tableau_bord
-                        and periodicite.indicateur_id.objective_id.tableau_bord.processus):
-                    return str(periodicite.indicateur_id.objective_id.tableau_bord.processus.uuid)
-            except Exception as e:
-                logger.error(f"[DashboardMediaUpdatePermission] Erreur extraction processus: {e}")
-        return super()._extract_processus_uuid(request, view, obj)
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if PermissionService._is_super_admin(request.user):
+            return True
+        from parametre.permissions import is_supervisor_smi
+        if is_supervisor_smi(request.user):
+            return True
+        try:
+            from parametre.models import UserProcessusRole
+            processus_uuids = list(
+                UserProcessusRole.objects.filter(
+                    user=request.user, is_active=True, processus__isnull=False
+                ).values_list('processus__uuid', flat=True).distinct()
+            )
+            for proc_uuid in processus_uuids:
+                proc_uuid_str = str(proc_uuid)
+                can, _ = PermissionService.can_perform_action(
+                    request.user, 'dashboard', proc_uuid_str, 'update_periodicite'
+                )
+                if can:
+                    return True
+                can, _ = PermissionService.can_perform_action(
+                    request.user, 'pac', proc_uuid_str, 'update_traitement'
+                )
+                if can:
+                    return True
+                can, _ = PermissionService.can_perform_action(
+                    request.user, 'pac', proc_uuid_str, 'update_suivi'
+                )
+                if can:
+                    return True
+        except Exception as e:
+            logger.error(f"[DashboardMediaUpdatePermission] Erreur: {e}")
+        return False
 
 
 class DashboardMediaCreatePermission(BasePermission):

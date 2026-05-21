@@ -969,6 +969,8 @@ def dashboard_stats(request):
 
         # Filtre optionnel sur un seul processus (navigation multi-processus côté frontend)
         processus_uuid_filter = request.query_params.get('processus_uuid', None)
+        # Vue globale = utilisateur normal sans filtre sur un processus précis
+        is_global_view = (processus_uuid_filter is None and user_processus_uuids is not None)
         if processus_uuid_filter:
             if user_processus_uuids is None:
                 # Super admin : autoriser le filtre unique
@@ -1028,25 +1030,55 @@ def dashboard_stats(request):
         if scope == 'dernier':
             from django.db.models import Max
             if user_processus_uuids is None:
+                # Super admin : dernier tableau par processus sur l'année déterminée
                 all_tb = TableauBord.objects.filter(annee=year_to_use)
+                last_tableau_uuids = []
+                for proc_uuid in all_tb.values_list('processus', flat=True).distinct():
+                    max_num = all_tb.filter(processus=proc_uuid).aggregate(m=Max('num_amendement'))['m']
+                    last_tb_obj = all_tb.filter(processus=proc_uuid, num_amendement=max_num).first()
+                    if last_tb_obj:
+                        last_tableau_uuids.append(last_tb_obj.uuid)
+                objectives_filter = objectives_filter.filter(tableau_bord__uuid__in=last_tableau_uuids)
+                indicateurs_filter = indicateurs_filter.filter(
+                    objective_id__tableau_bord__uuid__in=last_tableau_uuids
+                )
+            elif is_global_view:
+                # Vue globale : dernier tableau par processus toutes années confondues
+                # (chaque processus peut avoir son tableau dans une année différente)
+                all_tb = TableauBord.objects.filter(processus__uuid__in=user_processus_uuids)
+                last_tableau_uuids = []
+                for proc_uuid in user_processus_uuids:
+                    proc_tb = all_tb.filter(processus__uuid=proc_uuid)
+                    if not proc_tb.exists():
+                        continue
+                    max_yr = proc_tb.aggregate(m=Max('annee'))['m']
+                    proc_tb_yr = proc_tb.filter(annee=max_yr)
+                    max_num = proc_tb_yr.aggregate(m=Max('num_amendement'))['m']
+                    last_tb_obj = proc_tb_yr.filter(num_amendement=max_num).first()
+                    if last_tb_obj:
+                        last_tableau_uuids.append(last_tb_obj.uuid)
+                # Reconstruire les filtres sans contrainte d'année
+                objectives_filter = Objectives.objects.filter(tableau_bord__uuid__in=last_tableau_uuids)
+                indicateurs_filter = Indicateur.objects.filter(
+                    objective_id__tableau_bord__uuid__in=last_tableau_uuids
+                )
             elif user_processus_uuids:
+                # Vue mono-processus : dernier tableau sur l'année déterminée
                 all_tb = TableauBord.objects.filter(
                     processus__uuid__in=user_processus_uuids, annee=year_to_use
                 )
+                last_tableau_uuids = []
+                for proc_uuid in all_tb.values_list('processus', flat=True).distinct():
+                    max_num = all_tb.filter(processus=proc_uuid).aggregate(m=Max('num_amendement'))['m']
+                    last_tb_obj = all_tb.filter(processus=proc_uuid, num_amendement=max_num).first()
+                    if last_tb_obj:
+                        last_tableau_uuids.append(last_tb_obj.uuid)
+                objectives_filter = objectives_filter.filter(tableau_bord__uuid__in=last_tableau_uuids)
+                indicateurs_filter = indicateurs_filter.filter(
+                    objective_id__tableau_bord__uuid__in=last_tableau_uuids
+                )
             else:
-                all_tb = TableauBord.objects.none()
-
-            last_tableau_uuids = []
-            for proc_uuid in all_tb.values_list('processus', flat=True).distinct():
-                max_num = all_tb.filter(processus=proc_uuid).aggregate(m=Max('num_amendement'))['m']
-                last_tb_obj = all_tb.filter(processus=proc_uuid, num_amendement=max_num).first()
-                if last_tb_obj:
-                    last_tableau_uuids.append(last_tb_obj.uuid)
-
-            objectives_filter = objectives_filter.filter(tableau_bord__uuid__in=last_tableau_uuids)
-            indicateurs_filter = indicateurs_filter.filter(
-                objective_id__tableau_bord__uuid__in=last_tableau_uuids
-            )
+                last_tableau_uuids = []
         # ========== FIN FILTRAGE ==========
 
         # Compter les objectifs
@@ -1080,7 +1112,12 @@ def dashboard_stats(request):
         
         # Récupérer toutes les cibles avec leurs indicateurs (filtrées par processus et année déterminée)
         # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
-        if user_processus_uuids is None:
+        if is_global_view and last_tableau_uuids is not None:
+            # Vue globale scope=dernier : cibles des derniers tableaux (toutes années)
+            cibles_qs = Cible.objects.filter(
+                indicateur_id__objective_id__tableau_bord__uuid__in=last_tableau_uuids
+            ).select_related('indicateur_id', 'indicateur_id__frequence_id')
+        elif user_processus_uuids is None:
             # Super admin : voir toutes les cibles de l'année déterminée sans filtre de processus
             cibles_qs = Cible.objects.filter(
                 indicateur_id__objective_id__tableau_bord__annee=year_to_use
@@ -1230,7 +1267,10 @@ def dashboard_stats(request):
         
         # ========== STATISTIQUES D'ANALYSE ==========
         # Filtrer les tableaux de bord selon les processus accessibles et l'année déterminée
-        if user_processus_uuids is None:
+        if is_global_view and last_tableau_uuids is not None:
+            # Vue globale scope=dernier : derniers tableaux de chaque processus (toutes années)
+            tableaux_bord_filter = TableauBord.objects.filter(uuid__in=last_tableau_uuids)
+        elif user_processus_uuids is None:
             # Super admin : voir tous les tableaux de bord de l'année déterminée
             tableaux_bord_filter = TableauBord.objects.filter(annee=year_to_use)
         elif user_processus_uuids:
@@ -1242,12 +1282,17 @@ def dashboard_stats(request):
         else:
             tableaux_bord_filter = TableauBord.objects.none()
 
-        # Restreindre au dernier tableau par processus si scope='dernier'
-        if scope == 'dernier' and last_tableau_uuids is not None:
+        # Restreindre au dernier tableau par processus si scope='dernier' (hors vue globale déjà traitée)
+        if scope == 'dernier' and last_tableau_uuids is not None and not is_global_view:
             tableaux_bord_filter = tableaux_bord_filter.filter(uuid__in=last_tableau_uuids)
 
         # Compter le nombre total d'analyses effectuées pour l'année déterminée
-        if user_processus_uuids is None:
+        if is_global_view and last_tableau_uuids is not None:
+            # Vue globale : analyses sur les derniers tableaux de chaque processus
+            total_analyses = AnalyseTableau.objects.filter(
+                tableau_bord__uuid__in=last_tableau_uuids
+            ).count()
+        elif user_processus_uuids is None:
             total_analyses = AnalyseTableau.objects.filter(
                 tableau_bord__annee=year_to_use
             ).count()
