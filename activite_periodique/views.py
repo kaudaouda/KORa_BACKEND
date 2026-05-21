@@ -1242,8 +1242,11 @@ def activite_periodique_stats(request):
                 'message': 'Aucune donnée d\'Activité Périodique trouvée pour vos processus attribués.'
             }, status=status.HTTP_200_OK)
         else:
-            # Récupérer toutes les Activités Périodiques des processus de l'utilisateur
             aps_base = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids)
+            # Filtre optionnel sur un seul processus (navigation multi-processus)
+            processus_uuid_filter = request.query_params.get('processus_uuid', None)
+            if processus_uuid_filter and str(processus_uuid_filter) in [str(u) for u in user_processus_uuids]:
+                aps_base = aps_base.filter(processus__uuid=processus_uuid_filter)
         logger.info(f"[activite_periodique_stats] Nombre total d'APs: {aps_base.count()}")
         # ========== FIN FILTRAGE ==========
 
