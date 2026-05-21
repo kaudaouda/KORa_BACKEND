@@ -3410,6 +3410,10 @@ def pac_stats(request):
         else:
             # Récupérer tous les PACs des processus de l'utilisateur
             pacs_base = Pac.objects.filter(processus__uuid__in=user_processus_uuids)
+            # Filtre optionnel sur un seul processus (navigation multi-processus)
+            processus_uuid_filter = request.query_params.get('processus_uuid', None)
+            if processus_uuid_filter and str(processus_uuid_filter) in [str(u) for u in user_processus_uuids]:
+                pacs_base = pacs_base.filter(processus__uuid=processus_uuid_filter)
         logger.info(f"[pac_stats] Queryset créé")
         # ========== FIN FILTRAGE ==========
         
