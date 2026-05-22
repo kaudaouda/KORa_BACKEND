@@ -1910,12 +1910,15 @@ def pac_create(request):
                         if hasattr(t, 'suivi') and t.suivi:
                             s = t.suivi
                             if s.etat_mise_en_oeuvre and s.appreciation:
+                                # Chaque amendement repart avec sa propre preuve vide :
+                                # partager s.preuve ferait apparaître les médias ajoutés
+                                # sur le nouvel amendement dans tous les précédents.
                                 PacSuivi.objects.create(
                                     traitement=new_traitement,
                                     etat_mise_en_oeuvre=s.etat_mise_en_oeuvre,
                                     resultat=s.resultat,
                                     appreciation=s.appreciation,
-                                    preuve=s.preuve,
+                                    preuve=None,
                                     statut=s.statut,
                                     date_mise_en_oeuvre_effective=s.date_mise_en_oeuvre_effective,
                                     date_cloture=s.date_cloture,

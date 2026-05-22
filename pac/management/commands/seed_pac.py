@@ -186,7 +186,7 @@ class Command(BaseCommand):
         statuts       = {s.nom: s for s in Statut.objects.all()}
         directions    = list(Direction.objects.all())
         sous_directions = list(SousDirection.objects.all())
-        preuve_obj    = self._get_or_create_preuve()
+        preuve_pdf    = self._get_or_create_preuve()  # fichier PDF réutilisé pour les TraitementPac
 
         dysf_types = list(
             DysfonctionnementRecommandation.objects.filter(
@@ -239,7 +239,7 @@ class Command(BaseCommand):
                     'type_action':               action_type,
                     'responsable_direction':     direction,
                     'responsable_sous_direction':sous_dir,
-                    'preuve':                    preuve_obj,
+                    'preuve':                    preuve_pdf,
                     'delai_realisation':         delai,
                 }
             )
@@ -261,26 +261,26 @@ class Command(BaseCommand):
                 date_clo     = datetime.date(annee, min(mois + 1, 12), 28) if etat_nom == 'Realisee' else None
 
                 if etat and appre:
-                    _, s_created = PacSuivi.objects.get_or_create(
-                        traitement=traitement,
-                        defaults={
-                            'etat_mise_en_oeuvre': etat,
-                            'resultat': (
+                    if not PacSuivi.objects.filter(traitement=traitement).exists():
+                        # Créer une preuve individuelle pour chaque suivi (pas de partage)
+                        suivi_preuve = self._create_preuve_for_suivi()
+                        PacSuivi.objects.create(
+                            traitement=traitement,
+                            etat_mise_en_oeuvre=etat,
+                            resultat=(
                                 'Action realisee avec succes.'
                                 if etat_nom == 'Realisee'
                                 else 'Action en cours de realisation.'
                                 if etat_nom == 'En cours'
                                 else 'Action partiellement realisee.'
                             ),
-                            'appreciation':                appre,
-                            'preuve':                      preuve_obj,
-                            'statut':                      statut_obj,
-                            'date_mise_en_oeuvre_effective': date_eff,
-                            'date_cloture':                date_clo,
-                            'cree_par':                    user,
-                        }
-                    )
-                    if s_created:
+                            appreciation=appre,
+                            preuve=suivi_preuve,
+                            statut=statut_obj,
+                            date_mise_en_oeuvre_effective=date_eff,
+                            date_cloture=date_clo,
+                            cree_par=user,
+                        )
                         count_suivis += 1
 
         self.stdout.write(f'    -> {count_details} details, {count_traitements} traitements, {count_suivis} suivis')
@@ -290,6 +290,7 @@ class Command(BaseCommand):
     # -----------------------------------------------------------------------
 
     def _get_or_create_preuve(self):
+        """Preuve partagée utilisée uniquement pour les TraitementPac."""
         existing = Preuve.objects.filter(medias__fichier__icontains='preuve').first()
         if existing:
             return existing
@@ -300,5 +301,16 @@ class Command(BaseCommand):
             media = Media()
             media.fichier.save('preuve.pdf', File(f), save=True)
         preuve = Preuve.objects.create(titre='Preuve PDF seed PAC')
+        preuve.medias.add(media)
+        return preuve
+
+    def _create_preuve_for_suivi(self):
+        """Crée une Preuve individuelle pour chaque PacSuivi seedé (pas de partage entre suivis)."""
+        if not os.path.exists(PREUVE_PDF_PATH):
+            return Preuve.objects.create(titre='Preuve suivi PAC seed')
+        with open(PREUVE_PDF_PATH, 'rb') as f:
+            media = Media()
+            media.fichier.save('preuve.pdf', File(f), save=True)
+        preuve = Preuve.objects.create(titre='Preuve suivi PAC seed')
         preuve.medias.add(media)
         return preuve
