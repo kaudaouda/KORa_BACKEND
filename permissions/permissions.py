@@ -2813,66 +2813,78 @@ class DashboardPreuveUpdatePermission(BasePermission):
     et CDR (update_suivi_action).
     """
 
-    def _extract_processus_uuid(self, preuve_uuid):
+    def _extract_all_processus_uuids(self, preuve_uuid):
+        """
+        Collecte TOUS les processus liés à cette preuve via tous les chemins possibles.
+        Retourne un set de str(uuid). Nécessaire car une preuve peut être partagée
+        entre plusieurs enregistrements (ex: données de test) sur des processus différents.
+        """
         if not preuve_uuid:
-            return None
+            return set()
+
+        uuids = set()
 
         # Dashboard / AP : via Periodicite
         try:
             from parametre.models import Periodicite
-            periodicite = Periodicite.objects.select_related(
+            for periodicite in Periodicite.objects.select_related(
                 'indicateur_id__objective_id__tableau_bord__processus'
-            ).filter(preuve__uuid=preuve_uuid).first()
-            if (periodicite and periodicite.indicateur_id
-                    and periodicite.indicateur_id.objective_id
-                    and periodicite.indicateur_id.objective_id.tableau_bord
-                    and periodicite.indicateur_id.objective_id.tableau_bord.processus):
-                return str(periodicite.indicateur_id.objective_id.tableau_bord.processus.uuid)
+            ).filter(preuve__uuid=preuve_uuid):
+                try:
+                    p = periodicite.indicateur_id.objective_id.tableau_bord.processus
+                    if p:
+                        uuids.add(str(p.uuid))
+                except (AttributeError, TypeError):
+                    pass
         except Exception as e:
             logger.error(f"[DashboardPreuveUpdatePermission] Periodicite lookup error: {e}")
 
         # CDR : via SuiviAction → PlanAction → DetailsCDR → CDR → processus
         try:
             from cartographie_risque.models import SuiviAction
-            suivi = SuiviAction.objects.select_related(
+            for suivi in SuiviAction.objects.select_related(
                 'plan_action__details_cdr__cdr__processus'
-            ).filter(element_preuve__uuid=preuve_uuid).first()
-            if (suivi and suivi.plan_action
-                    and suivi.plan_action.details_cdr
-                    and suivi.plan_action.details_cdr.cdr
-                    and suivi.plan_action.details_cdr.cdr.processus):
-                return str(suivi.plan_action.details_cdr.cdr.processus.uuid)
+            ).filter(element_preuve__uuid=preuve_uuid):
+                try:
+                    p = suivi.plan_action.details_cdr.cdr.processus
+                    if p:
+                        uuids.add(str(p.uuid))
+                except (AttributeError, TypeError):
+                    pass
         except Exception as e:
             logger.error(f"[DashboardPreuveUpdatePermission] SuiviAction lookup error: {e}")
 
         # PAC : via PacSuivi → TraitementPac → DetailsPac → Pac → processus
         try:
             from pac.models import PacSuivi
-            pac_suivi = PacSuivi.objects.select_related(
+            for pac_suivi in PacSuivi.objects.select_related(
                 'traitement__details_pac__pac__processus'
-            ).filter(preuve__uuid=preuve_uuid).first()
-            if (pac_suivi and pac_suivi.traitement
-                    and pac_suivi.traitement.details_pac
-                    and pac_suivi.traitement.details_pac.pac
-                    and pac_suivi.traitement.details_pac.pac.processus):
-                return str(pac_suivi.traitement.details_pac.pac.processus.uuid)
+            ).filter(preuve__uuid=preuve_uuid):
+                try:
+                    p = pac_suivi.traitement.details_pac.pac.processus
+                    if p:
+                        uuids.add(str(p.uuid))
+                except (AttributeError, TypeError):
+                    pass
         except Exception as e:
             logger.error(f"[DashboardPreuveUpdatePermission] PacSuivi lookup error: {e}")
 
         # PAC : via TraitementPac directement (preuve sur traitement)
         try:
             from pac.models import TraitementPac
-            traitement = TraitementPac.objects.select_related(
+            for traitement in TraitementPac.objects.select_related(
                 'details_pac__pac__processus'
-            ).filter(preuve__uuid=preuve_uuid).first()
-            if (traitement and traitement.details_pac
-                    and traitement.details_pac.pac
-                    and traitement.details_pac.pac.processus):
-                return str(traitement.details_pac.pac.processus.uuid)
+            ).filter(preuve__uuid=preuve_uuid):
+                try:
+                    p = traitement.details_pac.pac.processus
+                    if p:
+                        uuids.add(str(p.uuid))
+                except (AttributeError, TypeError):
+                    pass
         except Exception as e:
             logger.error(f"[DashboardPreuveUpdatePermission] TraitementPac lookup error: {e}")
 
-        return None
+        return uuids
 
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
@@ -2884,11 +2896,11 @@ class DashboardPreuveUpdatePermission(BasePermission):
             return True
 
         preuve_uuid = view.kwargs.get('uuid') if hasattr(view, 'kwargs') else None
-        processus_uuid = self._extract_processus_uuid(preuve_uuid)
+        all_processus_uuids = self._extract_all_processus_uuids(preuve_uuid)
 
-        if not processus_uuid:
+        if not all_processus_uuids:
             logger.error(
-                f"[DashboardPreuveUpdatePermission] processus_uuid introuvable pour preuve={preuve_uuid}, "
+                f"[DashboardPreuveUpdatePermission] Aucun processus trouvé pour preuve={preuve_uuid}, "
                 f"user={request.user.username}"
             )
             return False
@@ -2899,19 +2911,23 @@ class DashboardPreuveUpdatePermission(BasePermission):
             ('pac', 'update_suivi'),
             ('activite_periodique', 'update_suivi_mois'),
         ]
-        for app_name, action in checks:
-            try:
-                can, _ = PermissionService.can_perform_action(
-                    request.user, app_name, processus_uuid, action
-                )
-                if can:
-                    return True
-            except Exception as e:
-                logger.error(f"[DashboardPreuveUpdatePermission] can_perform_action error ({app_name}/{action}): {e}")
+        for processus_uuid in all_processus_uuids:
+            for app_name, action in checks:
+                try:
+                    can, _ = PermissionService.can_perform_action(
+                        request.user, app_name, processus_uuid, action
+                    )
+                    if can:
+                        return True
+                except Exception as e:
+                    logger.error(
+                        f"[DashboardPreuveUpdatePermission] can_perform_action error "
+                        f"({app_name}/{action}, processus={processus_uuid}): {e}"
+                    )
 
         logger.warning(
             f"[DashboardPreuveUpdatePermission] ❌ Accès refusé: preuve={preuve_uuid}, "
-            f"processus={processus_uuid}, user={request.user.username}"
+            f"processus_candidats={all_processus_uuids}, user={request.user.username}"
         )
         return False
 
