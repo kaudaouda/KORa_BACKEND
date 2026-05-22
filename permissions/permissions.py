@@ -2907,6 +2907,7 @@ class DashboardPreuveUpdatePermission(BasePermission):
 
         checks = [
             ('dashboard', 'update_periodicite'),
+            ('dashboard', 'create_periodicite'),  # créer une périodicité inclut la gestion de sa preuve
             ('cartographie_risque', 'update_suivi_action'),
             ('pac', 'update_suivi'),
             ('activite_periodique', 'update_suivi_mois'),
@@ -2983,7 +2984,9 @@ class DashboardMediaCreatePermission(BasePermission):
     """
     Permission pour créer un média ou une preuve.
     Pas de contexte de processus disponible à la création — vérifie que l'utilisateur
-    a update_periodicite dans AU MOINS UN de ses processus.
+    a update_periodicite OU create_periodicite dans AU MOINS UN de ses processus.
+    Les deux droits sont équivalents ici : créer une preuve fait partie du flux
+    de création ET de mise à jour d'une périodicité.
     """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
@@ -3000,15 +3003,16 @@ class DashboardMediaCreatePermission(BasePermission):
             ).values_list('processus__uuid', flat=True).distinct()
             for processus_uuid in processus_uuids:
                 if processus_uuid:
-                    can, _ = PermissionService.can_perform_action(
-                        request.user, 'dashboard', str(processus_uuid), 'update_periodicite'
-                    )
-                    if can:
-                        return True
+                    for action in ('update_periodicite', 'create_periodicite'):
+                        can, _ = PermissionService.can_perform_action(
+                            request.user, 'dashboard', str(processus_uuid), action
+                        )
+                        if can:
+                            return True
         except Exception as e:
             logger.error(f"[DashboardMediaCreatePermission] Erreur: {e}")
         logger.warning(
             f"[DashboardMediaCreatePermission] ❌ Refus: user={request.user.username} "
-            f"n'a pas update_periodicite dans aucun processus"
+            f"n'a ni update_periodicite ni create_periodicite dans aucun processus"
         )
         return False
