@@ -184,6 +184,10 @@ def cdr_stats(request):
             }, status=status.HTTP_200_OK)
         else:
             cdrs_base = CDR.objects.filter(processus__uuid__in=user_processus_uuids)
+            # Filtre optionnel sur un seul processus (navigation multi-processus)
+            processus_uuid_filter = request.query_params.get('processus', None)
+            if processus_uuid_filter and str(processus_uuid_filter) in [str(u) for u in user_processus_uuids]:
+                cdrs_base = cdrs_base.filter(processus__uuid=processus_uuid_filter)
         # ========== FIN FILTRAGE ==========
 
         # Filtrer selon le scope
