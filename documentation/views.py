@@ -165,11 +165,13 @@ def document_create(request):
             # Si un fichier est fourni, créer le média et la relation
             if fichier:
                 try:
-                    # Créer le média
-                    media = Media.objects.create(
-                        fichier=fichier,
+                    # Créer le média (rangé dans medias/documentation/)
+                    media = Media(
                         description=f'Fichier du document: {document.name}'
                     )
+                    media._app_folder = 'documentation'
+                    media.fichier = fichier
+                    media.save()
 
                     # Créer la relation MediaDocument
                     MediaDocument.objects.create(
@@ -338,11 +340,13 @@ def document_amend(request, uuid):
             # Si un fichier est fourni, créer le média et la relation
             if fichier:
                 try:
-                    # Créer le média
-                    media = Media.objects.create(
-                        fichier=fichier,
+                    # Créer le média (rangé dans medias/documentation/)
+                    media = Media(
                         description=f'Fichier de l\'amendement: {amended_document.name}'
                     )
+                    media._app_folder = 'documentation'
+                    media.fichier = fichier
+                    media.save()
 
                     # Créer la relation MediaDocument
                     MediaDocument.objects.create(

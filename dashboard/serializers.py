@@ -123,10 +123,15 @@ class TableauBordSerializer(serializers.ModelSerializer):
         return None
 
     has_amendements = serializers.SerializerMethodField()
+    has_analyse = serializers.SerializerMethodField()
 
     def get_has_amendements(self, obj):
         """Vérifier si le tableau initial a des amendements"""
         return obj.has_amendements()
+
+    def get_has_analyse(self, obj):
+        """Vérifier si une analyse existe pour ce tableau (accessible à tous les utilisateurs authentifiés)"""
+        return hasattr(obj, 'analyse_tableau')
 
     class Meta:
         model = TableauBord
@@ -135,6 +140,7 @@ class TableauBordSerializer(serializers.ModelSerializer):
             'num_amendement', 'nom_version',
             'initial_ref', 'cree_par', 'created_at', 'updated_at',
             'is_validated', 'date_validation', 'valide_par', 'valide_par_nom', 'has_amendements',
+            'has_analyse',
             'raison_amendement'
         ]
         read_only_fields = ['uuid', 'cree_par', 'created_at', 'updated_at', 'date_validation', 'valide_par']
