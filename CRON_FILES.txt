@@ -1,0 +1,92 @@
+================================================================================
+FICHIERS LIÉS AUX TÂCHES CRON / SCHEDULER (APScheduler + django_apscheduler)
+================================================================================
+
+Le projet utilise APScheduler (BackgroundScheduler) intégré au process Django,
+avec persistance des jobs via django_apscheduler (DjangoJobStore).
+Un lock PID-file empêche le double-fire en cas de multi-workers.
+
+--------------------------------------------------------------------------------
+1. CŒUR DU SCHEDULER (configuration, démarrage, jobs périodiques)
+--------------------------------------------------------------------------------
+- parametre/scheduler.py
+    Configuration centrale d'APScheduler. Démarre BackgroundScheduler,
+    enregistre les jobs CRON (envoi quotidien des rappels) :
+      * send_reminders_job           -> cron 08:00  (PAC)
+      * send_dashboard_reminders_job -> cron 08:30  (Dashboard)
+      * send_cdr_reminders_job       -> cron 09:00  (CDR)
+    Gère également le PID-file lock et l'arrêt propre via atexit.
+
+- parametre/apps.py
+    AppConfig de l'app `parametre`. Déclenche le démarrage du scheduler
+    au ready() de Django (avec garde-fous pour migrations / runserver reload).
+
+- parametre/admin_jobs.py
+    Vue/utilitaire admin pour inspecter et piloter les jobs APScheduler
+    (lister, exécuter manuellement, supprimer / réinitialiser).
+
+- parametre/views.py
+    Endpoints API liés au scheduler (statut des jobs, déclenchement manuel,
+    paramétrage des notifications, intégration avec django_apscheduler).
+
+- parametre/urls.py
+    Routes exposant les endpoints du scheduler / jobs / notifications.
+
+--------------------------------------------------------------------------------
+2. MANAGEMENT COMMANDS APPELÉES PAR LES JOBS CRON
+--------------------------------------------------------------------------------
+Ces commandes sont invoquées par scheduler.py via call_command(...).
+
+- parametre/management/commands/send_reminders.py
+    Envoi des rappels PAC (planification d'actions correctives).
+
+- parametre/management/commands/send_reminders_secure.py
+    Variante sécurisée/durcie de send_reminders (production).
+
+- parametre/management/commands/send_dashboard_reminders.py
+    Envoi des rappels liés aux tableaux de bord (Dashboard).
+
+- parametre/management/commands/send_cdr_reminders.py
+    Envoi des rappels CDR (Cartographie Des Risques).
+
+--------------------------------------------------------------------------------
+3. SERVICES MÉTIER UTILISÉS PAR LES JOBS CRON
+--------------------------------------------------------------------------------
+- parametre/services/pac_notification_service.py
+    Logique métier : détection des PAC à rappeler + envoi des emails.
+
+- parametre/services/dashboard_notification_service.py
+    Logique métier : détection des tableaux/indicateurs à rappeler.
+
+- parametre/services/cdr_notification_service.py
+    Logique métier : détection des CDR à rappeler.
+
+--------------------------------------------------------------------------------
+4. CONFIGURATION GLOBALE
+--------------------------------------------------------------------------------
+- KORA/settings.py
+    Déclaration de `django_apscheduler` dans INSTALLED_APPS et configuration
+    associée (timezone, etc.).
+
+- requirements.txt
+    Dépendances : apscheduler, django-apscheduler.
+
+--------------------------------------------------------------------------------
+5. SCRIPTS DE TEST / DIAGNOSTIC
+--------------------------------------------------------------------------------
+- test_scheduler_job.py
+    Script de test manuel pour vérifier l'exécution d'un job du scheduler.
+
+- test_rappels_system.py
+    Test global du système de rappels (PAC / Dashboard / CDR).
+
+- TEST_NOTIFICATIONS.md
+    Documentation des procédures de test des notifications planifiées.
+
+================================================================================
+NOTE — Migration future
+================================================================================
+Le scheduler est mono-process (APScheduler BackgroundScheduler).
+En cas de passage à un déploiement multi-workers (ex: Gunicorn N>1),
+prévoir une migration vers django-q2 ou Celery Beat.
+================================================================================

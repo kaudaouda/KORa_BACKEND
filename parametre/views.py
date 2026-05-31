@@ -2335,18 +2335,25 @@ def media_create(request):
         fichier = request.FILES.get('fichier')
         url_fichier = request.data.get('url_fichier')
         description = request.data.get('description', '')
+        # Sous-dossier de rangement (par app). Valeurs autorisées dans
+        # parametre.media_paths.ALLOWED_APP_FOLDERS. Fallback: 'shared'.
+        app_folder = request.data.get('app') or request.data.get('app_folder')
 
         if not fichier and not url_fichier:
             return Response({
                 'error': 'Fichier ou URL fichier requis'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Créer le média
-        media = Media.objects.create(
-            fichier=fichier if fichier else None,
+        # Créer le média (sans le fichier d'abord pour pouvoir poser
+        # _app_folder avant que upload_to ne soit appelé par .save()).
+        media = Media(
             url_fichier=url_fichier if url_fichier else None,
-            description=description if description else None
+            description=description if description else None,
         )
+        media._app_folder = app_folder
+        if fichier:
+            media.fichier = fichier
+        media.save()
 
         # Retourner les données du média créé
         return Response({

@@ -35,7 +35,11 @@ db.sqlite3
 db.sqlite3-journal
 db.sqlite3.backup*
 /media
-/medias
+/medias/*
+# Conserver la structure de sous-dossiers par app (medias/pac/, medias/dashboard/, ...)
+!/medias/*/
+/medias/*/*
+!/medias/*/.gitkeep
 /staticfiles
 /static
 
@@ -45,6 +49,7 @@ db.sqlite3.backup*
 .env.production
 .env.development
 .env.*.local
+.env.backup
 
 # IDE
 .vscode/
