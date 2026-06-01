@@ -3668,6 +3668,101 @@ def pac_stats(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def pac_dashboard_stats(request):
+    """
+    Statistiques agrégées pour le dashboard — 4 requêtes DB au lieu de 51+.
+    Remplace les appels séquentiels de dashboardSlice.js (N+1 sur PACs/traitements/suivis).
+    """
+    try:
+        from parametre.models import NotificationSettings
+        from datetime import timedelta
+
+        notif_settings = NotificationSettings.get_solo()
+        delai_jours = notif_settings.traitement_delai_notice_days
+        today = timezone.now().date()
+        date_limite = today + timedelta(days=delai_jours)
+
+        # Security by Design : même logique de filtrage que pac_list
+        user_processus_uuids = get_user_processus_list(request.user)
+
+        if user_processus_uuids is None:
+            pacs_qs = Pac.objects.filter(num_amendement=0)
+        elif not user_processus_uuids:
+            return Response({
+                'success': True,
+                'data': {
+                    'pac_count': 0,
+                    'traitements_arrives_terme': 0,
+                    'traitements_bientot_terme': 0,
+                    'suivis_count': 0,
+                    'delai_alerte_jours': delai_jours,
+                }
+            }, status=status.HTTP_200_OK)
+        else:
+            pacs_qs = Pac.objects.filter(
+                processus__uuid__in=user_processus_uuids,
+                num_amendement=0
+            )
+
+        pacs_uuids = list(pacs_qs.values_list('uuid', flat=True))
+        pac_count = len(pacs_uuids)
+
+        if not pacs_uuids:
+            return Response({
+                'success': True,
+                'data': {
+                    'pac_count': 0,
+                    'traitements_arrives_terme': 0,
+                    'traitements_bientot_terme': 0,
+                    'suivis_count': 0,
+                    'delai_alerte_jours': delai_jours,
+                }
+            }, status=status.HTTP_200_OK)
+
+        base_filter = {
+            'details_pac__isnull': False,
+            'details_pac__pac__uuid__in': pacs_uuids,
+            'delai_realisation__isnull': False,
+        }
+
+        traitements_arrives_terme = TraitementPac.objects.filter(
+            **base_filter,
+            delai_realisation__lt=today
+        ).count()
+
+        traitements_bientot_terme = TraitementPac.objects.filter(
+            **base_filter,
+            delai_realisation__gte=today,
+            delai_realisation__lte=date_limite
+        ).count()
+
+        suivis_count = PacSuivi.objects.filter(
+            traitement__isnull=False,
+            traitement__details_pac__isnull=False,
+            traitement__details_pac__pac__uuid__in=pacs_uuids,
+        ).count()
+
+        return Response({
+            'success': True,
+            'data': {
+                'pac_count': pac_count,
+                'traitements_arrives_terme': traitements_arrives_terme,
+                'traitements_bientot_terme': traitements_bientot_terme,
+                'suivis_count': suivis_count,
+                'delai_alerte_jours': delai_jours,
+            }
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"[pac_dashboard_stats] Erreur: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur lors du calcul des statistiques dashboard'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_last_pac_previous_year(request):
     """
     Récupérer le dernier PAC (INITIAL, AMENDEMENT_1 ou AMENDEMENT_2) de l'année précédente
