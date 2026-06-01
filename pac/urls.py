@@ -55,6 +55,7 @@ urlpatterns = [
     
     # ==================== STATISTIQUES PAC ====================
     path('pac/stats/', views.pac_stats, name='pac_stats'),
+    path('pac/dashboard-stats/', views.pac_dashboard_stats, name='pac_dashboard_stats'),
 
     # ==================== COPIE ANNÉE PRÉCÉDENTE ====================
     path('pac/last-previous-year/', views.get_last_pac_previous_year, name='get_last_pac_previous_year'),
