@@ -55,9 +55,16 @@ class IPBlockMiddleware(MiddlewareMixin):
 
     @staticmethod
     def _get_ip(request):
-        xff = request.META.get('HTTP_X_FORWARDED_FOR')
-        if xff:
-            return xff.split(',')[0].strip()
+        trusted_proxy_count = getattr(settings, 'TRUSTED_PROXY_COUNT', 0)
+        if trusted_proxy_count > 0:
+            xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+            ips = [ip.strip() for ip in xff.split(',') if ip.strip()]
+            if ips:
+                # XFF = "client [, spoofed...], proxy1 [, proxy2...]"
+                # Avec N proxies de confiance, l'IP client réelle est à l'index len-N.
+                # Exemple nginx (N=1) : XFF="fake, client" → idx=1 → "client" ✓
+                idx = max(0, len(ips) - trusted_proxy_count)
+                return ips[idx]
         return request.META.get('REMOTE_ADDR')
 
     @classmethod
@@ -121,11 +128,16 @@ class JWTCookieMiddleware(MiddlewareMixin):
                     user = User.objects.get(id=user_id)
                     cache.set(cache_key, user, self._USER_CACHE_TTL)
 
+                # Un compte peut être désactivé après que le cache l'a mémorisé.
+                if not user.is_active:
+                    logger.debug("JWT cookie refusé — compte inactif (id=%s)", user_id)
+                    return
+
                 request.user = user
-                logger.debug(f"Utilisateur authentifié depuis JWT cookie: {user.username}")
+                logger.debug("Utilisateur authentifié depuis JWT cookie: id=%s", user_id)
 
             except (InvalidToken, TokenError, User.DoesNotExist) as e:
-                logger.debug(f"Erreur authentification JWT cookie: {e}")
+                logger.debug("Erreur authentification JWT cookie: %s", type(e).__name__)
                 pass
     
     def process_response(self, request, response):

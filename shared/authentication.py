@@ -110,6 +110,6 @@ class AuthService:
         Returns:
             Response: Response avec cookies supprimés
         """
-        response.delete_cookie('access_token')
-        response.delete_cookie('refresh_token')
+        response.delete_cookie('access_token', path='/', samesite='Lax')
+        response.delete_cookie('refresh_token', path='/', samesite='Lax')
         return response
