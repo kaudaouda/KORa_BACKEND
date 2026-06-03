@@ -143,6 +143,28 @@ class JWTCookieMiddleware(MiddlewareMixin):
         return response
 
 
+class AdminLoginRateLimitMiddleware(MiddlewareMixin):
+    """
+    Rate limit sur le formulaire de login Django admin.
+    5 tentatives POST par IP sur 60 secondes.
+    """
+    MAX_ATTEMPTS = 5
+    WINDOW = 60  # secondes
+
+    def process_request(self, request):
+        admin_url = f"/{__import__('os').getenv('DJANGO_ADMIN_URL', 'admin/')}login/"
+        if request.method == 'POST' and request.path == admin_url:
+            ip = IPBlockMiddleware._get_ip(request)
+            key = f'admin_login_ratelimit:{ip}'
+            attempts = cache.get(key, 0)
+            if attempts >= self.MAX_ATTEMPTS:
+                from django.http import HttpResponseForbidden
+                logger.warning("Admin login rate limit atteint pour IP %s", ip)
+                return HttpResponseForbidden('Trop de tentatives. Réessayez dans quelques minutes.')
+            cache.set(key, attempts + 1, self.WINDOW)
+        return None
+
+
 class MediaFrameOptionsMiddleware(MiddlewareMixin):
     """
     Middleware personnalisé pour permettre l'affichage en iframe des fichiers média

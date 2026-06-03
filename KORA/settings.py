@@ -75,6 +75,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',             # 1. CORS headers (doit être en premier)
     'shared.middleware.IPBlockMiddleware',               # 2. Blocage IP (après CORS pour que la 403 soit lisible par le frontend)
+    'shared.middleware.AdminLoginRateLimitMiddleware',  # 3. Rate limit login admin
     'shared.cors_middleware.CORSContentTypeMiddleware',  # 3. Corriger le Content-Type des requêtes CORS
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -246,7 +247,7 @@ REST_FRAMEWORK = {
     # ── Throttling anti-DDoS applicatif (L7) ────────────────────────────────
     # KoraAnonThrottle  : IPs anonymes  → 100 req/min
     # KoraUserThrottle  : users connectés → 600 req/min
-    # KoraSensitiveThrottle : login/reset/invitation → 10 req/min  (via @throttle_classes)
+    # KoraSensitiveThrottle : login/reset/invitation → 5 req/min  (via @throttle_classes)
     'DEFAULT_THROTTLE_CLASSES': [
         'shared.throttles.KoraAnonThrottle',
         'shared.throttles.KoraUserThrottle',
@@ -254,7 +255,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon':      '100/min',
         'user':      '600/min',
-        'sensitive': '10/min',
+        'sensitive': '5/min',
     },
 }
 
