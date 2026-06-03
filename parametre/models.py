@@ -800,10 +800,11 @@ class EmailSettings(models.Model):
         Définit le mot de passe SMTP (chiffré automatiquement)
         Security by Design : Chiffrement automatique
         """
+        self.email_host_password = ''  # toujours vider le champ plain text
         if not password:
             self.email_host_password_encrypted = ''
             return
-        
+
         try:
             from .utils.email_security import EmailPasswordEncryption
             self.email_host_password_encrypted = EmailPasswordEncryption.encrypt_password(password)
@@ -829,7 +830,13 @@ class EmailSettings(models.Model):
                 logger.error("❌ Erreur lors du déchiffrement du mot de passe")
                 raise
         
-        # Sinon, utiliser l'ancien champ (compatibilité)
+        # Fallback: utiliser l'ancien champ plain text (compatibilité)
+        # Devrait être vide en production — utiliser l'interface admin pour migrer
+        if self.email_host_password:
+            import logging
+            logging.getLogger(__name__).warning(
+                "EmailSettings: mot de passe SMTP en clair détecté — migrer via set_password()"
+            )
         return self.email_host_password
 
     def get_email_config(self):

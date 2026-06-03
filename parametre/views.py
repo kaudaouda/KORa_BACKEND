@@ -2345,6 +2345,26 @@ def media_create(request):
                 'error': 'Fichier ou URL fichier requis'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        if url_fichier:
+            from urllib.parse import urlparse
+            import ipaddress
+            try:
+                parsed = urlparse(url_fichier)
+                if parsed.scheme not in ('http', 'https'):
+                    return Response({'error': 'URL invalide : seuls http et https sont autorisés.'}, status=status.HTTP_400_BAD_REQUEST)
+                hostname = parsed.hostname or ''
+                if not hostname:
+                    return Response({'error': 'URL invalide.'}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    addr = ipaddress.ip_address(hostname)
+                    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                        return Response({'error': 'URL pointant vers une adresse privée non autorisée.'}, status=status.HTTP_400_BAD_REQUEST)
+                except ValueError:
+                    if hostname.lower() in {'localhost', '::1', '0.0.0.0'}:
+                        return Response({'error': 'URL non autorisée.'}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception:
+                return Response({'error': 'URL invalide.'}, status=status.HTTP_400_BAD_REQUEST)
+
         if fichier:
             error = validate_uploaded_file(fichier)
             if error:
@@ -2408,7 +2428,7 @@ def media_update_description(request, uuid):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, DashboardMediaCreatePermission])
 def media_list(request):
     """Lister les médias existants"""
     try:
@@ -5257,36 +5277,38 @@ def _serialize_throttle_config(config):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _extract_job_info(job):
-    """Extrait name, hour, minute depuis le job_state picklé d'un DjangoJob."""
-    import pickle
+    """Extrait name, hour, minute depuis un DjangoJob via l'API APScheduler (sans pickle)."""
     from apscheduler.triggers.cron import CronTrigger
+    from parametre.scheduler import scheduler as _scheduler
 
     name = hour = minute = None
     try:
-        job_state = pickle.loads(job.job_state) if isinstance(job.job_state, bytes) else job.job_state
-        name = job_state.get('name')
-        trigger = job_state.get('trigger')
-        if isinstance(trigger, CronTrigger):
-            for field in trigger.fields:
-                field_str = str(field)
-                if field.name == 'hour' and field_str != '*':
-                    try:
-                        hour = int(field_str)
-                    except ValueError:
-                        if '=' in field_str:
+        if _scheduler and _scheduler.running:
+            live_job = _scheduler.get_job(job.id)
+            if live_job:
+                name = live_job.name
+                trigger = live_job.trigger
+                if isinstance(trigger, CronTrigger):
+                    for field in trigger.fields:
+                        field_str = str(field)
+                        if field.name == 'hour' and field_str != '*':
                             try:
-                                hour = int(field_str.split('=')[1].strip("'"))
-                            except (ValueError, IndexError):
-                                pass
-                elif field.name == 'minute' and field_str != '*':
-                    try:
-                        minute = int(field_str)
-                    except ValueError:
-                        if '=' in field_str:
+                                hour = int(field_str)
+                            except ValueError:
+                                if '=' in field_str:
+                                    try:
+                                        hour = int(field_str.split('=')[1].strip("'"))
+                                    except (ValueError, IndexError):
+                                        pass
+                        elif field.name == 'minute' and field_str != '*':
                             try:
-                                minute = int(field_str.split('=')[1].strip("'"))
-                            except (ValueError, IndexError):
-                                pass
+                                minute = int(field_str)
+                            except ValueError:
+                                if '=' in field_str:
+                                    try:
+                                        minute = int(field_str.split('=')[1].strip("'"))
+                                    except (ValueError, IndexError):
+                                        pass
     except Exception:
         pass
     return hour, minute, name
@@ -5340,8 +5362,11 @@ def admin_scheduler_job_update(request, job_id):
         return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
 
     from django_apscheduler.models import DjangoJob
-    import pickle
     from apscheduler.triggers.cron import CronTrigger
+    from parametre.scheduler import scheduler as _scheduler
+
+    if not _scheduler or not _scheduler.running:
+        return Response({'error': 'Scheduler non actif.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     try:
         job = DjangoJob.objects.get(id=job_id)
@@ -5365,11 +5390,8 @@ def admin_scheduler_job_update(request, job_id):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        job_state = pickle.loads(job.job_state)
-        job_state['trigger'] = CronTrigger(hour=hour, minute=minute)
-        job.job_state = pickle.dumps(job_state)
-        job.save()  # post_save signal → reschedule_job dans apps.py
-        logger.info("[SCHEDULER] Job %s reprogrammé à %02d:%02d par %s", job_id, hour, minute, request.user.username)
+        _scheduler.reschedule_job(job_id, trigger=CronTrigger(hour=hour, minute=minute))
+        logger.info("[SCHEDULER] Job %s reprogrammé à %02d:%02d", job_id, hour, minute)
         job.refresh_from_db()
         return Response(_serialize_job(job))
     except Exception as e:
