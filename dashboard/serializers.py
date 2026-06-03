@@ -160,13 +160,13 @@ class TableauBordSerializer(serializers.ModelSerializer):
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"Création TableauBord - validated_data keys: {list(validated_data.keys())}, initial_ref_uuid: {initial_ref_uuid}")
+        logger.info("Création TableauBord - validated_data keys: %s, initial_ref_uuid: %s", list(validated_data.keys()), initial_ref_uuid)
         
         try:
             instance = super().create(validated_data)
-            logger.info(f"Instance TableauBord créée avec succès: {instance.uuid}")
+            logger.info("Instance TableauBord créée avec succès: %s", instance.uuid)
         except Exception as e:
-            logger.error(f"Erreur lors de la création de l'instance TableauBord: {str(e)}", exc_info=True)
+            logger.error("Erreur lors de la création de l'instance TableauBord: %s", e, exc_info=True)
             raise
         
         # Définir initial_ref après la création si nécessaire
@@ -177,11 +177,11 @@ class TableauBordSerializer(serializers.ModelSerializer):
                     initial_ref_obj = TableauBord.objects.get(uuid=initial_ref_uuid)
                     instance.initial_ref = initial_ref_obj
                     instance.save(update_fields=['initial_ref'])
-                    logger.info(f"initial_ref défini avec succès: {initial_ref_uuid}")
+                    logger.info("initial_ref défini avec succès: %s", initial_ref_uuid)
                 except TableauBord.DoesNotExist:
-                    logger.warning(f"Tableau initial non trouvé pour initial_ref: {initial_ref_uuid}")
+                    logger.warning("Tableau initial non trouvé pour initial_ref: %s", initial_ref_uuid)
                 except Exception as e:
-                    logger.error(f"Erreur lors de la définition de initial_ref: {str(e)}", exc_info=True)
+                    logger.error("Erreur lors de la définition de initial_ref: %s", e, exc_info=True)
             else:
                 # Si c'est déjà un objet
                 instance.initial_ref = initial_ref_uuid

@@ -309,7 +309,7 @@ def user_has_write_permission_anywhere(user):
             is_active=True
         ).exists()
     except Exception as e:
-        logger.error(f"[user_has_write_permission_anywhere] Erreur: {str(e)}")
+        logger.error("[user_has_write_permission_anywhere] Erreur: %s", e)
         return False
 
 
