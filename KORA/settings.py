@@ -186,12 +186,13 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'medias')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS Configuration
+_cors_extra = [o.strip() for o in os.getenv('CORS_EXTRA_ORIGINS', '').split(',') if o.strip()]
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # Vite dev server
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:5174",  # Vite dev server (port alternatif)
+    "http://localhost:5174",
     "http://127.0.0.1:5174",
-    "https://sapiential-tommy-unelaborate.ngrok-free.dev",  # ngrok tunnel
+    *_cors_extra,
 ]
 
 CORS_ALLOW_CREDENTIALS = True
