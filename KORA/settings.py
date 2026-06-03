@@ -186,13 +186,11 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'medias')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS Configuration
-_cors_extra = [o.strip() for o in os.getenv('CORS_EXTRA_ORIGINS', '').split(',') if o.strip()]
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
-    *_cors_extra,
 ]
 
 CORS_ALLOW_CREDENTIALS = True
