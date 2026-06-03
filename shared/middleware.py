@@ -3,6 +3,8 @@ from django.utils.deprecation import MiddlewareMixin
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.conf import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -68,6 +70,7 @@ class IPBlockMiddleware(MiddlewareMixin):
             cfg = LoginSecurityConfig.get_config()
             result = {'enabled': cfg.enabled, 'whitelist': cfg.get_whitelist()}
         except Exception:
+            logger.error("IPBlockMiddleware: impossible de charger la config depuis la DB — IP blocking désactivé", exc_info=True)
             result = {'enabled': False, 'whitelist': []}
         cache.set(cls._CONFIG_CACHE_KEY, result, cls._CONFIG_CACHE_TTL)
         return result
@@ -98,29 +101,31 @@ class JWTCookieMiddleware(MiddlewareMixin):
     Lit le JWT depuis les cookies et authentifie l'utilisateur
     """
     
+    _USER_CACHE_TTL = 60 * 5  # 5 minutes
+
     def process_request(self, request):
         """
         Lire le JWT depuis les cookies et authentifier l'utilisateur
         """
-        # Récupérer le token depuis les cookies
         access_token = request.COOKIES.get('access_token')
-        
+
         if access_token and not request.user.is_authenticated:
             try:
-                # Valider et décoder le token
                 token = AccessToken(access_token)
                 user_id = token.get('user_id')
-                
-                # Récupérer l'utilisateur
-                user = User.objects.get(id=user_id)
-                
-                # Attacher l'utilisateur à la requête
+
+                cache_key = f'jwt_user:{user_id}'
+                user = cache.get(cache_key)
+                if user is None:
+                    user = User.objects.get(id=user_id)
+                    cache.set(cache_key, user, self._USER_CACHE_TTL)
+
                 request.user = user
                 logger.debug(f"Utilisateur authentifié depuis JWT cookie: {user.username}")
-                
+
             except (InvalidToken, TokenError, User.DoesNotExist) as e:
                 logger.debug(f"Erreur authentification JWT cookie: {e}")
-                pass  # Laisser request.user tel quel (AnonymousUser)
+                pass
     
     def process_response(self, request, response):
         # Si une nouvelle access token a été générée, l'ajouter au cookie
@@ -128,14 +133,36 @@ class JWTCookieMiddleware(MiddlewareMixin):
             response.set_cookie(
                 'access_token',
                 request._new_access_token,
-                max_age=30 * 60,  # 30 minutes — aligné sur ACCESS_TOKEN_LIFETIME
+                max_age=30 * 60,
                 httponly=True,
                 samesite='Lax',
-                secure=False  # True en production avec HTTPS
+                secure=not settings.DEBUG,
             )
             logger.debug("Nouveau access token ajouté au cookie")
         
         return response
+
+
+class AdminLoginRateLimitMiddleware(MiddlewareMixin):
+    """
+    Rate limit sur le formulaire de login Django admin.
+    5 tentatives POST par IP sur 60 secondes.
+    """
+    MAX_ATTEMPTS = 5
+    WINDOW = 60  # secondes
+
+    def process_request(self, request):
+        admin_url = f"/{__import__('os').getenv('DJANGO_ADMIN_URL', 'admin/')}login/"
+        if request.method == 'POST' and request.path == admin_url:
+            ip = IPBlockMiddleware._get_ip(request)
+            key = f'admin_login_ratelimit:{ip}'
+            attempts = cache.get(key, 0)
+            if attempts >= self.MAX_ATTEMPTS:
+                from django.http import HttpResponseForbidden
+                logger.warning("Admin login rate limit atteint pour IP %s", ip)
+                return HttpResponseForbidden('Trop de tentatives. Réessayez dans quelques minutes.')
+            cache.set(key, attempts + 1, self.WINDOW)
+        return None
 
 
 class MediaFrameOptionsMiddleware(MiddlewareMixin):

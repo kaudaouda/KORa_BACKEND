@@ -45,7 +45,7 @@ def _get_throttle_config():
             'enabled':        True,
             'anon_rate':      '100/min',
             'user_rate':      '600/min',
-            'sensitive_rate': '10/min',
+            'sensitive_rate': '5/min',
         }
     cache.set('throttle_config', result, 60)
     return result

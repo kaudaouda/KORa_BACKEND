@@ -302,21 +302,12 @@ def user_has_write_permission_anywhere(user):
     # ========== FIN BYPASS ==========
 
     try:
-        # Récupérer le rôle 'ecrire'
-        try:
-            role_ecrire = Role.objects.get(code='ecrire', is_active=True)
-        except Role.DoesNotExist:
-            logger.warning(f"[user_has_write_permission_anywhere] Rôle 'ecrire' non trouvé")
-            return False
-        
-        # Vérifier si l'utilisateur a ce rôle pour au moins un processus actif
-        has_permission = UserProcessusRole.objects.filter(
+        return UserProcessusRole.objects.filter(
             user=user,
-            role=role_ecrire,
+            role__code='ecrire',
+            role__is_active=True,
             is_active=True
         ).exists()
-        
-        return has_permission
     except Exception as e:
         logger.error(f"[user_has_write_permission_anywhere] Erreur: {str(e)}")
         return False

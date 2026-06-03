@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework.exceptions import AuthenticationFailed
+from django.conf import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -77,21 +78,22 @@ class AuthService:
         Returns:
             Response: Response avec cookies définis
         """
+        secure = not settings.DEBUG
         response.set_cookie(
             'access_token',
             access_token,
-            max_age=30 * 60,  # 30 minutes — aligné sur ACCESS_TOKEN_LIFETIME
+            max_age=30 * 60,
             httponly=True,
-            secure=False,  # True en production avec HTTPS
+            secure=secure,
             samesite='Lax',
             path='/'
         )
         response.set_cookie(
             'refresh_token',
             refresh_token,
-            max_age=8 * 60 * 60,  # 8 heures — aligné sur REFRESH_TOKEN_LIFETIME
+            max_age=2 * 60 * 60,
             httponly=True,
-            secure=False,  # True en production avec HTTPS
+            secure=secure,
             samesite='Lax',
             path='/'
         )

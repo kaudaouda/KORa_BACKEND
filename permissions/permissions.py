@@ -1508,7 +1508,7 @@ class DashboardTableauDetailPermission(BasePermission):
         # mais on le fait dans la permission pour garantir que la vérification se fait avant
         try:
             from dashboard.models import TableauBord
-            tableau = TableauBord.objects.get(uuid=tableau_uuid)
+            tableau = TableauBord.objects.select_related('processus').get(uuid=tableau_uuid)
         except TableauBord.DoesNotExist:
             # Security by Design : Refus par défaut - ne pas révéler si l'objet existe ou non
             raise PermissionDenied("Accès refusé à ce tableau de bord")

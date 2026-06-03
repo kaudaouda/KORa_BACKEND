@@ -75,39 +75,12 @@ class PermissionService:
             return True
         
         try:
-            # Chercher les processus SMI (seulement par nom car Processus n'a pas de champ code)
-            smi_processus = Processus.objects.filter(
-                Q(nom__iexact='smi') | Q(nom__iexact='prs-smi')
-            ).first()
-            
-            if not smi_processus:
-                return False
-            
-            # Vérifier si l'utilisateur a le rôle admin ou validateur pour SMI
-            admin_role = Role.objects.filter(code='admin').first()
-            validateur_role = Role.objects.filter(code='validateur').first()
-            
-            if admin_role:
-                has_admin = UserProcessusRole.objects.filter(
-                    user=user,
-                    processus=smi_processus,
-                    role=admin_role,
-                    is_active=True
-                ).exists()
-                if has_admin:
-                    return True
-            
-            if validateur_role:
-                has_validateur = UserProcessusRole.objects.filter(
-                    user=user,
-                    processus=smi_processus,
-                    role=validateur_role,
-                    is_active=True
-                ).exists()
-                if has_validateur:
-                    return True
-            
-            return False
+            return UserProcessusRole.objects.filter(
+                Q(processus__nom__iexact='smi') | Q(processus__nom__iexact='prs-smi'),
+                user=user,
+                role__code__in=['admin', 'validateur'],
+                is_active=True
+            ).exists()
         except Exception as e:
             logger.error(f"[PermissionService._is_super_admin] Erreur: {str(e)}")
             return False

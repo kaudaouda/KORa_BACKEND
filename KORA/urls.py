@@ -14,20 +14,22 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import os
 from django.contrib import admin
 from django.shortcuts import redirect
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+ADMIN_URL = os.getenv('DJANGO_ADMIN_URL', 'admin/')
+
 
 def root_view(request):
-    """Rediriger la racine vers l'interface d'administration comme auparavant."""
-    return redirect('admin:index')
+    return redirect(f'/{ADMIN_URL}')
 
 urlpatterns = [
     path('', root_view, name='api_root'),
-    path('admin/', admin.site.urls),
+    path(ADMIN_URL, admin.site.urls),
     path('api/', include('pac.urls')),  # API intégrée dans pac
     path('api/parametre/', include('parametre.urls')),  # API des paramètres
     path('api/dashboard/', include('dashboard.urls')),  # API du tableau de bord

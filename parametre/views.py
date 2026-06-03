@@ -26,6 +26,7 @@ from datetime import timedelta
 from django.http import StreamingHttpResponse
 from django.db.models import Max, Subquery, OuterRef
 
+from .media_paths import validate_uploaded_file
 from .models import (
     Nature, Categorie, Source, ActionType, Statut,
     EtatMiseEnOeuvre, Appreciation, Media, Direction,
@@ -2343,6 +2344,11 @@ def media_create(request):
             return Response({
                 'error': 'Fichier ou URL fichier requis'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        if fichier:
+            error = validate_uploaded_file(fichier)
+            if error:
+                return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
 
         # Créer le média (sans le fichier d'abord pour pouvoir poser
         # _app_folder avant que upload_to ne soit appelé par .save()).
