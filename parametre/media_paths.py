@@ -20,8 +20,11 @@ Sous-dossiers connus (doivent exister dans MEDIA_ROOT) :
     - shared/   (fallback)
 """
 
-# Liste des sous-dossiers autorisés (whitelist) pour éviter qu'une valeur
-# arbitraire envoyée par le frontend pollue l'arborescence MEDIA_ROOT.
+import os
+import uuid as uuid_lib
+
+# ── Whitelist sous-dossiers ────────────────────────────────────────────────────
+
 ALLOWED_APP_FOLDERS = {
     'pac',
     'dashboard',
@@ -34,6 +37,57 @@ ALLOWED_APP_FOLDERS = {
 
 DEFAULT_APP_FOLDER = 'shared'
 
+# ── Validation des fichiers uploadés ──────────────────────────────────────────
+
+MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 Mo
+
+ALLOWED_EXTENSIONS = {
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.jpg', '.jpeg', '.png', '.gif', '.txt', '.csv', '.zip',
+}
+
+ALLOWED_MIME_TYPES = {
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'text/plain',
+    'text/csv',
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/octet-stream',
+}
+
+
+def validate_uploaded_file(fichier):
+    """
+    Valide un fichier uploadé : taille, extension et type MIME.
+    Retourne un message d'erreur (str) ou None si le fichier est valide.
+    """
+    if fichier.size > MAX_UPLOAD_SIZE:
+        max_mb = MAX_UPLOAD_SIZE // (1024 * 1024)
+        return f'Le fichier dépasse la taille maximale autorisée ({max_mb} Mo).'
+
+    ext = os.path.splitext(fichier.name)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        allowed = ', '.join(sorted(ALLOWED_EXTENSIONS))
+        return f'Extension non autorisée. Extensions acceptées : {allowed}'
+
+    content_type = getattr(fichier, 'content_type', '') or ''
+    content_type = content_type.split(';')[0].strip().lower()
+    if content_type and content_type not in ALLOWED_MIME_TYPES:
+        return f'Type de fichier non autorisé ({content_type}).'
+
+    return None
+
+
+# ── Chemins de stockage ────────────────────────────────────────────────────────
 
 def normalize_app_folder(value):
     """
@@ -43,7 +97,6 @@ def normalize_app_folder(value):
     if not value:
         return DEFAULT_APP_FOLDER
     value = str(value).strip().lower()
-    # Alias courants
     aliases = {
         'cdr': 'cartographie_risque',
         'risque': 'cartographie_risque',
@@ -61,8 +114,10 @@ def media_upload_path(instance, filename):
     """
     Callable utilisé par `Media.fichier.upload_to`.
 
-    Lit l'attribut temporaire `instance._app_folder` posé par la view
-    avant le `save()`. Fallback sur `shared/` si non défini.
+    Renomme le fichier avec un UUID pour éviter les collisions et les chemins
+    prédictibles. L'extension originale est conservée.
     """
     folder = normalize_app_folder(getattr(instance, '_app_folder', None))
-    return f'{folder}/{filename}'
+    ext = os.path.splitext(filename)[1].lower()
+    new_filename = f"{uuid_lib.uuid4().hex}{ext}"
+    return f'{folder}/{new_filename}'
