@@ -332,7 +332,9 @@ if not EMAIL_ENCRYPTION_KEY:
     logger.warning("⚠️ EMAIL_ENCRYPTION_KEY non définie ! Ajoutez-la dans votre fichier .env")
     logger.warning("⚠️ Consultez ENCRYPTION_KEY.txt pour obtenir votre clé")
 
-# Configuration de logging pour le debug
+# Configuration de logging
+_APP_LOG_LEVEL = 'DEBUG' if DEBUG else 'INFO'
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -344,12 +346,12 @@ LOGGING = {
     'loggers': {
         'shared.authentication': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': _APP_LOG_LEVEL,
             'propagate': True,
         },
         'pac.views': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': _APP_LOG_LEVEL,
             'propagate': True,
         },
         'parametre.scheduler': {

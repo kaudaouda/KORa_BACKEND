@@ -70,6 +70,7 @@ class IPBlockMiddleware(MiddlewareMixin):
             cfg = LoginSecurityConfig.get_config()
             result = {'enabled': cfg.enabled, 'whitelist': cfg.get_whitelist()}
         except Exception:
+            logger.error("IPBlockMiddleware: impossible de charger la config depuis la DB — IP blocking désactivé", exc_info=True)
             result = {'enabled': False, 'whitelist': []}
         cache.set(cls._CONFIG_CACHE_KEY, result, cls._CONFIG_CACHE_TTL)
         return result
