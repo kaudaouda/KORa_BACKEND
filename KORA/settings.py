@@ -261,14 +261,16 @@ REST_FRAMEWORK = {
 # JWT Configuration
 from datetime import timedelta
 
+JWT_SIGNING_KEY = os.getenv('JWT_SIGNING_KEY', SECRET_KEY)
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(hours=8),  # Durée d'une journée de travail
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=2),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
+    'SIGNING_KEY': JWT_SIGNING_KEY,
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
     'ISSUER': None,
