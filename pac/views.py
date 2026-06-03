@@ -724,71 +724,54 @@ def check_invitation(request):
             decoded_bytes = urlsafe_base64_decode(uidb64)
             uid = force_str(decoded_bytes)
             user = User.objects.get(pk=uid)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+            logger.info(f"Utilisateur trouvé: id={user.id}")
         except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
-            logger.warning(f"Erreur lors du décodage ou utilisateur non trouvé: {str(e)}")
+            logger.warning(f"Erreur lors du décodage ou utilisateur non trouvé: {type(e).__name__}")
             return Response({
                 'valid': False,
                 'error': 'Lien d\'invitation invalide',
                 'code': 'INVALID_LINK'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # IMPORTANT : Vérifier d'abord si le compte a déjà un mot de passe défini
         # Car quand le mot de passe est défini, le token devient invalide automatiquement
         # Il faut donc vérifier has_usable_password() AVANT de vérifier le token
         has_usable = user.has_usable_password()
-        logger.info(f"Utilisateur a un mot de passe utilisable: {has_usable}")
-        
+
         if has_usable:
-            logger.info(f"Lien d'invitation déjà utilisé pour {user.username} (mot de passe déjà défini)")
+            logger.info(f"Lien d'invitation déjà utilisé pour id={user.id}")
             return Response({
                 'valid': True,
                 'already_used': True,
                 'message': 'Ce lien d\'invitation a déjà été utilisé. Votre compte est déjà activé.',
                 'code': 'INVITATION_ALREADY_USED',
-                'user': {
-                    'username': user.username,
-                    'email': user.email,
-                    'is_active': user.is_active
-                }
             }, status=status.HTTP_200_OK)
-        
+
         # Vérifier le token d'invitation seulement si le mot de passe n'est pas encore défini
         token_valid = default_token_generator.check_token(user, token)
-        logger.info(f"Token valide: {token_valid}")
-        
+
         if not token_valid:
-            logger.warning(f"Token d'invitation invalide ou expiré pour l'utilisateur {user.username}")
+            logger.warning(f"Token d'invitation invalide ou expiré pour id={user.id}")
             return Response({
                 'valid': False,
                 'error': 'Lien d\'invitation invalide ou expiré',
                 'code': 'INVALID_TOKEN'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Le lien est valide et n'a pas encore été utilisé
-        logger.info(f"Lien d'invitation valide et disponible pour {user.username}")
+        logger.info(f"Lien d'invitation valide pour id={user.id}")
         return Response({
             'valid': True,
             'already_used': False,
             'message': 'Lien d\'invitation valide',
             'code': 'INVITATION_VALID',
-            'user': {
-                'username': user.username,
-                'email': user.email,
-                'is_active': user.is_active
-            }
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error(f"ERREUR EXCEPTION dans check_invitation: {str(e)}")
-        logger.error(f"Type d'erreur: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
-        logger.error("=" * 60)
+        logger.error("Erreur inattendue dans check_invitation: %s", e, exc_info=True)
         return Response({
             'valid': False,
-            'error': f'Erreur lors de la vérification du lien: {str(e)}',
+            'error': 'Erreur lors de la vérification du lien.',
             'code': 'CHECK_INVITATION_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -819,16 +802,16 @@ def complete_invitation(request):
         client_ip = get_client_ip(request)
         rate_limit_key = f'invitation_complete_rate_limit_{client_ip}'
         attempts = cache.get(rate_limit_key, 0)
-        max_attempts = 5  # Maximum 5 tentatives par IP par heure
-        rate_limit_window = 3600  # 1 heure
-        
+        max_attempts = 3  # Maximum 3 tentatives par IP par 30 minutes
+        rate_limit_window = 1800  # 30 minutes
+
         if attempts >= max_attempts:
-            logger.warning(f"Rate limit dépassé pour complete_invitation depuis IP: {client_ip}")
+            logger.warning("Rate limit dépassé pour complete_invitation")
             return Response({
-                'error': 'Trop de tentatives. Veuillez réessayer dans 1 heure.',
+                'error': 'Trop de tentatives. Veuillez réessayer dans 30 minutes.',
                 'code': 'RATE_LIMIT_EXCEEDED'
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        
+
         # Incrémenter le compteur
         cache.set(rate_limit_key, attempts + 1, rate_limit_window)
         # ========== FIN RATE LIMITING ==========
@@ -884,12 +867,7 @@ def complete_invitation(request):
         token = data.get('token')
         password = data.get('password')
         password_confirm = data.get('password_confirm')
-        
-        logger.info(f"uidb64: {uidb64}")
-        logger.info(f"token: {token[:20] if token else None}...")
-        logger.info(f"password présent: {bool(password)}")
-        logger.info(f"password_confirm présent: {bool(password_confirm)}")
-        
+
         # Validation des données requises
         missing_fields = []
         if not uidb64:
@@ -900,33 +878,27 @@ def complete_invitation(request):
             missing_fields.append('password')
         if not password_confirm:
             missing_fields.append('password_confirm')
-        
+
         if missing_fields:
-            logger.error(f"Champs manquants: {missing_fields}")
             return Response({
                 'error': f'Champs requis manquants: {", ".join(missing_fields)}',
                 'code': 'MISSING_FIELDS',
                 'missing_fields': missing_fields
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Vérifier que les mots de passe correspondent
         if password != password_confirm:
-            logger.error(f"Les mots de passe ne correspondent pas")
             return Response({
                 'error': 'Les mots de passe ne correspondent pas.',
                 'code': 'PASSWORD_MISMATCH'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
-        logger.info("Mots de passe correspondent, décodage de l'uid...")
-        
+
         # Décoder l'uid et récupérer l'utilisateur
         try:
             decoded_bytes = urlsafe_base64_decode(uidb64)
-            logger.info(f"uidb64 décodé en bytes: {decoded_bytes}")
             uid = force_str(decoded_bytes)
-            logger.info(f"uid décodé (string): {uid}")
             user = User.objects.get(pk=uid)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+            logger.info(f"Utilisateur trouvé: id={user.id}")
         except TypeError as e:
             logger.error(f"TypeError lors du décodage: {str(e)}")
             return Response({
@@ -1201,11 +1173,11 @@ def password_reset_request(request):
         # Chercher l'utilisateur par email
         try:
             user = User.objects.get(email=email)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}")
+            logger.info(f"Utilisateur trouvé: id={user.id}")
         except User.DoesNotExist:
             # Security by Design : Ne pas révéler si l'email existe ou non
             # Retourner un succès générique pour éviter l'énumération d'emails
-            logger.warning(f"Email non trouvé pour réinitialisation: {email}")
+            logger.info("Email non trouvé pour réinitialisation (réponse générique envoyée)")
             return Response({
                 'success': True,
                 'message': 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé.'
@@ -1400,12 +1372,7 @@ def password_reset_confirm(request):
         token = data.get('token')
         password = data.get('password')
         password_confirm = data.get('password_confirm')
-        
-        logger.info(f"uidb64: {uidb64}")
-        logger.info(f"token: {token[:20] if token else None}...")
-        logger.info(f"password présent: {bool(password)}")
-        logger.info(f"password_confirm présent: {bool(password_confirm)}")
-        
+
         # Validation des données requises
         missing_fields = []
         if not uidb64:
@@ -1416,33 +1383,27 @@ def password_reset_confirm(request):
             missing_fields.append('password')
         if not password_confirm:
             missing_fields.append('password_confirm')
-        
+
         if missing_fields:
-            logger.error(f"Champs manquants: {missing_fields}")
             return Response({
                 'error': f'Champs requis manquants: {", ".join(missing_fields)}',
                 'code': 'MISSING_FIELDS',
                 'missing_fields': missing_fields
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Vérifier que les mots de passe correspondent
         if password != password_confirm:
-            logger.error(f"Les mots de passe ne correspondent pas")
             return Response({
                 'error': 'Les mots de passe ne correspondent pas.',
                 'code': 'PASSWORD_MISMATCH'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
-        logger.info("Mots de passe correspondent, décodage de l'uid...")
-        
+
         # Décoder l'uid et récupérer l'utilisateur
         try:
             decoded_bytes = urlsafe_base64_decode(uidb64)
-            logger.info(f"uidb64 décodé en bytes: {decoded_bytes}")
             uid = force_str(decoded_bytes)
-            logger.info(f"uid décodé (string): {uid}")
             user = User.objects.get(pk=uid)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+            logger.info(f"Utilisateur trouvé: id={user.id}")
         except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
             logger.error(f"Erreur lors du décodage ou utilisateur non trouvé: {type(e).__name__}: {str(e)}")
             return Response({

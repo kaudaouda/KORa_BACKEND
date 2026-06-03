@@ -81,7 +81,7 @@ def validate_uploaded_file(fichier):
 
     content_type = getattr(fichier, 'content_type', '') or ''
     content_type = content_type.split(';')[0].strip().lower()
-    if content_type and content_type not in ALLOWED_MIME_TYPES:
+    if not content_type or content_type not in ALLOWED_MIME_TYPES:
         return f'Type de fichier non autorisé ({content_type}).'
 
     return None

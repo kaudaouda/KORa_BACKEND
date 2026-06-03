@@ -1,4 +1,4 @@
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.utils.deprecation import MiddlewareMixin
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.conf import settings
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -152,13 +153,12 @@ class AdminLoginRateLimitMiddleware(MiddlewareMixin):
     WINDOW = 60  # secondes
 
     def process_request(self, request):
-        admin_url = f"/{__import__('os').getenv('DJANGO_ADMIN_URL', 'admin/')}login/"
+        admin_url = f"/{os.getenv('DJANGO_ADMIN_URL', 'admin/')}login/"
         if request.method == 'POST' and request.path == admin_url:
             ip = IPBlockMiddleware._get_ip(request)
             key = f'admin_login_ratelimit:{ip}'
             attempts = cache.get(key, 0)
             if attempts >= self.MAX_ATTEMPTS:
-                from django.http import HttpResponseForbidden
                 logger.warning("Admin login rate limit atteint pour IP %s", ip)
                 return HttpResponseForbidden('Trop de tentatives. Réessayez dans quelques minutes.')
             cache.set(key, attempts + 1, self.WINDOW)
