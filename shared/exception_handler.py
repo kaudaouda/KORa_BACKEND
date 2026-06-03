@@ -1,18 +1,22 @@
 """
-Handler personnalisé pour les exceptions Django REST Framework
+Handler personnalisé pour les exceptions Django REST Framework.
+Toutes les erreurs non gérées passent par ici et respectent le format canonique :
+  {'success': False, 'error': <message>, 'code': <code>}
 """
 from rest_framework.views import exception_handler
-from rest_framework.exceptions import Throttled
-from rest_framework.response import Response
+from rest_framework.exceptions import Throttled, ValidationError, NotAuthenticated, AuthenticationFailed, PermissionDenied, NotFound
 from rest_framework import status
 from django.conf import settings
+from shared.responses import err
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 def custom_exception_handler(exc, context):
-    # Throttling → réponse cohérente avec le reste de l'API
+    view_name = context.get('view').__class__.__name__ if context.get('view') else 'unknown'
+
+    # Throttling
     if isinstance(exc, Throttled):
         wait = int(exc.wait) if exc.wait else None
         msg = (
@@ -20,23 +24,48 @@ def custom_exception_handler(exc, context):
             if wait else
             'Trop de requêtes. Réessayez dans quelques instants.'
         )
-        return Response(
-            {'error': msg, 'code': 'RATE_LIMITED', 'retry_after': wait},
-            status=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
+        return err(msg, code='RATE_LIMITED', http_status=status.HTTP_429_TOO_MANY_REQUESTS, retry_after=wait)
 
+    # Erreurs DRF standard — on normalise le format de réponse
     response = exception_handler(exc, context)
 
-    if response is None:
-        logger.error(
-            "Unhandled exception: %s: %s", type(exc).__name__, exc,
-            exc_info=True,
-            extra={'view': context.get('view').__class__.__name__ if context.get('view') else None},
-        )
-        body = {'success': False, 'error': 'Une erreur interne est survenue.'}
-        if settings.DEBUG:
-            body['detail'] = str(exc)
-            body['type'] = type(exc).__name__
-        return Response(body, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    if response is not None:
+        # DRF retourne {'detail': '...'} ou {'field': ['error']} — on normalise
+        data = response.data
+        if isinstance(data, dict) and 'detail' in data and len(data) == 1:
+            code_map = {
+                NotAuthenticated:    'NOT_AUTHENTICATED',
+                AuthenticationFailed: 'AUTHENTICATION_FAILED',
+                PermissionDenied:    'PERMISSION_DENIED',
+                NotFound:            'NOT_FOUND',
+            }
+            code = code_map.get(type(exc), 'ERROR')
+            return err(str(data['detail']), code=code, http_status=response.status_code)
+        # ValidationError avec champs → garder la structure mais ajouter success
+        if isinstance(exc, ValidationError):
+            return err(
+                'Données invalides.',
+                code='VALIDATION_ERROR',
+                http_status=response.status_code,
+                fields=data,
+            )
+        # Autre réponse DRF — s'assurer que success: False est présent
+        if isinstance(data, dict) and 'success' not in data:
+            data['success'] = False
+        return response
 
-    return response
+    # Exception non gérée par DRF
+    logger.error(
+        "Unhandled exception in %s: %s", view_name, exc,
+        exc_info=True,
+    )
+    kwargs = {}
+    if settings.DEBUG:
+        kwargs['detail'] = str(exc)
+        kwargs['type'] = type(exc).__name__
+    return err(
+        'Une erreur interne est survenue.',
+        code='INTERNAL_ERROR',
+        http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        **kwargs,
+    )
