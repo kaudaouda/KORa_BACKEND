@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission, IsAuthenticated
+﻿from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 import logging
@@ -7,16 +7,16 @@ from .base import AppActionPermission
 
 logger = logging.getLogger(__name__)
 
-# ==================== ACTIVITÉ PÉRIODIQUE ====================
+# ==================== ACTIVITÃ‰ PÃ‰RIODIQUE ====================
 
 class ActivitePeriodiqueCreatePermission(AppActionPermission):
-    """Permission pour créer une Activité Périodique"""
+    """Permission pour crÃ©er une ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'create_activite_periodique'
 
 
 class ActivitePeriodiqueUpdatePermission(AppActionPermission):
-    """Permission pour modifier une Activité Périodique"""
+    """Permission pour modifier une ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'update_activite_periodique'
     
@@ -25,14 +25,14 @@ class ActivitePeriodiqueUpdatePermission(AppActionPermission):
         # Si obj est fourni et c'est un objet ActivitePeriodique
         if obj:
             if hasattr(obj, 'processus') and obj.processus:
-                # obj.processus est un objet Processus (grâce à select_related)
+                # obj.processus est un objet Processus (grÃ¢ce Ã  select_related)
                 if hasattr(obj.processus, 'uuid'):
                     return str(obj.processus.uuid)
-                # Si c'est une chaîne (cas improbable mais géré)
+                # Si c'est une chaÃ®ne (cas improbable mais gÃ©rÃ©)
                 elif isinstance(obj.processus, str):
                     return obj.processus
         
-        # Depuis view.kwargs si uuid fourni (pour compatibilité avec les autres méthodes)
+        # Depuis view.kwargs si uuid fourni (pour compatibilitÃ© avec les autres mÃ©thodes)
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
             ap_uuid = view.kwargs['uuid']
             try:
@@ -43,12 +43,12 @@ class ActivitePeriodiqueUpdatePermission(AppActionPermission):
             except Exception as e:
                 logger.warning("[ActivitePeriodiqueUpdatePermission] Erreur extraction processus depuis ap %s: %s", ap_uuid, e)
         
-        # Fallback sur la méthode parent pour les autres cas
+        # Fallback sur la mÃ©thode parent pour les autres cas
         return super()._extract_processus_uuid(request, view, obj)
 
 
 class ActivitePeriodiqueDeletePermission(AppActionPermission):
-    """Permission pour supprimer une Activité Périodique"""
+    """Permission pour supprimer une ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'delete_activite_periodique'
     
@@ -57,14 +57,14 @@ class ActivitePeriodiqueDeletePermission(AppActionPermission):
         # Si obj est fourni et c'est un objet ActivitePeriodique
         if obj:
             if hasattr(obj, 'processus') and obj.processus:
-                # obj.processus est un objet Processus (grâce à select_related)
+                # obj.processus est un objet Processus (grÃ¢ce Ã  select_related)
                 if hasattr(obj.processus, 'uuid'):
                     return str(obj.processus.uuid)
-                # Si c'est une chaîne (cas improbable mais géré)
+                # Si c'est une chaÃ®ne (cas improbable mais gÃ©rÃ©)
                 elif isinstance(obj.processus, str):
                     return obj.processus
         
-        # Depuis view.kwargs si uuid fourni (pour compatibilité avec les autres méthodes)
+        # Depuis view.kwargs si uuid fourni (pour compatibilitÃ© avec les autres mÃ©thodes)
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
             ap_uuid = view.kwargs['uuid']
             try:
@@ -75,12 +75,12 @@ class ActivitePeriodiqueDeletePermission(AppActionPermission):
             except Exception as e:
                 logger.warning("[ActivitePeriodiqueDeletePermission] Erreur extraction processus depuis ap %s: %s", ap_uuid, e)
         
-        # Fallback sur la méthode parent pour les autres cas
+        # Fallback sur la mÃ©thode parent pour les autres cas
         return super()._extract_processus_uuid(request, view, obj)
 
 
 class ActivitePeriodiqueValidatePermission(AppActionPermission):
-    """Permission pour valider une Activité Périodique"""
+    """Permission pour valider une ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'validate_activite_periodique'
     
@@ -107,7 +107,7 @@ class ActivitePeriodiqueValidatePermission(AppActionPermission):
 
 
 class ActivitePeriodiqueReadPermission(AppActionPermission):
-    """Permission pour lire une Activité Périodique"""
+    """Permission pour lire une ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'read_activite_periodique'
     
@@ -135,103 +135,103 @@ class ActivitePeriodiqueReadPermission(AppActionPermission):
 
 class ActivitePeriodiqueDetailPermission(BasePermission):
     """
-    Permission pour activite_periodique_detail qui gère GET, PATCH et DELETE
+    Permission pour activite_periodique_detail qui gÃ¨re GET, PATCH et DELETE
     GET : ActivitePeriodiqueReadPermission
     PATCH : ActivitePeriodiqueUpdatePermission
     DELETE : ActivitePeriodiqueDeletePermission
     
-    Security by Design : Refus par défaut, vérifie l'authentification puis les permissions
-    Gère automatiquement les super admins via user_has_access_to_processus
+    Security by Design : Refus par dÃ©faut, vÃ©rifie l'authentification puis les permissions
+    GÃ¨re automatiquement les super admins via user_has_access_to_processus
     
     Note: Pour les @api_view, DRF ne passe pas automatiquement par has_object_permission.
-    On doit donc vérifier dans has_permission en extrayant l'objet depuis view.kwargs.
+    On doit donc vÃ©rifier dans has_permission en extrayant l'objet depuis view.kwargs.
     """
     def has_permission(self, request, view):
         """
-        Security by Design : Vérifie les permissions AVANT toute requête DB
-        Refus par défaut si l'objet n'existe pas ou si les permissions échouent
+        Security by Design : VÃ©rifie les permissions AVANT toute requÃªte DB
+        Refus par dÃ©faut si l'objet n'existe pas ou si les permissions Ã©chouent
         """
         if not request.user or not request.user.is_authenticated:
-            logger.warning("[ActivitePeriodiqueDetailPermission] Utilisateur non authentifié")
+            logger.warning("[ActivitePeriodiqueDetailPermission] Utilisateur non authentifiÃ©")
             raise PermissionDenied("Authentification requise")
         
         # Extraire l'UUID depuis les kwargs de la vue
         ap_uuid = view.kwargs.get('uuid')
         if not ap_uuid:
             logger.warning("[ActivitePeriodiqueDetailPermission] UUID de l'AP manquant pour user=%s", request.user.username)
-            raise PermissionDenied("UUID de l'Activité Périodique manquant")
+            raise PermissionDenied("UUID de l'ActivitÃ© PÃ©riodique manquant")
         
         logger.info(
-            "[ActivitePeriodiqueDetailPermission] 🔍 Début vérification permission: user=%s, method=%s, ap_uuid=%s", request.user.username, request.method, ap_uuid
+            "[ActivitePeriodiqueDetailPermission] ðŸ” DÃ©but vÃ©rification permission: user=%s, method=%s, ap_uuid=%s", request.user.username, request.method, ap_uuid
         )
         
-        # Récupérer l'objet ActivitePeriodique pour avoir le processus_uuid
-        # Security by Design : On doit récupérer l'objet pour vérifier les permissions
+        # RÃ©cupÃ©rer l'objet ActivitePeriodique pour avoir le processus_uuid
+        # Security by Design : On doit rÃ©cupÃ©rer l'objet pour vÃ©rifier les permissions
         try:
             from activite_periodique.models import ActivitePeriodique
-            from parametre.permissions import user_has_access_to_processus
+            from shared.permissions import user_has_access_to_processus
             ap = ActivitePeriodique.objects.select_related('processus').get(uuid=ap_uuid)
             logger.info(
-                "[ActivitePeriodiqueDetailPermission] ✅ AP trouvé: uuid=%s, processus_uuid=%s", ap.uuid, ap.processus.uuid if ap.processus else None
+                "[ActivitePeriodiqueDetailPermission] âœ… AP trouvÃ©: uuid=%s, processus_uuid=%s", ap.uuid, ap.processus.uuid if ap.processus else None
             )
         except ActivitePeriodique.DoesNotExist:
-            # Security by Design : Refus par défaut - ne pas révéler si l'objet existe ou non
-            logger.warning("[ActivitePeriodiqueDetailPermission] ❌ AP non trouvé: uuid=%s", ap_uuid)
-            raise PermissionDenied("Accès refusé à cette Activité Périodique")
+            # Security by Design : Refus par dÃ©faut - ne pas rÃ©vÃ©ler si l'objet existe ou non
+            logger.warning("[ActivitePeriodiqueDetailPermission] âŒ AP non trouvÃ©: uuid=%s", ap_uuid)
+            raise PermissionDenied("AccÃ¨s refusÃ© Ã  cette ActivitÃ© PÃ©riodique")
         
-        # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
+        # ========== VÃ‰RIFICATION D'ACCÃˆS AU PROCESSUS (Security by Design) ==========
         if not ap.processus:
-            logger.warning("[ActivitePeriodiqueDetailPermission] ❌ AP sans processus: uuid=%s", ap_uuid)
-            raise PermissionDenied("Cette Activité Périodique n'est associée à aucun processus")
+            logger.warning("[ActivitePeriodiqueDetailPermission] âŒ AP sans processus: uuid=%s", ap_uuid)
+            raise PermissionDenied("Cette ActivitÃ© PÃ©riodique n'est associÃ©e Ã  aucun processus")
         
         processus_uuid = str(ap.processus.uuid)
         has_access = user_has_access_to_processus(request.user, processus_uuid)
         logger.info(
-            "[ActivitePeriodiqueDetailPermission] 🔍 Vérification accès processus: user=%s, processus_uuid=%s, has_access=%s", request.user.username, processus_uuid, has_access
+            "[ActivitePeriodiqueDetailPermission] ðŸ” VÃ©rification accÃ¨s processus: user=%s, processus_uuid=%s, has_access=%s", request.user.username, processus_uuid, has_access
         )
         
         if not has_access:
             logger.warning(
-                "[ActivitePeriodiqueDetailPermission] ❌ Accès refusé au processus: user=%s, processus_uuid=%s", request.user.username, processus_uuid
+                "[ActivitePeriodiqueDetailPermission] âŒ AccÃ¨s refusÃ© au processus: user=%s, processus_uuid=%s", request.user.username, processus_uuid
             )
-            raise PermissionDenied("Vous n'avez pas accès au processus de cette Activité Périodique")
-        # ========== FIN VÉRIFICATION ==========
+            raise PermissionDenied("Vous n'avez pas accÃ¨s au processus de cette ActivitÃ© PÃ©riodique")
+        # ========== FIN VÃ‰RIFICATION ==========
         
-        # Vérifier selon la méthode HTTP
+        # VÃ©rifier selon la mÃ©thode HTTP
         try:
             if request.method == 'GET':
-                logger.info("[ActivitePeriodiqueDetailPermission] 🔍 Vérification permission read_activite_periodique pour user=%s", request.user.username)
+                logger.info("[ActivitePeriodiqueDetailPermission] ðŸ” VÃ©rification permission read_activite_periodique pour user=%s", request.user.username)
                 permission = ActivitePeriodiqueReadPermission()
                 permission.has_object_permission(request, view, ap)
-                logger.info("[ActivitePeriodiqueDetailPermission] ✅ Permission read_activite_periodique accordée")
+                logger.info("[ActivitePeriodiqueDetailPermission] âœ… Permission read_activite_periodique accordÃ©e")
             elif request.method in ['PATCH', 'PUT']:
-                logger.info("[ActivitePeriodiqueDetailPermission] 🔍 Vérification permission update_activite_periodique pour user=%s", request.user.username)
+                logger.info("[ActivitePeriodiqueDetailPermission] ðŸ” VÃ©rification permission update_activite_periodique pour user=%s", request.user.username)
                 permission = ActivitePeriodiqueUpdatePermission()
                 permission.has_object_permission(request, view, ap)
-                logger.info("[ActivitePeriodiqueDetailPermission] ✅ Permission update_activite_periodique accordée")
+                logger.info("[ActivitePeriodiqueDetailPermission] âœ… Permission update_activite_periodique accordÃ©e")
             elif request.method == 'DELETE':
-                logger.info("[ActivitePeriodiqueDetailPermission] 🔍 Vérification permission delete_activite_periodique pour user=%s", request.user.username)
+                logger.info("[ActivitePeriodiqueDetailPermission] ðŸ” VÃ©rification permission delete_activite_periodique pour user=%s", request.user.username)
                 permission = ActivitePeriodiqueDeletePermission()
                 permission.has_object_permission(request, view, ap)
-                logger.info("[ActivitePeriodiqueDetailPermission] ✅ Permission delete_activite_periodique accordée")
+                logger.info("[ActivitePeriodiqueDetailPermission] âœ… Permission delete_activite_periodique accordÃ©e")
             else:
-                logger.warning("[ActivitePeriodiqueDetailPermission] ❌ Méthode HTTP non autorisée: %s", request.method)
-                raise PermissionDenied(f"Méthode HTTP '{request.method}' non autorisée")
+                logger.warning("[ActivitePeriodiqueDetailPermission] âŒ MÃ©thode HTTP non autorisÃ©e: %s", request.method)
+                raise PermissionDenied(f"MÃ©thode HTTP '{request.method}' non autorisÃ©e")
         except PermissionDenied as e:
-            # Re-lever l'exception pour que DRF la gère correctement
-            logger.warning("[ActivitePeriodiqueDetailPermission] ❌ Permission refusée: %s", e)
+            # Re-lever l'exception pour que DRF la gÃ¨re correctement
+            logger.warning("[ActivitePeriodiqueDetailPermission] âŒ Permission refusÃ©e: %s", e)
             raise
         except Exception as e:
-            # Logger l'erreur et refuser l'accès par sécurité
-            logger.error("[ActivitePeriodiqueDetailPermission] ❌ Erreur lors de la vérification de permission: %s", e, exc_info=True)
-            raise PermissionDenied("Erreur lors de la vérification des permissions")
+            # Logger l'erreur et refuser l'accÃ¨s par sÃ©curitÃ©
+            logger.error("[ActivitePeriodiqueDetailPermission] âŒ Erreur lors de la vÃ©rification de permission: %s", e, exc_info=True)
+            raise PermissionDenied("Erreur lors de la vÃ©rification des permissions")
         
-        logger.info("[ActivitePeriodiqueDetailPermission] ✅ Permission accordée pour user=%s, method=%s", request.user.username, request.method)
+        logger.info("[ActivitePeriodiqueDetailPermission] âœ… Permission accordÃ©e pour user=%s, method=%s", request.user.username, request.method)
         return True
 
 
 class ActivitePeriodiqueUnvalidatePermission(AppActionPermission):
-    """Permission pour dévalider une Activité Périodique"""
+    """Permission pour dÃ©valider une ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'unvalidate_activite_periodique'
     
@@ -259,43 +259,43 @@ class ActivitePeriodiqueUnvalidatePermission(AppActionPermission):
 
 class ActivitePeriodiqueListPermission(BasePermission):
     """
-    Permission pour activites_periodiques_list qui gère GET
-    GET : Vérifie que l'utilisateur a la permission read_activite_periodique pour au moins un processus
-    Security by Design : Refus par défaut si l'utilisateur n'a pas la permission
+    Permission pour activites_periodiques_list qui gÃ¨re GET
+    GET : VÃ©rifie que l'utilisateur a la permission read_activite_periodique pour au moins un processus
+    Security by Design : Refus par dÃ©faut si l'utilisateur n'a pas la permission
     """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
-            logger.warning("[ActivitePeriodiqueListPermission] Utilisateur non authentifié")
+            logger.warning("[ActivitePeriodiqueListPermission] Utilisateur non authentifiÃ©")
             return False
         
         if request.method != 'GET':
             return False
         
-        # ========== SUPER ADMIN / SUPERVISEUR SMI : Accès complet ==========
-        from parametre.permissions import can_manage_users, is_supervisor_smi
+        # ========== SUPER ADMIN / SUPERVISEUR SMI : AccÃ¨s complet ==========
+        from shared.permissions import can_manage_users, is_supervisor_smi
         if can_manage_users(request.user) or is_supervisor_smi(request.user):
             logger.info(
-                "[ActivitePeriodiqueListPermission] ✅ Bypass autorisé: %s", request.user.username
+                "[ActivitePeriodiqueListPermission] âœ… Bypass autorisÃ©: %s", request.user.username
             )
             return True
         # ========== FIN BYPASS ==========
         
-        # Récupérer la liste des processus de l'utilisateur
-        from parametre.permissions import get_user_processus_list
+        # RÃ©cupÃ©rer la liste des processus de l'utilisateur
+        from shared.permissions import get_user_processus_list
         user_processus_uuids = get_user_processus_list(request.user)
         
-        # Si user_processus_uuids est None, l'utilisateur est super admin (déjà géré ci-dessus)
+        # Si user_processus_uuids est None, l'utilisateur est super admin (dÃ©jÃ  gÃ©rÃ© ci-dessus)
         if user_processus_uuids is None:
             return True
         
-        # Si aucun processus assigné, refuser l'accès
+        # Si aucun processus assignÃ©, refuser l'accÃ¨s
         if not user_processus_uuids:
             logger.warning(
-                "[ActivitePeriodiqueListPermission] ❌ Aucun processus assigné pour user=%s", request.user.username
+                "[ActivitePeriodiqueListPermission] âŒ Aucun processus assignÃ© pour user=%s", request.user.username
             )
             return False
         
-        # Vérifier que l'utilisateur a la permission read_activite_periodique pour au moins un processus
+        # VÃ©rifier que l'utilisateur a la permission read_activite_periodique pour au moins un processus
         for processus_uuid in user_processus_uuids:
             try:
                 can_perform, reason = PermissionService.can_perform_action(
@@ -306,33 +306,33 @@ class ActivitePeriodiqueListPermission(BasePermission):
                 )
                 if can_perform:
                     logger.info(
-                        "[ActivitePeriodiqueListPermission] ✅ Permission read_activite_periodique accordée pour user=%s, processus_uuid=%s", request.user.username, processus_uuid
+                        "[ActivitePeriodiqueListPermission] âœ… Permission read_activite_periodique accordÃ©e pour user=%s, processus_uuid=%s", request.user.username, processus_uuid
                     )
                     return True
             except Exception as e:
                 logger.error(
-                    "[ActivitePeriodiqueListPermission] ❌ Erreur lors de la vérification de permission pour processus_uuid=%s: %s", processus_uuid, e,
+                    "[ActivitePeriodiqueListPermission] âŒ Erreur lors de la vÃ©rification de permission pour processus_uuid=%s: %s", processus_uuid, e,
                     exc_info=True
                 )
-                # En cas d'erreur, continuer avec le processus suivant (refus par défaut)
+                # En cas d'erreur, continuer avec le processus suivant (refus par dÃ©faut)
                 continue
         
-        # Si aucune permission trouvée pour aucun processus, refuser l'accès
+        # Si aucune permission trouvÃ©e pour aucun processus, refuser l'accÃ¨s
         logger.warning(
-            "[ActivitePeriodiqueListPermission] ❌ Aucune permission read_activite_periodique pour user=%s sur aucun processus", request.user.username
+            "[ActivitePeriodiqueListPermission] âŒ Aucune permission read_activite_periodique pour user=%s sur aucun processus", request.user.username
         )
         return False
 
 
 class ActivitePeriodiqueAmendementCreatePermission(AppActionPermission):
-    """Permission pour créer un amendement d'Activité Périodique"""
+    """Permission pour crÃ©er un amendement d'ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'create_amendement_activite_periodique'
     
     def _extract_processus_uuid(self, request, view, obj=None):
         """
         Extrait le processus_uuid depuis initial_ref ou depuis le processus fourni dans request.data
-        Pour créer un amendement, on doit récupérer l'AP initiale pour obtenir son processus
+        Pour crÃ©er un amendement, on doit rÃ©cupÃ©rer l'AP initiale pour obtenir son processus
         """
         # 1. Depuis l'objet (si fourni)
         if obj:
@@ -342,11 +342,11 @@ class ActivitePeriodiqueAmendementCreatePermission(AppActionPermission):
             if hasattr(obj, 'processus_uuid'):
                 return str(obj.processus_uuid)
         
-        # 2. Depuis request.data : initial_ref (cas spécifique pour create_amendement_activite_periodique)
+        # 2. Depuis request.data : initial_ref (cas spÃ©cifique pour create_amendement_activite_periodique)
         if hasattr(request, 'data') and request.data:
             initial_ref_uuid = request.data.get('initial_ref')
             if initial_ref_uuid:
-                # Récupérer l'AP initiale pour obtenir son processus
+                # RÃ©cupÃ©rer l'AP initiale pour obtenir son processus
                 try:
                     from activite_periodique.models import ActivitePeriodique
                     initial_ap = ActivitePeriodique.objects.select_related('processus').get(uuid=initial_ref_uuid)
@@ -354,7 +354,7 @@ class ActivitePeriodiqueAmendementCreatePermission(AppActionPermission):
                         return str(initial_ap.processus.uuid)
                 except Exception as e:
                     logger.warning(
-                        "[ActivitePeriodiqueAmendementCreatePermission] Erreur lors de la récupération de l'AP initiale %s: %s", initial_ref_uuid, str(e)
+                        "[ActivitePeriodiqueAmendementCreatePermission] Erreur lors de la rÃ©cupÃ©ration de l'AP initiale %s: %s", initial_ref_uuid, str(e)
                     )
         
         # 3. Depuis request.data : processus (si fourni directement)
@@ -373,7 +373,7 @@ class ActivitePeriodiqueAmendementCreatePermission(AppActionPermission):
 
 
 class ActivitePeriodiqueDetailCreatePermission(AppActionPermission):
-    """Permission pour créer un détail d'Activité Périodique"""
+    """Permission pour crÃ©er un dÃ©tail d'ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'create_detail_activite_periodique'
     
@@ -412,7 +412,7 @@ class ActivitePeriodiqueDetailCreatePermission(AppActionPermission):
 
 
 class ActivitePeriodiqueDetailUpdatePermission(AppActionPermission):
-    """Permission pour modifier un détail d'Activité Périodique"""
+    """Permission pour modifier un dÃ©tail d'ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'update_detail_activite_periodique'
     
@@ -438,7 +438,7 @@ class ActivitePeriodiqueDetailUpdatePermission(AppActionPermission):
 
 
 class ActivitePeriodiqueDetailDeletePermission(AppActionPermission):
-    """Permission pour supprimer un détail d'Activité Périodique"""
+    """Permission pour supprimer un dÃ©tail d'ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'delete_detail_activite_periodique'
     
@@ -464,7 +464,7 @@ class ActivitePeriodiqueDetailDeletePermission(AppActionPermission):
 
 
 class ActivitePeriodiqueSuiviCreatePermission(AppActionPermission):
-    """Permission pour créer un suivi d'Activité Périodique"""
+    """Permission pour crÃ©er un suivi d'ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'create_suivi_activite_periodique'
     
@@ -493,8 +493,8 @@ class ActivitePeriodiqueSuiviCreatePermission(AppActionPermission):
     
     def has_permission(self, request, view):
         """
-        Vérifie la permission pour créer un suivi
-        Accepte aussi update_suivi_activite_periodique comme fallback (logique métier : si on peut modifier, on peut créer)
+        VÃ©rifie la permission pour crÃ©er un suivi
+        Accepte aussi update_suivi_activite_periodique comme fallback (logique mÃ©tier : si on peut modifier, on peut crÃ©er)
         """
         try:
             if not request.user or not request.user.is_authenticated:
@@ -505,10 +505,10 @@ class ActivitePeriodiqueSuiviCreatePermission(AppActionPermission):
             
             if not processus_uuid:
                 raise PermissionDenied(
-                    f"Impossible de déterminer le processus pour vérifier la permission '{self.action}'"
+                    f"Impossible de dÃ©terminer le processus pour vÃ©rifier la permission '{self.action}'"
                 )
             
-            # Vérifier d'abord create_suivi_activite_periodique
+            # VÃ©rifier d'abord create_suivi_activite_periodique
             can_perform, reason = PermissionService.can_perform_action(
                 user=request.user,
                 app_name=self.app_name,
@@ -519,10 +519,10 @@ class ActivitePeriodiqueSuiviCreatePermission(AppActionPermission):
             if can_perform:
                 return True
             
-            # Fallback : vérifier update_suivi_activite_periodique
-            # Logique métier : si on peut modifier un suivi, on devrait pouvoir le créer
+            # Fallback : vÃ©rifier update_suivi_activite_periodique
+            # Logique mÃ©tier : si on peut modifier un suivi, on devrait pouvoir le crÃ©er
             logger.warning(
-                "[ActivitePeriodiqueSuiviCreatePermission] create_suivi refusé, vérification update_suivi comme fallback: user=%s, processus_uuid=%s", request.user.username, processus_uuid
+                "[ActivitePeriodiqueSuiviCreatePermission] create_suivi refusÃ©, vÃ©rification update_suivi comme fallback: user=%s, processus_uuid=%s", request.user.username, processus_uuid
             )
             
             can_update, update_reason = PermissionService.can_perform_action(
@@ -534,33 +534,33 @@ class ActivitePeriodiqueSuiviCreatePermission(AppActionPermission):
             
             if can_update:
                 logger.warning(
-                    "[ActivitePeriodiqueSuiviCreatePermission] ✅ Permission accordée via update_suivi fallback: user=%s, processus_uuid=%s", request.user.username, processus_uuid
+                    "[ActivitePeriodiqueSuiviCreatePermission] âœ… Permission accordÃ©e via update_suivi fallback: user=%s, processus_uuid=%s", request.user.username, processus_uuid
                 )
                 return True
             
-            # Les deux permissions sont refusées
+            # Les deux permissions sont refusÃ©es
             logger.error(
-                "[ActivitePeriodiqueSuiviCreatePermission] ❌ PERMISSION REFUSÉE: user=%s, processus_uuid=%s, create_reason=%s, update_reason=%s", request.user.username, processus_uuid, reason, update_reason
+                "[ActivitePeriodiqueSuiviCreatePermission] âŒ PERMISSION REFUSÃ‰E: user=%s, processus_uuid=%s, create_reason=%s, update_reason=%s", request.user.username, processus_uuid, reason, update_reason
             )
             raise PermissionDenied(
-                reason or f"Action '{self.action}' non autorisée. "
-                f"Permission 'update_suivi_activite_periodique' également refusée."
+                reason or f"Action '{self.action}' non autorisÃ©e. "
+                f"Permission 'update_suivi_activite_periodique' Ã©galement refusÃ©e."
             )
             
         except PermissionDenied:
             raise
         except Exception as e:
             logger.error(
-                "[ActivitePeriodiqueSuiviCreatePermission] Erreur lors de la vérification de permission: %s", e,
+                "[ActivitePeriodiqueSuiviCreatePermission] Erreur lors de la vÃ©rification de permission: %s", e,
                 exc_info=True
             )
             raise PermissionDenied(
-                f"Erreur lors de la vérification de la permission '{self.action}': {str(e)}"
+                f"Erreur lors de la vÃ©rification de la permission '{self.action}': {str(e)}"
             )
 
 
 class ActivitePeriodiqueSuiviUpdatePermission(AppActionPermission):
-    """Permission pour modifier un suivi d'Activité Périodique"""
+    """Permission pour modifier un suivi d'ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'update_suivi_activite_periodique'
     
@@ -586,7 +586,7 @@ class ActivitePeriodiqueSuiviUpdatePermission(AppActionPermission):
                     logger.warning("[ActivitePeriodiqueSuiviUpdatePermission] Erreur extraction processus depuis suivi_ap dans request.data %s: %s", suivi_uuid, e)
         
         # 3. Depuis view.kwargs si uuid fourni (pour update/delete avec UUID dans l'URL)
-        # Peut être un SuivisAP ou un MediaLivrable
+        # Peut Ãªtre un SuivisAP ou un MediaLivrable
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
             uuid_value = view.kwargs['uuid']
             
@@ -618,17 +618,17 @@ class ActivitePeriodiqueSuiviUpdatePermission(AppActionPermission):
 
 
 class ActivitePeriodiqueSuiviDeletePermission(AppActionPermission):
-    """Permission pour supprimer un suivi d'Activité Périodique"""
+    """Permission pour supprimer un suivi d'ActivitÃ© PÃ©riodique"""
     app_name = 'activite_periodique'
     action = 'delete_suivi_activite_periodique'
     
     def _extract_processus_uuid(self, request, view, obj=None):
         """Extrait le processus_uuid depuis obj.details_ap.activite_periodique.processus"""
-        # Log immédiat pour confirmer que la méthode est appelée
+        # Log immÃ©diat pour confirmer que la mÃ©thode est appelÃ©e
         import sys
-        print(f"[ActivitePeriodiqueSuiviDeletePermission._extract_processus_uuid] 🔍 MÉTHODE APPELÉE", file=sys.stderr, flush=True)
+        print(f"[ActivitePeriodiqueSuiviDeletePermission._extract_processus_uuid] ðŸ” MÃ‰THODE APPELÃ‰E", file=sys.stderr, flush=True)
         logger.error(
-            "[ActivitePeriodiqueSuiviDeletePermission._extract_processus_uuid] 🔍 DÉBUT EXTRACTION: has_obj=%s, has_view=%s, view_kwargs=%s", obj is not None, view is not None, view.kwargs if view and hasattr(view, 'kwargs') else 'N/A'
+            "[ActivitePeriodiqueSuiviDeletePermission._extract_processus_uuid] ðŸ” DÃ‰BUT EXTRACTION: has_obj=%s, has_view=%s, view_kwargs=%s", obj is not None, view is not None, view.kwargs if view and hasattr(view, 'kwargs') else 'N/A'
         )
         
         # 1. Depuis obj (si fourni, pour delete)
@@ -638,17 +638,17 @@ class ActivitePeriodiqueSuiviDeletePermission(AppActionPermission):
                 if hasattr(obj.details_ap, 'activite_periodique') and obj.details_ap.activite_periodique:
                     if hasattr(obj.details_ap.activite_periodique, 'processus') and obj.details_ap.activite_periodique.processus:
                         processus_uuid = str(obj.details_ap.activite_periodique.processus.uuid)
-                        logger.info("[ActivitePeriodiqueSuiviDeletePermission] ✅ Processus UUID extrait depuis obj: %s", processus_uuid)
+                        logger.info("[ActivitePeriodiqueSuiviDeletePermission] âœ… Processus UUID extrait depuis obj: %s", processus_uuid)
                         return processus_uuid
         
         # 2. Depuis view.kwargs si uuid fourni (pour delete avec UUID dans l'URL)
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
             suivi_uuid = view.kwargs['uuid']
-            logger.warning("[ActivitePeriodiqueSuiviDeletePermission] 🔍 Tentative extraction depuis view.kwargs: suivi_uuid=%s", suivi_uuid)
+            logger.warning("[ActivitePeriodiqueSuiviDeletePermission] ðŸ” Tentative extraction depuis view.kwargs: suivi_uuid=%s", suivi_uuid)
             try:
                 from activite_periodique.models import SuivisAP
                 
-                # Utiliser select_related pour optimiser et éviter les requêtes multiples
+                # Utiliser select_related pour optimiser et Ã©viter les requÃªtes multiples
                 try:
                     suivi = SuivisAP.objects.select_related(
                         'details_ap__activite_periodique__processus'
@@ -659,22 +659,23 @@ class ActivitePeriodiqueSuiviDeletePermission(AppActionPermission):
                         suivi.details_ap.activite_periodique and 
                         suivi.details_ap.activite_periodique.processus):
                         processus_uuid = str(suivi.details_ap.activite_periodique.processus.uuid)
-                        logger.warning("[ActivitePeriodiqueSuiviDeletePermission] ✅✅✅ Processus UUID extrait: %s", processus_uuid)
+                        logger.warning("[ActivitePeriodiqueSuiviDeletePermission] âœ…âœ…âœ… Processus UUID extrait: %s", processus_uuid)
                         return processus_uuid
                     else:
-                        logger.error("[ActivitePeriodiqueSuiviDeletePermission] ❌ Chaîne de relations incomplète pour suivi %s", suivi_uuid)
+                        logger.error("[ActivitePeriodiqueSuiviDeletePermission] âŒ ChaÃ®ne de relations incomplÃ¨te pour suivi %s", suivi_uuid)
                 except SuivisAP.DoesNotExist:
-                    logger.error("[ActivitePeriodiqueSuiviDeletePermission] ❌ SuivisAP %s non trouvé (DoesNotExist)", suivi_uuid)
+                    logger.error("[ActivitePeriodiqueSuiviDeletePermission] âŒ SuivisAP %s non trouvÃ© (DoesNotExist)", suivi_uuid)
                 except Exception as e:
-                    logger.error("[ActivitePeriodiqueSuiviDeletePermission] ❌ Erreur lors de l'extraction: %s", e)
+                    logger.error("[ActivitePeriodiqueSuiviDeletePermission] âŒ Erreur lors de l'extraction: %s", e)
                     import traceback
                     logger.error(traceback.format_exc())
             except Exception as e:
-                logger.error("[ActivitePeriodiqueSuiviDeletePermission] ❌ Erreur générale extraction processus depuis suivi %s: %s", suivi_uuid, e)
+                logger.error("[ActivitePeriodiqueSuiviDeletePermission] âŒ Erreur gÃ©nÃ©rale extraction processus depuis suivi %s: %s", suivi_uuid, e)
                 import traceback
                 logger.error(traceback.format_exc())
         
-        logger.warning("[ActivitePeriodiqueSuiviDeletePermission] ⚠️ Aucun processus UUID trouvé, appel de super()._extract_processus_uuid")
+        logger.warning("[ActivitePeriodiqueSuiviDeletePermission] âš ï¸ Aucun processus UUID trouvÃ©, appel de super()._extract_processus_uuid")
         result = super()._extract_processus_uuid(request, view, obj)
-        logger.warning("[ActivitePeriodiqueSuiviDeletePermission] Résultat super()._extract_processus_uuid: %s", result)
+        logger.warning("[ActivitePeriodiqueSuiviDeletePermission] RÃ©sultat super()._extract_processus_uuid: %s", result)
         return result
+
