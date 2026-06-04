@@ -67,9 +67,6 @@ def periodicites_list(request):
         periodicites_data = []
         periodicites = Periodicite.objects.all().select_related('preuve').prefetch_related('preuve__medias').order_by('indicateur_id', 'periode')
         
-        # Utiliser le serializer pour inclure toutes les données de preuve
-        from .serializers import PeriodiciteSerializer
-        
         for periodicite in periodicites:
             try:
                 # Utiliser le serializer pour avoir toutes les données de preuve

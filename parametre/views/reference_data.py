@@ -66,6 +66,8 @@ from .utils import (
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def natures_list(request):
     """
     Liste des natures
@@ -1100,8 +1102,8 @@ def processus_all_list(request):
 
 # ==================== MEDIAS ====================
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, DashboardMediaCreatePermission])
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def frequences_list(request):
     """
     Liste toutes les fréquences
