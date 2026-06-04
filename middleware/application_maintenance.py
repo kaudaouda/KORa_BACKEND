@@ -67,7 +67,7 @@ class ApplicationMaintenanceMiddleware(MiddlewareMixin):
                     if not config.is_enabled:
                         user_info = f"user: {user.username}" if is_auth else "anonymous"
                         logger.warning(
-                            f"[ApplicationMaintenance] Accès bloqué à {app_name} ({user_info})"
+                            "[ApplicationMaintenance] Accès bloqué à %s (%s)", app_name, user_info
                         )
                         return JsonResponse({
                             'error': 'Application en maintenance',
@@ -84,7 +84,7 @@ class ApplicationMaintenanceMiddleware(MiddlewareMixin):
                     return None
                 except Exception as e:
                     logger.error(
-                        f"[ApplicationMaintenance] Erreur lors de la vérification de {app_name}: {e}",
+                        "[ApplicationMaintenance] Erreur lors de la vérification de %s: %s", app_name, e,
                         exc_info=True
                     )
                     return None
