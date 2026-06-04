@@ -77,7 +77,7 @@ def email_settings_detail(request):
         serializer = EmailSettingsSerializer(settings)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des paramètres email: {str(e)}")
+        logger.error("Erreur lors de la récupération des paramètres email: %s", {str(e)})
         return Response({'error': 'Impossible de récupérer les paramètres email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -116,7 +116,7 @@ def email_settings_update(request):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour des paramètres email: {str(e)}")
+        logger.error("Erreur lors de la mise à jour des paramètres email: %s", {str(e)})
         return Response({'error': 'Impossible de mettre à jour les paramètres email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -232,7 +232,7 @@ def test_email_configuration(request):
                 setattr(settings, key, value)
         
     except Exception as e:
-        logger.error(f"Erreur lors du test email: {str(e)}")
+        logger.error("Erreur lors du test email: %s", {str(e)})
         return Response({
             'error': 'Erreur interne lors du test',
             'status': 'error'

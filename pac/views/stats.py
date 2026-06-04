@@ -22,6 +22,7 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.conf import settings
 from datetime import datetime, timedelta
+from pac.services.pac_service import get_upcoming_notifications_data
 from ..models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Notification, FailedLoginAttempt, LoginSecurityConfig, LoginBlock
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, log_user_logout, get_client_ip, log_activity
@@ -72,200 +73,21 @@ logger = logging.getLogger(__name__)
 
 from .utils import AllowAnyWithJWT, _get_next_num_amendement_for_pac
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def pac_upcoming_notifications(request):
-    """Récupérer les traitements bientôt à terme pour les notifications"""
+    """Récupérer les traitements bientôt à terme pour les notifications."""
     try:
-        from datetime import datetime as dt_class
-        from django.contrib.contenttypes.models import ContentType
-
-        today = timezone.now().date()
-        
-        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
-        user_processus_uuids = get_user_processus_list(request.user)
-        
-        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
-        if user_processus_uuids is None:
-            # Super admin : voir toutes les notifications sans filtre
-            traitements = TraitementPac.objects.filter(
-                details_pac__isnull=False,
-                delai_realisation__isnull=False
-            ).select_related(
-                'details_pac', 
-                'details_pac__pac',
-                'details_pac__pac__processus',
-                'details_pac__nature',
-                'type_action'
-            ).prefetch_related(
-                'responsables_directions',
-                'responsables_sous_directions'
-            )
-        elif not user_processus_uuids:
-            return Response({
-                'success': True,
-                'data': [],
-                'count': 0,
-                'message': 'Aucune notification trouvée pour vos processus attribués.'
-            }, status=status.HTTP_200_OK)
-        else:
-            # Récupérer tous les traitements des processus de l'utilisateur avec leurs délais de réalisation
-            traitements = TraitementPac.objects.filter(
-                details_pac__isnull=False,
-                details_pac__pac__processus__uuid__in=user_processus_uuids,
-            delai_realisation__isnull=False
-        ).select_related(
-            'details_pac', 
-            'details_pac__pac',
-            'details_pac__pac__processus',
-            'details_pac__nature',
-            'type_action'
-        ).prefetch_related(
-            'responsables_directions',
-            'responsables_sous_directions'
-        )
-        
-        notifications = []
-        
-        for traitement in traitements:
-            try:
-                # Vérifier que le traitement a bien un details_pac et un pac
-                if not traitement.details_pac or not traitement.details_pac.pac:
-                    continue
-                    
-                delai_date = traitement.delai_realisation
-                if not delai_date:
-                    continue
-                
-                # Convertir en date si nécessaire
-                if isinstance(delai_date, dt_class):
-                    delai_date = delai_date.date()
-                
-                # Calculer la différence en jours
-                try:
-                    diff_days = (delai_date - today).days
-                except (TypeError, AttributeError) as e:
-                    logger.warning(f"[pac_upcoming_notifications] Erreur lors du calcul de la différence de jours: {e}")
-                    continue
-                
-                # Inclure les traitements arrivés à terme (en retard) et bientôt à terme (dans les 7 prochains jours)
-                if diff_days <= 7:
-                    # Déterminer la priorité
-                    if diff_days < 0:
-                        priority = 'high'  # En retard
-                        delai_label = f'En retard de {abs(diff_days)} jour{"s" if abs(diff_days) > 1 else ""}'
-                    elif diff_days == 0:
-                        priority = 'high'  # Échéance aujourd'hui
-                        delai_label = 'Échéance aujourd\'hui'
-                    elif diff_days <= 3:
-                        priority = 'high'  # Dans les 3 prochains jours
-                        delai_label = f'Échéance dans {diff_days} jour{"s" if diff_days > 1 else ""}'
-                    else:
-                        priority = 'medium'  # Dans 4-7 jours
-                        delai_label = f'Échéance dans {diff_days} jours'
-                    
-                    # Construire le titre
-                    pac = traitement.details_pac.pac
-                    numero_pac = traitement.details_pac.numero_pac or f'PAC-{pac.uuid}'
-                    action_title = traitement.action[:50] if traitement.action else 'Action non spécifiée'
-                    if len(traitement.action or '') > 50:
-                        action_title += '...'
-                    
-                    title = f'{numero_pac} - Action : {action_title}'
-                    
-                    # Construire l'URL d'action
-                    action_url = f'/pac/{pac.uuid}'
-                    message = f'Délai de réalisation {delai_label}'
-                    
-                    # Récupérer les informations supplémentaires
-                    nature_label = traitement.details_pac.nature.nom if traitement.details_pac.nature else None
-                    type_action = traitement.type_action.nom if traitement.type_action else None
-                    
-                    notifications.append({
-                        'id': str(traitement.uuid),
-                        'type': 'traitement',
-                        'title': title,
-                        'numero_pac': numero_pac,
-                        'action': (traitement.action or 'Action non spécifiée')[:80],
-                        'message': message,
-                        'due_date': delai_date.isoformat() if hasattr(delai_date, 'isoformat') else str(delai_date),
-                        'priority': priority,
-                        'action_url': action_url,
-                        'nature_label': nature_label,
-                        'type_action': type_action,
-                        'delai_label': delai_label,
-                        'pac_uuid': str(pac.uuid),
-                        'traitement_uuid': str(traitement.uuid),
-                        'notification_uuid': None,
-                        'read_at': None,
-                    })
-
-                    # Enregistrer/mettre à jour la notification côté serveur (table parametre.Notification)
-                    try:
-                        content_type = ContentType.objects.get_for_model(TraitementPac)
-                        notif, created = Notification.objects.get_or_create(
-                            user=request.user,
-                            content_type=content_type,
-                            object_id=traitement.uuid,
-                            source_app='pac',
-                            notification_type='traitement',
-                            defaults={
-                                'title': title,
-                                'message': message,
-                                'action_url': action_url,
-                                'priority': priority,
-                                'due_date': delai_date,
-                            },
-                        )
-                        if not created:
-                            updated_fields = []
-                            if notif.title != title:
-                                notif.title = title
-                                updated_fields.append('title')
-                            if notif.message != message:
-                                notif.message = message
-                                updated_fields.append('message')
-                            if notif.action_url != action_url:
-                                notif.action_url = action_url
-                                updated_fields.append('action_url')
-                            if notif.priority != priority:
-                                notif.priority = priority
-                                updated_fields.append('priority')
-                            if notif.due_date != delai_date:
-                                notif.due_date = delai_date
-                                updated_fields.append('due_date')
-                            if updated_fields:
-                                notif.save(update_fields=updated_fields + ['updated_at'])
-                        notifications[-1]['notification_uuid'] = str(notif.uuid)
-                        notifications[-1]['read_at'] = notif.read_at.isoformat() if notif.read_at else None
-                    except Exception as notif_err:
-                        logger.warning(f"[pac_upcoming_notifications] Notification get_or_create: {notif_err}")
-            except Exception as e:
-                logger.error(f"[pac_upcoming_notifications] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                continue
-        
-        # Trier par priorité (high en premier) puis par date
-        notifications.sort(key=lambda x: (
-            0 if x['priority'] == 'high' else 1 if x['priority'] == 'medium' else 2,
-            x['due_date']
-        ))
-        
-        logger.info(f"[pac_upcoming_notifications] {len(notifications)} notifications trouvées pour l'utilisateur {request.user.username}")
-        
-        return Response({
-            'success': True,
-            'notifications': notifications
-        }, status=status.HTTP_200_OK)
-        
+        data = get_upcoming_notifications_data(request.user)
+        return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des notifications: {str(e)}")
+        logger.error("Erreur lors de la récupération des notifications PAC: %s", e)
         import traceback
         logger.error(traceback.format_exc())
-        return Response({
-            'success': False,
-            'notifications': [],
-            'error': 'Erreur lors de la récupération des notifications'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {'success': False, 'notifications': [], 'error': 'Erreur lors de la récupération des notifications'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # ==================== STATISTIQUES PAC ====================
@@ -275,7 +97,7 @@ def pac_upcoming_notifications(request):
 def pac_stats(request):
     """Statistiques des PACs de l'utilisateur connecté"""
     try:
-        logger.info(f"[pac_stats] Début de la fonction pour l'utilisateur: {request.user.username}")
+        logger.info("[pac_stats] Début de la fonction pour l'utilisateur: %s", {request.user.username})
         scope = request.query_params.get('scope', 'tous')
         
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
@@ -311,10 +133,10 @@ def pac_stats(request):
             processus_uuid_filter = request.query_params.get('processus_uuid', None)
             if processus_uuid_filter and str(processus_uuid_filter) in [str(u) for u in user_processus_uuids]:
                 pacs_base = pacs_base.filter(processus__uuid=processus_uuid_filter)
-        logger.info(f"[pac_stats] Queryset créé")
+        logger.info("[pac_stats] Queryset créé")
         # ========== FIN FILTRAGE ==========
         
-        logger.info(f"[pac_stats] Nombre total de PACs de l'utilisateur: {pacs_base.count()}")
+        logger.info("[pac_stats] Nombre total de PACs de l'utilisateur: %s", {pacs_base.count()})
 
         # Filtrer selon le scope
         if scope == 'dernier':
@@ -330,21 +152,21 @@ def pac_stats(request):
         else:
             # Filtrer les PACs initiaux uniquement (num_amendement == 0)
             pacs_initiaux_base = pacs_base.filter(num_amendement=0)
-        logger.info(f"[pac_stats] Nombre de PACs initiaux: {pacs_initiaux_base.count()}")
+        logger.info("[pac_stats] Nombre de PACs initiaux: %s", {pacs_initiaux_base.count()})
         
         total_pacs = pacs_initiaux_base.count()
         
         # Compter les PACs initiaux validés
         # Debug: Vérifier tous les PACs initiaux et leur statut de validation
-        logger.info(f"[pac_stats] Vérification des PACs initiaux et leur statut de validation:")
+        logger.info("[pac_stats] Vérification des PACs initiaux et leur statut de validation:")
         for pac in pacs_initiaux_base:
             # Recharger depuis la DB pour être sûr d'avoir la valeur à jour
             pac.refresh_from_db()
-            logger.info(f"[pac_stats] PAC {pac.uuid}: is_validated={pac.is_validated} (type: {type(pac.is_validated).__name__}), validated_at={pac.validated_at}, validated_by={pac.validated_by}")
+            logger.info("[pac_stats] PAC %s: is_validated=%s (type: %s), validated_at=%s, validated_by=%s", {pac.uuid}, {pac.is_validated}, {type(pac.is_validated).__name__}, {pac.validated_at}, {pac.validated_by})
             
             # Vérifier aussi avec une requête directe
             pac_direct = Pac.objects.get(uuid=pac.uuid)
-            logger.info(f"[pac_stats] PAC {pac.uuid} (requête directe): is_validated={pac_direct.is_validated} (type: {type(pac_direct.is_validated).__name__})")
+            logger.info("[pac_stats] PAC %s (requête directe): is_validated=%s (type: %s)", {pac.uuid}, {pac_direct.is_validated}, {type(pac_direct.is_validated).__name__})
         
         # Utiliser une requête directe sur la base filtrée
         # Un PAC est considéré comme validé si is_validated=True OU si validated_at/validated_by sont remplis
@@ -353,11 +175,11 @@ def pac_stats(request):
         pacs_valides_filter1 = pacs_initiaux_base.filter(
             Q(is_validated=True) | Q(validated_at__isnull=False) | Q(validated_by__isnull=False)
         ).count()
-        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (via filter avec Q): {pacs_valides_filter1}")
+        logger.info("[pac_stats] Nombre de PACs initiaux validés (via filter avec Q): %s", {pacs_valides_filter1})
         
         # Essayer avec une requête qui vérifie explicitement que ce n'est pas False
         pacs_valides_filter2 = pacs_initiaux_base.exclude(is_validated=False).count()
-        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (via exclude is_validated=False): {pacs_valides_filter2}")
+        logger.info("[pac_stats] Nombre de PACs initiaux validés (via exclude is_validated=False): %s", {pacs_valides_filter2})
         
         # Compter aussi manuellement pour vérifier (plus fiable)
         # Un PAC est considéré comme validé si is_validated=True OU si validated_at/validated_by sont remplis
@@ -375,13 +197,13 @@ def pac_stats(request):
             )
             if is_validated:
                 pacs_valides_manual += 1
-                logger.info(f"[pac_stats] PAC {pac.uuid} considéré comme validé: is_validated={pac.is_validated}, validated_at={pac.validated_at}, validated_by={pac.validated_by}")
-        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (manuel): {pacs_valides_manual}")
+                logger.info("[pac_stats] PAC %s considéré comme validé: is_validated=%s, validated_at=%s, validated_by=%s", {pac.uuid}, {pac.is_validated}, {pac.validated_at}, {pac.validated_by})
+        logger.info("[pac_stats] Nombre de PACs initiaux validés (manuel): %s", {pacs_valides_manual})
         
         # Utiliser le comptage manuel (plus fiable que la requête filter)
         # Si les deux méthodes donnent des résultats différents, utiliser le manuel
         if pacs_valides_filter1 != pacs_valides_manual or pacs_valides_filter2 != pacs_valides_manual:
-            logger.warning(f"[pac_stats] Incohérence détectée! filter1()={pacs_valides_filter1}, filter2()={pacs_valides_filter2}, manuel={pacs_valides_manual}. Utilisation du comptage manuel.")
+            logger.warning("[pac_stats] Incohérence détectée! filter1()=%s, filter2()=%s, manuel=%s. Utilisation du comptage manuel.", {pacs_valides_filter1}, {pacs_valides_filter2}, {pacs_valides_manual})
             pacs_valides = pacs_valides_manual
         else:
             pacs_valides = pacs_valides_filter1
@@ -402,7 +224,7 @@ def pac_stats(request):
             'processus', 'cree_par', 'annee'
         ).prefetch_related('details__traitement', 'details__traitement__suivi')
         
-        logger.info(f"[pac_stats] Nombre total de PACs (initiaux + amendements): {all_pacs.count()}")
+        logger.info("[pac_stats] Nombre total de PACs (initiaux + amendements): %s", {all_pacs.count()})
         
         # Compter les PACs avec traitement (tous types confondus)
         for pac in all_pacs:
@@ -421,23 +243,23 @@ def pac_stats(request):
                                 has_suivi = True
                                 break
                     except Exception as e:
-                        logger.warning(f"[pac_stats] Erreur lors de l'accès au traitement du détail {detail.uuid}: {e}")
+                        logger.warning("[pac_stats] Erreur lors de l'accès au traitement du détail %s: %s", {detail.uuid}, {e})
                         continue
                 
                 # Compter une seule fois par PAC
                 if has_traitement:
                     pacs_avec_traitement += 1
-                    logger.info(f"[pac_stats] PAC {pac.uuid} (num_amendement={pac.num_amendement}) a un traitement")
+                    logger.info("[pac_stats] PAC %s (num_amendement=%s) a un traitement", {pac.uuid}, {pac.num_amendement})
                 if has_suivi:
                     pacs_avec_suivi += 1
             except Exception as e:
-                logger.error(f"[pac_stats] Erreur lors du traitement du PAC {pac.uuid}: {e}")
+                logger.error("[pac_stats] Erreur lors du traitement du PAC %s: %s", {pac.uuid}, {e})
                 import traceback
                 logger.error(traceback.format_exc())
                 continue
         
-        logger.info(f"[pac_stats] Nombre de PACs avec traitement (tous types): {pacs_avec_traitement}")
-        logger.info(f"[pac_stats] Nombre de PACs avec suivi (tous types): {pacs_avec_suivi}")
+        logger.info("[pac_stats] Nombre de PACs avec traitement (tous types): %s", {pacs_avec_traitement})
+        logger.info("[pac_stats] Nombre de PACs avec suivi (tous types): %s", {pacs_avec_suivi})
         
         # Pour les autres stats, continuer avec les PACs initiaux uniquement
         
@@ -462,7 +284,7 @@ def pac_stats(request):
                 delai_realisation__isnull=False
             ).select_related('details_pac', 'details_pac__pac')
         
-        logger.info(f"[pac_stats] Nombre de traitements avec délai trouvés (PACs initiaux uniquement): {traitements.count()}")
+        logger.info("[pac_stats] Nombre de traitements avec délai trouvés (PACs initiaux uniquement): %s", {traitements.count()})
         
         for traitement in traitements:
             try:
@@ -488,18 +310,18 @@ def pac_stats(request):
                 try:
                     if delai_date < today:
                         traitements_arrives_termes += 1
-                        logger.debug(f"[pac_stats] Traitement arrivé à terme: {traitement.uuid}, délai: {delai_date}")
+                        logger.debug("[pac_stats] Traitement arrivé à terme: %s, délai: %s", {traitement.uuid}, {delai_date})
                     # Traitement bientôt à terme (dans les 7 prochains jours)
                     else:
                         diff_days = (delai_date - today).days
                         if 0 <= diff_days <= 7:
                             traitements_bientot_termes += 1
-                            logger.debug(f"[pac_stats] Traitement bientôt à terme: {traitement.uuid}, délai: {delai_date}, jours restants: {diff_days}")
+                            logger.debug("[pac_stats] Traitement bientôt à terme: %s, délai: %s, jours restants: %s", {traitement.uuid}, {delai_date}, {diff_days})
                 except (TypeError, AttributeError) as e:
-                    logger.warning(f"[pac_stats] Erreur lors de la comparaison de dates: {e}, type: {type(delai_date)}")
+                    logger.warning("[pac_stats] Erreur lors de la comparaison de dates: %s, type: %s", {e}, {type(delai_date)})
                     continue
             except Exception as e:
-                logger.error(f"[pac_stats] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
+                logger.error("[pac_stats] Erreur lors du traitement du traitement %s: %s", {traitement.uuid}, {e})
                 import traceback
                 logger.error(traceback.format_exc())
                 continue
@@ -526,10 +348,7 @@ def pac_stats(request):
                 traitement__details_pac__pac__uuid__in=pacs_initiaux_uuids
             ).count()
         
-        logger.info(f"[pac_stats] Statistiques calculées: total_pacs={total_pacs}, pacs_valides={pacs_valides}, "
-                   f"pacs_avec_traitement={pacs_avec_traitement}, pacs_avec_suivi={pacs_avec_suivi}, "
-                   f"total_traitements={total_traitements}, total_suivis={total_suivis}, "
-                   f"traitements_arrives_termes={traitements_arrives_termes}, traitements_bientot_termes={traitements_bientot_termes}")
+        logger.info("[pac_stats] Statistiques calculées: total_pacs=%s, pacs_valides=%s, pacs_avec_traitement=%s, pacs_avec_suivi=%s, total_traitements=%s, total_suivis=%s, traitements_arrives_termes=%s, traitements_bientot_termes=%s", {total_pacs}, {pacs_valides}, {pacs_avec_traitement}, {pacs_avec_suivi}, {total_traitements}, {total_suivis}, {traitements_arrives_termes}, {traitements_bientot_termes})
         
         # Statistiques pour les graphiques
         stats = {
@@ -543,7 +362,7 @@ def pac_stats(request):
             'traitements_bientot_termes': traitements_bientot_termes
         }
         
-        logger.info(f"[pac_stats] Stats à retourner: {stats}")
+        logger.info("[pac_stats] Stats à retourner: %s", {stats})
         
         return Response({
             'success': True,
@@ -551,7 +370,7 @@ def pac_stats(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statistiques PAC: {str(e)}")
+        logger.error("Erreur lors de la récupération des statistiques PAC: %s", {str(e)})
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -648,7 +467,7 @@ def pac_dashboard_stats(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"[pac_dashboard_stats] Erreur: {str(e)}")
+        logger.error("[pac_dashboard_stats] Erreur: %s", {str(e)})
         return Response({
             'success': False,
             'error': 'Erreur lors du calcul des statistiques dashboard'
@@ -685,14 +504,14 @@ def get_last_pac_previous_year(request):
             annee_precedente_valeur = annee_actuelle.annee - 1
             annee_precedente = Annee.objects.get(annee=annee_precedente_valeur)
         except Annee.DoesNotExist:
-            logger.info(f"[get_last_pac_previous_year] Année précédente {annee_precedente_valeur if 'annee_precedente_valeur' in locals() else 'N/A'} non trouvée")
+            logger.info("[get_last_pac_previous_year] Année précédente %s non trouvée", {(annee_precedente_valeur if 'annee_precedente_valeur' in locals() else 'N/A')})
             return Response({
                 'message': f'Aucune année {annee_precedente_valeur if "annee_precedente_valeur" in locals() else "précédente"} trouvée dans le système',
                 'found': False,
                 'data': None
             }, status=status.HTTP_200_OK)
 
-        logger.info(f"[get_last_pac_previous_year] Recherche du dernier PAC pour processus={processus_uuid}, année={annee_precedente.annee}")
+        logger.info("[get_last_pac_previous_year] Recherche du dernier PAC pour processus=%s, année=%s", {processus_uuid}, {annee_precedente.annee})
 
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not user_has_access_to_processus(request.user, processus_uuid):
@@ -709,12 +528,12 @@ def get_last_pac_previous_year(request):
         ).select_related('processus', 'annee', 'cree_par', 'validated_by').order_by('-num_amendement').first()
 
         if pac:
-            logger.info(f"[get_last_pac_previous_year] PAC trouvé: {pac.uuid} (num_amendement={pac.num_amendement})")
+            logger.info("[get_last_pac_previous_year] PAC trouvé: %s (num_amendement=%s)", {pac.uuid}, {pac.num_amendement})
             serializer = PacSerializer(pac)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Aucun PAC trouvé pour l'année précédente (200 pour que le frontend ne voit pas 404)
-        logger.info(f"[get_last_pac_previous_year] Aucun PAC trouvé pour l'année {annee_precedente.annee}")
+        logger.info("[get_last_pac_previous_year] Aucun PAC trouvé pour l'année %s", {annee_precedente.annee})
         return Response({
             'message': f'Aucun Plan d\'Action de Conformité trouvé pour l\'année {annee_precedente.annee}',
             'found': False,
@@ -722,7 +541,7 @@ def get_last_pac_previous_year(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du dernier PAC de l'année précédente: {str(e)}")
+        logger.error("Erreur lors de la récupération du dernier PAC de l'année précédente: %s", {str(e)})
         import traceback
         logger.error(traceback.format_exc())
         return Response({

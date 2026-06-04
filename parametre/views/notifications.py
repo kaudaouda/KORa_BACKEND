@@ -99,7 +99,7 @@ def notification_settings_get(request):
         serializer = NotificationSettingsSerializer(settings_instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des paramètres de notification: {str(e)}")
+        logger.error("Erreur lors de la récupération des paramètres de notification: %s", {str(e)})
         return Response({'error': 'Impossible de récupérer les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -121,7 +121,7 @@ def notification_settings_update(request):
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour des paramètres de notification: {str(e)}")
+        logger.error("Erreur lors de la mise à jour des paramètres de notification: %s", {str(e)})
         return Response({'error': 'Impossible de mettre à jour les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -166,7 +166,7 @@ def notification_settings_effective(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la résolution des paramètres effectifs: {str(e)}")
+        logger.error("Erreur lors de la résolution des paramètres effectifs: %s", {str(e)})
         return Response({'error': 'Impossible de résoudre les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -182,7 +182,7 @@ def dashboard_notification_settings_get(request):
         serializer = DashboardNotificationSettingsSerializer(settings_instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des paramètres dashboard: {str(e)}")
+        logger.error("Erreur lors de la récupération des paramètres dashboard: %s", {str(e)})
         return Response({'error': 'Impossible de récupérer les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -204,7 +204,7 @@ def dashboard_notification_settings_update(request):
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour des paramètres dashboard: {str(e)}")
+        logger.error("Erreur lors de la mise à jour des paramètres dashboard: %s", {str(e)})
         return Response({'error': 'Impossible de mettre à jour les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -218,7 +218,7 @@ def upcoming_notifications(request):
         data = get_pac_notifications(request.user)
         return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des échéances: {str(e)}")
+        logger.error("Erreur lors de la récupération des échéances: %s", {str(e)})
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': 'Impossible de récupérer les échéances'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -312,7 +312,7 @@ def notifications_list(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la liste des notifications: {e}")
+        logger.error("Erreur lors de la récupération de la liste des notifications: %s", {e})
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': 'Impossible de récupérer les notifications'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -340,7 +340,7 @@ def notification_mark_read(request, uuid):
             'read_at': notif.read_at.isoformat(),
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors du marquage lu de la notification {uuid}: {e}")
+        logger.error("Erreur lors du marquage lu de la notification %s: %s", {uuid}, {e})
         return Response(
             {'error': 'Impossible de marquer la notification comme lue'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
