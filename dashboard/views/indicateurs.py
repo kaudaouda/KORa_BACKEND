@@ -54,6 +54,9 @@ from ..serializers import (
 
 logger = logging.getLogger(__name__)
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def indicateurs_list(request):
     """Liste tous les indicateurs"""
     try:

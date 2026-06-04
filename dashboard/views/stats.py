@@ -54,6 +54,9 @@ from ..serializers import (
 
 logger = logging.getLogger(__name__)
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def dashboard_stats(request):
     """Statistiques du tableau de bord"""
     try:
