@@ -1,6 +1,7 @@
 """
 Vues API pour l'application PAC
 """
+from pac.services.pac_service import check_pac_completude, get_upcoming_notifications_data
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from shared.throttles import KoraSensitiveThrottle
@@ -2320,57 +2321,8 @@ def pac_delete(request, uuid):
 
 
 def _check_pac_completude(pac, numero_pac_display=None):
-    """
-    Vérifie que tous les champs obligatoires du PAC, de ses détails et de leurs
-    traitements sont renseignés avant validation.
-    Retourne None si tout est OK, sinon un message d'erreur (str).
-    """
-    details = pac.details.select_related(
-        'dysfonctionnement_recommandation', 'nature', 'categorie', 'source',
-        'traitement', 'traitement__type_action', 'traitement__responsable_direction',
-    ).prefetch_related('traitement__responsables_directions').all()
-
-    if not details.exists():
-        return "Le tableau doit avoir au moins une ligne avant d'être validé."
-
-    for detail in details:
-        # ── Champs DetailsPac ──────────────────────────────────────────
-        if not detail.libelle or not detail.libelle.strip():
-            return "Le champ « Libellé » est obligatoire pour toutes les lignes."
-        if not detail.dysfonctionnement_recommandation_id:
-            return "Le champ « Dysfonctionnement / Recommandation » est obligatoire pour toutes les lignes."
-        if not detail.nature_id:
-            return "Le champ « Nature » est obligatoire pour toutes les lignes."
-        if not detail.categorie_id:
-            return "Le champ « Catégorie » est obligatoire pour toutes les lignes."
-        if not detail.source_id:
-            return "Le champ « Source » est obligatoire pour toutes les lignes."
-        if not detail.periode_de_realisation:
-            return "Le champ « Période de réalisation » est obligatoire pour toutes les lignes."
-
-        # ── Traitement ────────────────────────────────────────────────
-        if not hasattr(detail, 'traitement') or not detail.traitement:
-            return "Toutes les lignes doivent avoir un traitement (Actions) avant validation."
-
-        t = detail.traitement
-        if not t.action or not t.action.strip():
-            return "Le champ « Actions » est obligatoire pour tous les traitements."
-        if not t.type_action_id:
-            return "Le champ « Type d'action » est obligatoire pour tous les traitements."
-
-        has_responsable = (
-            t.responsable_direction_id
-            or t.responsable_sous_direction_id
-            or t.responsables_directions.exists()
-            or t.responsables_sous_directions.exists()
-        )
-        if not has_responsable:
-            return "Au moins un « Responsable » est obligatoire pour tous les traitements."
-
-        if not t.delai_realisation:
-            return "Le champ « Délai de réalisation » est obligatoire pour tous les traitements."
-
-    return None  # Tout est complet
+    """Délègue à pac.services.pac_service.check_pac_completude."""
+    return check_pac_completude(pac)
 
 
 @api_view(['POST'])
@@ -3176,198 +3128,18 @@ def details_pac_delete(request, uuid):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def pac_upcoming_notifications(request):
-    """Récupérer les traitements bientôt à terme pour les notifications"""
+    """Récupérer les traitements bientôt à terme pour les notifications."""
     try:
-        from datetime import datetime as dt_class
-        from django.contrib.contenttypes.models import ContentType
-
-        today = timezone.now().date()
-        
-        # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
-        user_processus_uuids = get_user_processus_list(request.user)
-        
-        # Si user_processus_uuids est None, l'utilisateur est super admin (is_staff ET is_superuser)
-        if user_processus_uuids is None:
-            # Super admin : voir toutes les notifications sans filtre
-            traitements = TraitementPac.objects.filter(
-                details_pac__isnull=False,
-                delai_realisation__isnull=False
-            ).select_related(
-                'details_pac', 
-                'details_pac__pac',
-                'details_pac__pac__processus',
-                'details_pac__nature',
-                'type_action'
-            ).prefetch_related(
-                'responsables_directions',
-                'responsables_sous_directions'
-            )
-        elif not user_processus_uuids:
-            return Response({
-                'success': True,
-                'data': [],
-                'count': 0,
-                'message': 'Aucune notification trouvée pour vos processus attribués.'
-            }, status=status.HTTP_200_OK)
-        else:
-            # Récupérer tous les traitements des processus de l'utilisateur avec leurs délais de réalisation
-            traitements = TraitementPac.objects.filter(
-                details_pac__isnull=False,
-                details_pac__pac__processus__uuid__in=user_processus_uuids,
-            delai_realisation__isnull=False
-        ).select_related(
-            'details_pac', 
-            'details_pac__pac',
-            'details_pac__pac__processus',
-            'details_pac__nature',
-            'type_action'
-        ).prefetch_related(
-            'responsables_directions',
-            'responsables_sous_directions'
-        )
-        
-        notifications = []
-        
-        for traitement in traitements:
-            try:
-                # Vérifier que le traitement a bien un details_pac et un pac
-                if not traitement.details_pac or not traitement.details_pac.pac:
-                    continue
-                    
-                delai_date = traitement.delai_realisation
-                if not delai_date:
-                    continue
-                
-                # Convertir en date si nécessaire
-                if isinstance(delai_date, dt_class):
-                    delai_date = delai_date.date()
-                
-                # Calculer la différence en jours
-                try:
-                    diff_days = (delai_date - today).days
-                except (TypeError, AttributeError) as e:
-                    logger.warning(f"[pac_upcoming_notifications] Erreur lors du calcul de la différence de jours: {e}")
-                    continue
-                
-                # Inclure les traitements arrivés à terme (en retard) et bientôt à terme (dans les 7 prochains jours)
-                if diff_days <= 7:
-                    # Déterminer la priorité
-                    if diff_days < 0:
-                        priority = 'high'  # En retard
-                        delai_label = f'En retard de {abs(diff_days)} jour{"s" if abs(diff_days) > 1 else ""}'
-                    elif diff_days == 0:
-                        priority = 'high'  # Échéance aujourd'hui
-                        delai_label = 'Échéance aujourd\'hui'
-                    elif diff_days <= 3:
-                        priority = 'high'  # Dans les 3 prochains jours
-                        delai_label = f'Échéance dans {diff_days} jour{"s" if diff_days > 1 else ""}'
-                    else:
-                        priority = 'medium'  # Dans 4-7 jours
-                        delai_label = f'Échéance dans {diff_days} jours'
-                    
-                    # Construire le titre
-                    pac = traitement.details_pac.pac
-                    numero_pac = traitement.details_pac.numero_pac or f'PAC-{pac.uuid}'
-                    action_title = traitement.action[:50] if traitement.action else 'Action non spécifiée'
-                    if len(traitement.action or '') > 50:
-                        action_title += '...'
-                    
-                    title = f'{numero_pac} - Action : {action_title}'
-                    
-                    # Construire l'URL d'action
-                    action_url = f'/pac/{pac.uuid}'
-                    message = f'Délai de réalisation {delai_label}'
-                    
-                    # Récupérer les informations supplémentaires
-                    nature_label = traitement.details_pac.nature.nom if traitement.details_pac.nature else None
-                    type_action = traitement.type_action.nom if traitement.type_action else None
-                    
-                    notifications.append({
-                        'id': str(traitement.uuid),
-                        'type': 'traitement',
-                        'title': title,
-                        'numero_pac': numero_pac,
-                        'action': (traitement.action or 'Action non spécifiée')[:80],
-                        'message': message,
-                        'due_date': delai_date.isoformat() if hasattr(delai_date, 'isoformat') else str(delai_date),
-                        'priority': priority,
-                        'action_url': action_url,
-                        'nature_label': nature_label,
-                        'type_action': type_action,
-                        'delai_label': delai_label,
-                        'pac_uuid': str(pac.uuid),
-                        'traitement_uuid': str(traitement.uuid),
-                        'notification_uuid': None,
-                        'read_at': None,
-                    })
-
-                    # Enregistrer/mettre à jour la notification côté serveur (table parametre.Notification)
-                    try:
-                        content_type = ContentType.objects.get_for_model(TraitementPac)
-                        notif, created = Notification.objects.get_or_create(
-                            user=request.user,
-                            content_type=content_type,
-                            object_id=traitement.uuid,
-                            source_app='pac',
-                            notification_type='traitement',
-                            defaults={
-                                'title': title,
-                                'message': message,
-                                'action_url': action_url,
-                                'priority': priority,
-                                'due_date': delai_date,
-                            },
-                        )
-                        if not created:
-                            updated_fields = []
-                            if notif.title != title:
-                                notif.title = title
-                                updated_fields.append('title')
-                            if notif.message != message:
-                                notif.message = message
-                                updated_fields.append('message')
-                            if notif.action_url != action_url:
-                                notif.action_url = action_url
-                                updated_fields.append('action_url')
-                            if notif.priority != priority:
-                                notif.priority = priority
-                                updated_fields.append('priority')
-                            if notif.due_date != delai_date:
-                                notif.due_date = delai_date
-                                updated_fields.append('due_date')
-                            if updated_fields:
-                                notif.save(update_fields=updated_fields + ['updated_at'])
-                        notifications[-1]['notification_uuid'] = str(notif.uuid)
-                        notifications[-1]['read_at'] = notif.read_at.isoformat() if notif.read_at else None
-                    except Exception as notif_err:
-                        logger.warning(f"[pac_upcoming_notifications] Notification get_or_create: {notif_err}")
-            except Exception as e:
-                logger.error(f"[pac_upcoming_notifications] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                continue
-        
-        # Trier par priorité (high en premier) puis par date
-        notifications.sort(key=lambda x: (
-            0 if x['priority'] == 'high' else 1 if x['priority'] == 'medium' else 2,
-            x['due_date']
-        ))
-        
-        logger.info(f"[pac_upcoming_notifications] {len(notifications)} notifications trouvées pour l'utilisateur {request.user.username}")
-        
-        return Response({
-            'success': True,
-            'notifications': notifications
-        }, status=status.HTTP_200_OK)
-        
+        data = get_upcoming_notifications_data(request.user)
+        return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des notifications: {str(e)}")
+        logger.error("Erreur lors de la récupération des notifications PAC: %s", e)
         import traceback
         logger.error(traceback.format_exc())
         return Response({
             'success': False,
             'notifications': [],
-            'error': 'Erreur lors de la récupération des notifications'
+            'error': 'Erreur lors de la récupération des notifications',
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
