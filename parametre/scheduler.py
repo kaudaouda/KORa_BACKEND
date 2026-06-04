@@ -135,6 +135,16 @@ def send_cdr_reminders_job():
         logger.error("SCHEDULER — erreur rappels CDR: %s", e, exc_info=True)
 
 
+def flush_expired_tokens_job():
+    """Purge les tokens JWT expirés de la blacklist simplejwt (OutstandingToken / BlacklistedToken)."""
+    try:
+        logger.info("SCHEDULER — purge des tokens JWT expirés")
+        call_command('flushexpiredtokens')
+        logger.info("SCHEDULER — purge des tokens JWT expirés terminée")
+    except Exception as e:
+        logger.error("SCHEDULER — erreur purge tokens JWT: %s", e, exc_info=True)
+
+
 # ─────────────────────────────────────────────
 # Démarrage / arrêt
 # ─────────────────────────────────────────────
@@ -224,6 +234,23 @@ def start_scheduler():
                 logger.info("Job %s present en DB, DjangoJobStore doit le charger", job_id_cdr)
         else:
             logger.info("Job %s deja charge depuis la DB", job_id_cdr)
+
+        job_id_flush_tokens = 'flush_expired_tokens_weekly'
+        if job_id_flush_tokens not in existing_jobs:
+            if not DjangoJob.objects.filter(id=job_id_flush_tokens).exists():
+                scheduler.add_job(
+                    flush_expired_tokens_job,
+                    trigger='cron', day_of_week='sun', hour=2, minute=0,
+                    id=job_id_flush_tokens,
+                    name='Purge hebdomadaire des tokens JWT expirés',
+                    replace_existing=False,
+                    max_instances=1, coalesce=True, misfire_grace_time=3600,
+                )
+                logger.info("Job %s cree (dimanche 2h00)", job_id_flush_tokens)
+            else:
+                logger.info("Job %s present en DB, DjangoJobStore doit le charger", job_id_flush_tokens)
+        else:
+            logger.info("Job %s deja charge depuis la DB", job_id_flush_tokens)
 
         if not scheduler.running:
             raise RuntimeError("Le scheduler n'est pas actif apres le demarrage")

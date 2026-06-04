@@ -64,10 +64,29 @@ ALLOWED_MIME_TYPES = {
     'application/octet-stream',
 }
 
+# Magic bytes attendus par extension (8 premiers octets suffisent).
+# Les formats texte (.txt, .csv) n'ont pas de signature binaire fiable.
+_EXT_MAGIC = {
+    '.pdf':  [b'%PDF'],
+    '.jpg':  [b'\xff\xd8\xff'],
+    '.jpeg': [b'\xff\xd8\xff'],
+    '.png':  [b'\x89PNG\r\n\x1a\n'],
+    '.gif':  [b'GIF87a', b'GIF89a'],
+    # Formats Office modernes (.docx/.xlsx/.pptx) et .zip partagent la signature ZIP
+    '.docx': [b'PK\x03\x04'],
+    '.xlsx': [b'PK\x03\x04'],
+    '.pptx': [b'PK\x03\x04'],
+    '.zip':  [b'PK\x03\x04'],
+    # Formats Office legacy (OLE2 Compound Document)
+    '.doc':  [b'\xd0\xcf\x11\xe0'],
+    '.xls':  [b'\xd0\xcf\x11\xe0'],
+    '.ppt':  [b'\xd0\xcf\x11\xe0'],
+}
+
 
 def validate_uploaded_file(fichier):
     """
-    Valide un fichier uploadé : taille, extension et type MIME.
+    Valide un fichier uploadé : taille, extension, type MIME et magic bytes.
     Retourne un message d'erreur (str) ou None si le fichier est valide.
     """
     if fichier.size > MAX_UPLOAD_SIZE:
@@ -83,6 +102,17 @@ def validate_uploaded_file(fichier):
     content_type = content_type.split(';')[0].strip().lower()
     if not content_type or content_type not in ALLOWED_MIME_TYPES:
         return f'Type de fichier non autorisé ({content_type}).'
+
+    # Vérification des magic bytes : le contenu doit correspondre à l'extension déclarée.
+    expected_signatures = _EXT_MAGIC.get(ext)
+    if expected_signatures:
+        try:
+            header = fichier.read(8)
+            fichier.seek(0)
+            if not any(header.startswith(sig) for sig in expected_signatures):
+                return f'Le contenu du fichier ne correspond pas à son extension ({ext}).'
+        except (IOError, OSError):
+            return 'Impossible de lire le fichier pour vérification.'
 
     return None
 

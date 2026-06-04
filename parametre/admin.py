@@ -1301,7 +1301,7 @@ class UserProcessusRoleAdmin(admin.ModelAdmin):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors de la récupération des processus utilisateur: {e}", exc_info=True)
+            logger.error("Erreur lors de la récupération des processus utilisateur: %s", e, exc_info=True)
             return JsonResponse({'error': str(e)}, status=500)
     
     def get_user_roles(self, request):
@@ -1337,7 +1337,7 @@ class UserProcessusRoleAdmin(admin.ModelAdmin):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors de la récupération des rôles utilisateur: {e}", exc_info=True)
+            logger.error("Erreur lors de la récupération des rôles utilisateur: %s", e, exc_info=True)
             return JsonResponse({'error': str(e)}, status=500)
     
     def save_model(self, request, obj, form, change):

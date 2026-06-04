@@ -181,7 +181,7 @@ def document_create(request):
                 except Exception as media_error:
                     # Si l'upload du média échoue, on continue quand même
                     # Le document est créé mais sans média
-                    logger.error(f"Erreur lors de la création du média pour le document {document.uuid}: {str(media_error)}")
+                    logger.error("Erreur lors de la création du média pour le document %s: %s", document.uuid, media_error)
 
             # Log de l'activité
             try:
@@ -189,7 +189,7 @@ def document_create(request):
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 log_document_creation(request.user, document, ip_address, user_agent)
             except Exception as log_error:
-                logger.error(f"Erreur lors du logging de la création du document: {log_error}")
+                logger.error("Erreur lors du logging de la création du document: %s", log_error)
 
             response_serializer = DocumentSerializer(document, context={'request': request})
             return Response(
@@ -238,7 +238,7 @@ def document_update(request, uuid):
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 log_document_update(request.user, document, ip_address, user_agent)
             except Exception as log_error:
-                logger.error(f"Erreur lors du logging de la mise à jour du document: {log_error}")
+                logger.error("Erreur lors du logging de la mise à jour du document: %s", log_error)
 
             response_serializer = DocumentSerializer(document, context={'request': request})
             return Response(
@@ -354,7 +354,7 @@ def document_amend(request, uuid):
                         media=media
                     )
                 except Exception as media_error:
-                    logger.error(f"Erreur lors de la création du média: {str(media_error)}")
+                    logger.error("Erreur lors de la création du média: %s", media_error)
 
             # Log de l'activité
             try:
@@ -362,7 +362,7 @@ def document_amend(request, uuid):
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 log_document_creation(request.user, amended_document, ip_address, user_agent)
             except Exception as log_error:
-                logger.error(f"Erreur lors du logging de la création de l'amendement: {log_error}")
+                logger.error("Erreur lors du logging de la création de l'amendement: %s", log_error)
 
             response_serializer = DocumentSerializer(amended_document, context={'request': request})
             return Response(
@@ -384,7 +384,7 @@ def document_amend(request, uuid):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'amendement: {str(e)}")
+        logger.error("Erreur lors de la création de l'amendement: %s", e)
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -416,7 +416,7 @@ def document_version_chain(request, uuid):
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la chaîne de versions: {str(e)}")
+        logger.error("Erreur lors de la récupération de la chaîne de versions: %s", e)
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

@@ -369,7 +369,7 @@ class EvaluationRisqueCreateSerializer(serializers.ModelSerializer):
             # En cas d'erreur, logger et retourner None
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors de la recherche du risque par criticité {criticite_libelle}: {str(e)}")
+            logger.error("Erreur lors de la recherche du risque par criticité %s: %s", criticite_libelle, e)
             return None
         
         return None
@@ -468,7 +468,7 @@ class EvaluationRisqueUpdateSerializer(serializers.ModelSerializer):
             # En cas d'erreur, logger et retourner None
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors de la recherche du risque par criticité {criticite_libelle}: {str(e)}")
+            logger.error("Erreur lors de la recherche du risque par criticité %s: %s", criticite_libelle, e)
             return None
         
         return None

@@ -515,18 +515,8 @@ def details_cdr_create(request):
         logger.error(f"[details_cdr_create] Erreurs de validation: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du détail CDR: {str(e)}")
-        import traceback
-        error_traceback = traceback.format_exc()
-        logger.error(error_traceback)
-        
-        # En mode développement, renvoyer plus de détails
-        from django.conf import settings
-        error_response = {'error': CDR_500_MESSAGE}
-        if settings.DEBUG:
-            error_response['details'] = str(e)
-            error_response['traceback'] = error_traceback
-        return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error("Erreur lors de la création du détail CDR: %s", e, exc_info=True)
+        return Response({'success': False, 'error': CDR_500_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -983,15 +973,8 @@ def plan_action_update(request, uuid):
             'error': 'Plan d\'action non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du plan d'action: {str(e)}")
-        import traceback
-        error_traceback = traceback.format_exc()
-        logger.error(error_traceback)
-        from django.conf import settings
-        return Response({
-            'error': CDR_500_MESSAGE,
-            **({'details': str(e), 'traceback': error_traceback} if settings.DEBUG else {})
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error("Erreur lors de la mise à jour du plan d'action: %s", e, exc_info=True)
+        return Response({'success': False, 'error': CDR_500_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])

@@ -91,7 +91,7 @@ class Command(BaseCommand):
                         user=user,
                     )
                 except Exception as log_err:
-                    logger.error(f"Erreur log: {log_err}")
+                    logger.error("Erreur log: %s", log_err)
                 self.stderr.write(self.style.ERROR(f"Echec pour {user.email}: {error_msg[:100]}"))
 
         label = "seraient envoyes" if dry_run else "envoyes"

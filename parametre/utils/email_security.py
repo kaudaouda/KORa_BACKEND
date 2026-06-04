@@ -57,7 +57,7 @@ class EmailPasswordEncryption:
             encrypted = fernet.encrypt(password.encode())
             return encrypted.decode()
         except Exception as e:
-            logger.error(f"Erreur lors du chiffrement du mot de passe: {str(e)}")
+            logger.error("Erreur lors du chiffrement du mot de passe: %s", e)
             raise ValueError("Impossible de chiffrer le mot de passe")
     
     @staticmethod
@@ -79,7 +79,7 @@ class EmailPasswordEncryption:
             decrypted = fernet.decrypt(encrypted_password.encode())
             return decrypted.decode()
         except Exception as e:
-            logger.error(f"Erreur lors du déchiffrement du mot de passe")
+            logger.error("Erreur lors du déchiffrement du mot de passe")
             raise ValueError("Impossible de déchiffrer le mot de passe")
 
 
@@ -127,7 +127,7 @@ class EmailValidator:
         # Vérifier que le domaine n'est pas suspect
         domain = email.split('@')[-1]
         if domain in cls.SUSPICIOUS_DOMAINS:
-            logger.warning(f"⚠️ Domaine suspect détecté : {domain}")
+            logger.warning("Domaine suspect détecté : %s", domain)
             return False
         
         return True
@@ -148,7 +148,7 @@ class EmailValidator:
             if cls.is_valid_email(email):
                 valid_emails.append(email.strip().lower())
             else:
-                logger.warning(f"⚠️ Email invalide filtré : {email}")
+                logger.warning("Email invalide filtré : %s", email)
         
         return list(set(valid_emails))  # Dédupliquer
 
@@ -197,7 +197,7 @@ class EmailContentSanitizer:
         
         # Vérifier que l'URL est sécurisée (protocole autorisé uniquement)
         if not url.startswith(('http://', 'https://', '/')):
-            logger.warning(f"⚠️ URL suspecte : {url}")
+            logger.warning("URL suspecte : %s", url)
             return ''
         
         # Ne PAS utiliser html.escape() ici car :
@@ -210,7 +210,7 @@ class EmailContentSanitizer:
         dangerous_protocols = ['javascript:', 'data:', 'vbscript:', 'file:']
         for protocol in dangerous_protocols:
             if protocol in url_lower:
-                logger.warning(f"⚠️ URL avec protocole dangereux détecté : {url}")
+                logger.warning("URL avec protocole dangereux détecté : %s", url)
                 return ''
         
         return url
@@ -265,7 +265,7 @@ class EmailRateLimiter:
         count = cache.get(cache_key, 0)
         
         if count >= cls.MAX_EMAILS_PER_HOUR_USER:
-            logger.warning(f"⚠️ Limite d'emails dépassée pour l'utilisateur {user_id}")
+            logger.warning("Limite d'emails dépassée pour l'utilisateur %s", user_id)
             return False
         
         # Incrémenter le compteur (expire dans 1 heure)
@@ -306,7 +306,7 @@ class EmailRateLimiter:
         count = cache.get(cache_key, 0)
         
         if count >= cls.MAX_TEST_EMAILS_PER_MINUTE:
-            logger.warning(f"⚠️ Limite de tests dépassée pour l'utilisateur {user_id}")
+            logger.warning("Limite de tests dépassée pour l'utilisateur %s", user_id)
             return False
         
         # Incrémenter le compteur (expire dans 1 minute)
@@ -354,7 +354,7 @@ class SecureEmailLogger:
         """
         masked_recipient = SecureEmailLogger.mask_email(recipient)
         status = "✅ Envoyé" if success else "❌ Échec"
-        logger.info(f"{status} - Email '{subject}' -> {masked_recipient}")
+        logger.info("%s - Email '%s' -> %s", status, subject, masked_recipient)
     
     @staticmethod
     def log_security_event(event_type: str, details: Dict[str, Any]):
@@ -373,4 +373,4 @@ class SecureEmailLogger:
             else:
                 safe_details[key] = value
         
-        logger.warning(f"🔒 Événement sécurité : {event_type} - {safe_details}")
+        logger.warning("Événement sécurité : %s - %s", event_type, safe_details)

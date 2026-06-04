@@ -464,14 +464,10 @@ def create_amendement(request, tableau_initial_uuid):
         }, status=status.HTTP_400_BAD_REQUEST)
         
     except Exception as e:
-        import traceback
-        from django.conf import settings
-        error_traceback = traceback.format_exc()
-        logger.error(f"Erreur create_amendement: {str(e)}\n{error_traceback}")
+        logger.error("Erreur create_amendement: %s", e, exc_info=True)
         return Response({
-            'success': False, 
-            'error': f'Erreur lors de la création de l\'amendement: {str(e)}',
-            'traceback': error_traceback if settings.DEBUG else None
+            'success': False,
+            'error': 'Erreur lors de la création de l\'amendement.',
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2325,15 +2321,10 @@ def observations_create(request):
         raise
     except Exception as e:
         import traceback
-        from django.conf import settings
-        logger.error(
-            f"Erreur lors de la création de l'observation: {str(e)}\n{traceback.format_exc()}",
-            exc_info=True
-        )
+        logger.error("Erreur lors de la création de l'observation: %s", e, exc_info=True)
         return Response({
             'success': False,
-            'error': 'Erreur lors de la création de l\'observation',
-            'traceback': traceback.format_exc() if settings.DEBUG else None
+            'error': 'Erreur lors de la création de l\'observation.',
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
