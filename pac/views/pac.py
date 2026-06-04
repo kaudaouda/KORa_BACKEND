@@ -22,6 +22,7 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.conf import settings
 from datetime import datetime, timedelta
+from pac.services.pac_service import check_pac_completude
 from ..models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Media, Preuve, Notification, FailedLoginAttempt, LoginSecurityConfig, LoginBlock
 from parametre.views import log_pac_creation, log_pac_update, log_traitement_creation, log_suivi_creation, log_user_login, log_user_logout, get_client_ip, log_activity
@@ -748,57 +749,8 @@ def pac_delete(request, uuid):
 
 
 def _check_pac_completude(pac, numero_pac_display=None):
-    """
-    Vérifie que tous les champs obligatoires du PAC, de ses détails et de leurs
-    traitements sont renseignés avant validation.
-    Retourne None si tout est OK, sinon un message d'erreur (str).
-    """
-    details = pac.details.select_related(
-        'dysfonctionnement_recommandation', 'nature', 'categorie', 'source',
-        'traitement', 'traitement__type_action', 'traitement__responsable_direction',
-    ).prefetch_related('traitement__responsables_directions').all()
-
-    if not details.exists():
-        return "Le tableau doit avoir au moins une ligne avant d'être validé."
-
-    for detail in details:
-        # ── Champs DetailsPac ──────────────────────────────────────────
-        if not detail.libelle or not detail.libelle.strip():
-            return "Le champ « Libellé » est obligatoire pour toutes les lignes."
-        if not detail.dysfonctionnement_recommandation_id:
-            return "Le champ « Dysfonctionnement / Recommandation » est obligatoire pour toutes les lignes."
-        if not detail.nature_id:
-            return "Le champ « Nature » est obligatoire pour toutes les lignes."
-        if not detail.categorie_id:
-            return "Le champ « Catégorie » est obligatoire pour toutes les lignes."
-        if not detail.source_id:
-            return "Le champ « Source » est obligatoire pour toutes les lignes."
-        if not detail.periode_de_realisation:
-            return "Le champ « Période de réalisation » est obligatoire pour toutes les lignes."
-
-        # ── Traitement ────────────────────────────────────────────────
-        if not hasattr(detail, 'traitement') or not detail.traitement:
-            return "Toutes les lignes doivent avoir un traitement (Actions) avant validation."
-
-        t = detail.traitement
-        if not t.action or not t.action.strip():
-            return "Le champ « Actions » est obligatoire pour tous les traitements."
-        if not t.type_action_id:
-            return "Le champ « Type d'action » est obligatoire pour tous les traitements."
-
-        has_responsable = (
-            t.responsable_direction_id
-            or t.responsable_sous_direction_id
-            or t.responsables_directions.exists()
-            or t.responsables_sous_directions.exists()
-        )
-        if not has_responsable:
-            return "Au moins un « Responsable » est obligatoire pour tous les traitements."
-
-        if not t.delai_realisation:
-            return "Le champ « Délai de réalisation » est obligatoire pour tous les traitements."
-
-    return None  # Tout est complet
+    """Délègue au service métier. Retourne None si tout est OK, sinon un message d'erreur."""
+    return check_pac_completude(pac)
 
 
 @api_view(['POST'])
