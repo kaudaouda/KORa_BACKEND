@@ -102,7 +102,7 @@ def traitement_list(request):
             'count': traitements.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des traitements: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des traitements: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer les traitements'
@@ -114,16 +114,16 @@ def traitement_list(request):
 def traitement_create(request):
     """Créer un nouveau traitement"""
     try:
-        logger.info("[traitement_create] Données reçues: %s", {request.data})
+        logger.info("[traitement_create] Données reçues: %s", request.data)
         
         # Vérifier si le PAC est validé avant la création
         if 'details_pac' in request.data:
             details_pac_uuid = request.data['details_pac']
-            logger.info("[traitement_create] Recherche du DetailsPac avec UUID: %s", {details_pac_uuid})
+            logger.info("[traitement_create] Recherche du DetailsPac avec UUID: %s", details_pac_uuid)
             
             try:
                 details_pac = DetailsPac.objects.select_related('pac').get(uuid=details_pac_uuid)
-                logger.info("[traitement_create] DetailsPac trouvé: %s, PAC validé: %s", {details_pac.uuid}, {details_pac.pac.is_validated})
+                logger.info("[traitement_create] DetailsPac trouvé: %s, PAC validé: %s", details_pac.uuid, details_pac.pac.is_validated)
                 
                 # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
                 if not user_has_access_to_processus(request.user, details_pac.pac.processus.uuid):
@@ -149,7 +149,7 @@ def traitement_create(request):
                 # Vérifier si un traitement existe déjà pour ce détail
                 existing_traitement = TraitementPac.objects.filter(details_pac=details_pac).first()
                 if existing_traitement:
-                    logger.warning("[traitement_create] Un traitement existe déjà pour ce détail: %s", {existing_traitement.uuid})
+                    logger.warning("[traitement_create] Un traitement existe déjà pour ce détail: %s", existing_traitement.uuid)
                     return Response({
                         'details_pac': ["Un traitement existe déjà pour ce détail PAC. Un détail ne peut avoir qu'un seul traitement."]
                     }, status=status.HTTP_400_BAD_REQUEST)
@@ -159,7 +159,7 @@ def traitement_create(request):
                         'details_pac': ['Ce PAC est validé. Impossible de créer un nouveau traitement.']
                     }, status=status.HTTP_400_BAD_REQUEST)
             except DetailsPac.DoesNotExist:
-                logger.error("[traitement_create] DetailsPac non trouvé avec UUID: %s", {details_pac_uuid})
+                logger.error("[traitement_create] DetailsPac non trouvé avec UUID: %s", details_pac_uuid)
                 return Response({
                     'details_pac': [f'Aucun détail PAC trouvé avec l\'UUID fourni: {details_pac_uuid}']
                 }, status=status.HTTP_400_BAD_REQUEST)
@@ -177,7 +177,7 @@ def traitement_create(request):
                     user_agent=request.META.get('HTTP_USER_AGENT')
                 )
             except Exception as log_error:
-                logger.error("Erreur lors du log de création du traitement: %s", {str(log_error)})
+                logger.error("Erreur lors du log de création du traitement: %s", str(log_error))
                 # Continue même si le log échoue
 
             # Sérialiser la réponse
@@ -185,7 +185,7 @@ def traitement_create(request):
                 response_data = TraitementPacSerializer(traitement).data
                 return Response(response_data, status=status.HTTP_201_CREATED)
             except Exception as serializer_error:
-                logger.error("Erreur lors de la sérialisation du traitement créé: %s", {str(serializer_error)})
+                logger.error("Erreur lors de la sérialisation du traitement créé: %s", str(serializer_error))
                 import traceback
                 logger.error(traceback.format_exc())
                 # Le traitement a été créé, retourner au moins l'UUID
@@ -194,10 +194,10 @@ def traitement_create(request):
                     'action': traitement.action
                 }, status=status.HTTP_201_CREATED)
 
-        logger.error("[traitement_create] Erreurs de validation: %s", {serializer.errors})
+        logger.error("[traitement_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création du traitement: %s", {str(e)})
+        logger.error("Erreur lors de la création du traitement: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -234,7 +234,7 @@ def pac_traitements(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des traitements du PAC: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des traitements du PAC: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer les traitements'
@@ -266,7 +266,7 @@ def traitement_detail(request, uuid):
             'error': 'Traitement non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération du traitement: %s", {str(e)})
+        logger.error("Erreur lors de la récupération du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer le traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -295,7 +295,7 @@ def traitement_update(request, uuid):
             'error': 'Traitement non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour du traitement: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -335,7 +335,7 @@ def suivi_list(request):
             'count': suivis.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des suivis: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des suivis: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer les suivis'
@@ -373,7 +373,7 @@ def traitement_suivis(request, uuid):
                 'error': 'Traitement non trouvé'
             }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des suivis du traitement: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des suivis du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les suivis du traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -419,7 +419,7 @@ def suivi_create(request):
                     user_agent=request.META.get('HTTP_USER_AGENT')
                 )
             except Exception as log_error:
-                logger.error("Erreur lors du log de création du suivi: %s", {str(log_error)})
+                logger.error("Erreur lors du log de création du suivi: %s", str(log_error))
                 # Continue même si le log échoue
 
             # Sérialiser la réponse
@@ -427,7 +427,7 @@ def suivi_create(request):
                 response_data = PacSuiviSerializer(suivi).data
                 return Response(response_data, status=status.HTTP_201_CREATED)
             except Exception as serializer_error:
-                logger.error("Erreur lors de la sérialisation du suivi créé: %s", {str(serializer_error)})
+                logger.error("Erreur lors de la sérialisation du suivi créé: %s", str(serializer_error))
                 import traceback
                 logger.error(traceback.format_exc())
                 # Le suivi a été créé, retourner au moins l'UUID
@@ -438,7 +438,7 @@ def suivi_create(request):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création du suivi: %s", {str(e)})
+        logger.error("Erreur lors de la création du suivi: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -473,7 +473,7 @@ def suivi_detail(request, uuid):
     except PacSuivi.DoesNotExist:
         return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération du suivi: %s", {str(e)})
+        logger.error("Erreur lors de la récupération du suivi: %s", str(e))
         return Response({'error': "Impossible de récupérer le suivi"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -509,7 +509,7 @@ def suivi_update(request, uuid):
     except PacSuivi.DoesNotExist:
         return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour du suivi: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour du suivi: %s", str(e))
         return Response({'error': "Impossible de mettre à jour le suivi"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -546,7 +546,7 @@ def details_pac_list(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des détails du traitement: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des détails du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les détails'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -557,13 +557,13 @@ def details_pac_list(request, uuid):
 def details_pac_create(request):
     """Créer un nouveau détail de PAC"""
     try:
-        logger.info("[details_pac_create] Données reçues: %s", {request.data})
+        logger.info("[details_pac_create] Données reçues: %s", request.data)
         
         # Vérifier si le PAC est validé avant la création
         if 'pac' in request.data:
             try:
                 pac = Pac.objects.get(uuid=request.data['pac'])
-                logger.info("[details_pac_create] PAC trouvé: %s, validé: %s", {pac.uuid}, {pac.is_validated})
+                logger.info("[details_pac_create] PAC trouvé: %s, validé: %s", pac.uuid, pac.is_validated)
                 
                 # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
                 if not user_has_access_to_processus(request.user, pac.processus.uuid):
@@ -591,19 +591,19 @@ def details_pac_create(request):
                         'error': 'Ce PAC est validé. Impossible de créer un nouveau détail.'
                     }, status=status.HTTP_400_BAD_REQUEST)
             except Pac.DoesNotExist:
-                logger.error("[details_pac_create] PAC non trouvé avec UUID: %s", {request.data['pac']})
+                logger.error("[details_pac_create] PAC non trouvé avec UUID: %s", request.data['pac'])
                 pass  # La validation du serializer gérera cette erreur
         
         serializer = DetailsPacCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             detail = serializer.save()
-            logger.info("[details_pac_create] ✅ Détail créé avec succès: %s", {detail.uuid})
+            logger.info("[details_pac_create] ✅ Détail créé avec succès: %s", detail.uuid)
             return Response(DetailsPacSerializer(detail).data, status=status.HTTP_201_CREATED)
         
-        logger.error("[details_pac_create] Erreurs de validation: %s", {serializer.errors})
+        logger.error("[details_pac_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création du détail: %s", {str(e)})
+        logger.error("Erreur lors de la création du détail: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -630,7 +630,7 @@ def details_pac_detail(request, uuid):
             'error': 'Détail non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération du détail: %s", {str(e)})
+        logger.error("Erreur lors de la récupération du détail: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer le détail'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -659,7 +659,7 @@ def details_pac_update(request, uuid):
             'error': 'Détail non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour du détail: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour du détail: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le détail'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -696,7 +696,7 @@ def details_pac_delete(request, uuid):
             'error': 'Détail non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la suppression du détail: %s", {str(e)})
+        logger.error("Erreur lors de la suppression du détail: %s", str(e))
         return Response({
             'error': 'Impossible de supprimer le détail'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

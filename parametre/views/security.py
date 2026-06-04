@@ -211,7 +211,7 @@ def admin_security_unblock(request, block_id):
         block = LoginBlock.objects.get(pk=block_id)
         value = block.value
         block.delete()
-        logger.info("[SECURITY] Déblocage manuel de '%s' par %s", {value}, {request.user.username})
+        logger.info("[SECURITY] Déblocage manuel de '%s' par %s", value, request.user.username)
         return Response({'success': True})
     except LoginBlock.DoesNotExist:
         return Response({'error': 'Blocage introuvable.'}, status=status.HTTP_404_NOT_FOUND)
@@ -261,7 +261,7 @@ def admin_security_config(request):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     config.save()
-    logger.info("[SECURITY] Config mise à jour par %s", {request.user.username})
+    logger.info("[SECURITY] Config mise à jour par %s", request.user.username)
     return Response(_serialize_config(config))
 
 
@@ -316,7 +316,7 @@ def admin_throttle_config(request):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     config.save()  # invalide le cache throttle_config
-    logger.info("[THROTTLE] Config mise à jour par %s", {request.user.username})
+    logger.info("[THROTTLE] Config mise à jour par %s", request.user.username)
     return Response(_serialize_throttle_config(config))
 
 

@@ -86,7 +86,7 @@ def application_config_list(request):
         ]
         return JsonResponse(data, safe=False)
     except Exception as e:
-        logger.error("Erreur application_config_list: %s", {e})
+        logger.error("Erreur application_config_list: %s", e)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -110,7 +110,7 @@ def application_config_toggle(request, app_name):
     except ApplicationConfig.DoesNotExist:
         return JsonResponse({'error': 'Application non trouvée'}, status=404)
     except Exception as e:
-        logger.error("Erreur application_config_toggle: %s", {e})
+        logger.error("Erreur application_config_toggle: %s", e)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -169,7 +169,7 @@ def app_status_stream(request):
             data, last_hash = _snapshot()
             yield _event('status', data)
         except Exception as e:
-            logger.error("[SSE] Erreur initialisation (%s): %s", {username}, {e})
+            logger.error("[SSE] Erreur initialisation (%s): %s", username, e)
             return
 
         while True:
@@ -189,10 +189,10 @@ def app_status_stream(request):
                         heartbeat_ticks = 0
 
             except GeneratorExit:
-                logger.info("[SSE] Client déconnecté : %s", {username})
+                logger.info("[SSE] Client déconnecté : %s", username)
                 break
             except Exception as e:
-                logger.error("[SSE] Erreur stream (%s): %s", {username}, {e})
+                logger.error("[SSE] Erreur stream (%s): %s", username, e)
                 break
 
     response = StreamingHttpResponse(
@@ -235,6 +235,6 @@ def app_status(request):
             }
         return JsonResponse(data)
     except Exception as e:
-        logger.error("Erreur app_status: %s", {e})
+        logger.error("Erreur app_status: %s", e)
         return JsonResponse({}, status=200)
 

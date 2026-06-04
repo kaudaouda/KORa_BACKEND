@@ -510,7 +510,7 @@ def recent_activities(request):
         }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error("Erreur lors de la récupération des activités: %s", {e})
+        logger.error("Erreur lors de la récupération des activités: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des activités',
@@ -559,7 +559,7 @@ def user_activities(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error("Erreur lors de la récupération des activités utilisateur: %s", {e})
+        logger.error("Erreur lors de la récupération des activités utilisateur: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des activités',
@@ -629,7 +629,7 @@ def admin_notifications_list(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error("Erreur lors de la récupération des notifications admin: %s", {e})
+        logger.error("Erreur lors de la récupération des notifications admin: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des notifications',
@@ -684,7 +684,7 @@ def admin_email_logs(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error("Erreur lors de la récupération des logs email: %s", {e})
+        logger.error("Erreur lors de la récupération des logs email: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des logs email',

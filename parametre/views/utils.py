@@ -124,10 +124,10 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
             browser=browser,
             os_name=os_name,
         )
-        logger.info("Activité enregistrée: %s", {activity_log})
+        logger.info("Activité enregistrée: %s", activity_log)
         return activity_log
     except Exception as e:
-        logger.error("Erreur lors de l'enregistrement de l'activité: %s", {e})
+        logger.error("Erreur lors de l'enregistrement de l'activité: %s", e)
         return None
 
 
@@ -198,7 +198,7 @@ def get_model_list_data(model_class, order_by='nom', include_inactive=False):
         
         return data
     except Exception as e:
-        logger.error("Erreur lors de la récupération des données %s: %s", {model_class.__name__}, {e})
+        logger.error("Erreur lors de la récupération des données %s: %s", model_class.__name__, e)
         raise e
 
 

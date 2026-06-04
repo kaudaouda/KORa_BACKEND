@@ -129,7 +129,7 @@ def media_create(request):
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
-        logger.error("Erreur lors de la création du média: %s", {str(e)})
+        logger.error("Erreur lors de la création du média: %s", str(e))
         return Response({
             'error': f'Impossible de créer le média: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -161,7 +161,7 @@ def media_update_description(request, uuid):
             }
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour de la description: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour de la description: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour la description'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -182,7 +182,7 @@ def media_list(request):
             })
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la liste des médias: %s", {str(e)})
+        logger.error("Erreur lors de la liste des médias: %s", str(e))
         return Response({'error': 'Impossible de lister les médias'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -206,7 +206,7 @@ def preuve_create_with_medias(request):
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_201_CREATED)
     except Exception as e:
-        logger.error("Erreur lors de la création de la preuve: %s", {str(e)})
+        logger.error("Erreur lors de la création de la preuve: %s", str(e))
         return Response({'error': 'Impossible de créer la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -242,7 +242,7 @@ def preuve_add_medias(request, uuid):
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("[PREUVE_ADD_MEDIAS] Erreur lors de l'ajout de médias à la preuve: %s", {str(e)})
+        logger.error("[PREUVE_ADD_MEDIAS] Erreur lors de l'ajout de médias à la preuve: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': 'Impossible d\'ajouter les médias à la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -284,7 +284,7 @@ def preuve_remove_media(request, uuid, media_uuid):
             }
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la suppression du média: %s", {str(e)})
+        logger.error("Erreur lors de la suppression du média: %s", str(e))
         return Response({'error': 'Impossible de supprimer le média'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -312,6 +312,6 @@ def preuves_list(request):
             })
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la liste des preuves: %s", {str(e)})
+        logger.error("Erreur lors de la liste des preuves: %s", str(e))
         return Response({'error': 'Impossible de lister les preuves'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

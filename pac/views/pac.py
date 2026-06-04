@@ -80,7 +80,7 @@ def processus_list(request):
         serializer = ProcessusSerializer(processus, many=True)
         return Response(serializer.data)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des processus: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des processus: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les processus'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -97,7 +97,7 @@ def processus_create(request):
             return Response(ProcessusSerializer(processus).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création du processus: %s", {str(e)})
+        logger.error("Erreur lors de la création du processus: %s", str(e))
         return Response({
             'error': 'Impossible de créer le processus'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -124,7 +124,7 @@ def processus_detail(request, uuid):
             'error': 'Processus non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération du processus: %s", {str(e)})
+        logger.error("Erreur lors de la récupération du processus: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer le processus'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -137,7 +137,7 @@ def processus_detail(request, uuid):
 def pac_list(request):
     """Liste des PACs de l'utilisateur connecté avec leurs détails"""
     try:
-        logger.info("[pac_list] Utilisateur connecté: %s (ID: %s)", {request.user.username}, {request.user.id})
+        logger.info("[pac_list] Utilisateur connecté: %s (ID: %s)", request.user.username, request.user.id)
 
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
@@ -154,7 +154,7 @@ def pac_list(request):
             'details__source'
         )
         elif not user_processus_uuids:
-            logger.info("[pac_list] Aucun processus assigné pour l'utilisateur %s", {request.user.username})
+            logger.info("[pac_list] Aucun processus assigné pour l'utilisateur %s", request.user.username)
             return Response({
                 'success': True,
                 'data': [],
@@ -173,18 +173,18 @@ def pac_list(request):
             )
         # ========== FIN FILTRAGE ==========
 
-        logger.info("[pac_list] Nombre de PACs pour l'utilisateur %s: %s", {request.user.username}, {pacs.count()})
+        logger.info("[pac_list] Nombre de PACs pour l'utilisateur %s: %s", request.user.username, pacs.count())
 
         # Utiliser PacCompletSerializer pour inclure les détails
         serializer = PacCompletSerializer(pacs, many=True)
-        logger.info("[pac_list] Données sérialisées: %s PACs", {len(serializer.data)})
+        logger.info("[pac_list] Données sérialisées: %s PACs", len(serializer.data))
         return Response({
             'success': True,
             'data': serializer.data,
             'count': pacs.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des PACs: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des PACs: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les PACs'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -199,7 +199,7 @@ def pac_create(request):
     Retourne 400 si doublon.
     """
     try:
-        logger.info("[pac_create] Données reçues: %s", {request.data})
+        logger.info("[pac_create] Données reçues: %s", request.data)
         data = request.data.copy()
         clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
 
@@ -279,11 +279,11 @@ def pac_create(request):
         # ========== CRÉATION ==========
         serializer = PacCreateSerializer(data=data, context={'request': request})
         if not serializer.is_valid():
-            logger.error("[pac_create] Erreurs de validation: %s", {serializer.errors})
+            logger.error("[pac_create] Erreurs de validation: %s", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         pac = serializer.save()
-        logger.info("[pac_create] PAC créé: %s", {pac.uuid})
+        logger.info("[pac_create] PAC créé: %s", pac.uuid)
 
         log_pac_creation(
             user=request.user,
@@ -365,7 +365,7 @@ def pac_create(request):
                             user_agent=request.META.get('HTTP_USER_AGENT')
                         )
                     except Exception as log_err:
-                        logger.warning("[pac_create] Erreur log clonage: %s", {log_err})
+                        logger.warning("[pac_create] Erreur log clonage: %s", log_err)
 
         return Response({
             'success': True,
@@ -375,7 +375,7 @@ def pac_create(request):
 
     except Exception as e:
         import traceback
-        logger.error("[pac_create] Erreur: %s\n%s", {str(e)}, {traceback.format_exc()})
+        logger.error("[pac_create] Erreur: %s\n%s", str(e), traceback.format_exc())
         return Response({
             'success': False,
             'error': 'Impossible de créer le PAC',
@@ -401,7 +401,7 @@ def pac_detail(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération du PAC: %s", {str(e)})
+        logger.error("Erreur lors de la récupération du PAC: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer le PAC'
@@ -445,7 +445,7 @@ def pac_complet(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la récupération du PAC complet: %s", {str(e)})
+        logger.error("Erreur lors de la récupération du PAC complet: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer le PAC complet'
@@ -460,7 +460,7 @@ def pac_get_or_create(request):
     Si num_amendement est absent, le calcule automatiquement.
     """
     try:
-        logger.info("[pac_get_or_create] Début - données reçues: %s", {request.data})
+        logger.info("[pac_get_or_create] Début - données reçues: %s", request.data)
         data = request.data
 
         def _to_uuid(val):
@@ -488,7 +488,7 @@ def pac_get_or_create(request):
         else:
             num_amendement = None
 
-        logger.info("[pac_get_or_create] annee_uuid=%s, processus_uuid=%s, num_amendement=%s", {annee_uuid}, {processus_uuid}, {num_amendement})
+        logger.info("[pac_get_or_create] annee_uuid=%s, processus_uuid=%s, num_amendement=%s", annee_uuid, processus_uuid, num_amendement)
 
         if not (annee_uuid and processus_uuid):
             logger.warning("[pac_get_or_create] annee ou processus manquant")
@@ -509,9 +509,9 @@ def pac_get_or_create(request):
             logger.info("[pac_get_or_create] num_amendement absent, calcul automatique")
             try:
                 num_amendement = _get_next_num_amendement_for_pac(request.user, annee_uuid, processus_uuid)
-                logger.info("[pac_get_or_create] num_amendement automatique: %s", {num_amendement})
+                logger.info("[pac_get_or_create] num_amendement automatique: %s", num_amendement)
             except Exception as tt_error:
-                logger.error("[pac_get_or_create] Erreur calcul num_amendement: %s", {tt_error})
+                logger.error("[pac_get_or_create] Erreur calcul num_amendement: %s", tt_error)
                 import traceback
                 logger.error(traceback.format_exc())
                 return Response({
@@ -545,7 +545,7 @@ def pac_get_or_create(request):
                 annee__uuid=annee_uuid,
                 num_amendement=num_amendement,
             )
-            logger.info("[pac_get_or_create] PAC existant trouvé: %s", {pac.uuid})
+            logger.info("[pac_get_or_create] PAC existant trouvé: %s", pac.uuid)
             serializer = PacSerializer(pac)
             response_data = dict(serializer.data)
             response_data['created'] = False
@@ -597,16 +597,16 @@ def pac_get_or_create(request):
             }
             if initial_ref_uuid:
                 create_payload['initial_ref'] = initial_ref_uuid
-            logger.info("[pac_get_or_create] Payload création: %s", {create_payload})
+            logger.info("[pac_get_or_create] Payload création: %s", create_payload)
             create_serializer = PacCreateSerializer(data=create_payload, context={'request': request})
 
             if create_serializer.is_valid():
                 logger.info("[pac_get_or_create] Serializer valide, sauvegarde...")
                 try:
                     pac = create_serializer.save()
-                    logger.info("[pac_get_or_create] PAC créé avec succès: %s", {pac.uuid})
+                    logger.info("[pac_get_or_create] PAC créé avec succès: %s", pac.uuid)
                 except Exception as save_error:
-                    logger.error("[pac_get_or_create] Erreur lors de la sauvegarde: %s", {save_error})
+                    logger.error("[pac_get_or_create] Erreur lors de la sauvegarde: %s", save_error)
                     import traceback
                     logger.error(traceback.format_exc())
                     if 'UNIQUE constraint' in str(save_error):
@@ -635,7 +635,7 @@ def pac_get_or_create(request):
                         user_agent=request.META.get('HTTP_USER_AGENT')
                     )
                 except Exception as log_error:
-                    logger.error("[pac_get_or_create] Erreur log (non bloquant): %s", {log_error})
+                    logger.error("[pac_get_or_create] Erreur log (non bloquant): %s", log_error)
 
                 try:
                     serializer = PacSerializer(pac)
@@ -643,19 +643,19 @@ def pac_get_or_create(request):
                     response_data['created'] = True
                     return Response(response_data, status=status.HTTP_201_CREATED)
                 except Exception as serializer_error:
-                    logger.error("[pac_get_or_create] Erreur sérialisation: %s", {serializer_error})
+                    logger.error("[pac_get_or_create] Erreur sérialisation: %s", serializer_error)
                     return Response({
                         'error': 'Erreur lors de la sérialisation du PAC',
                         'details': str(serializer_error)
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            logger.error("[pac_get_or_create] Erreurs de validation: %s", {create_serializer.errors})
+            logger.error("[pac_get_or_create] Erreurs de validation: %s", create_serializer.errors)
             return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
-        logger.error("[pac_get_or_create] Erreur exception non gérée: %s", {str(e)})
+        logger.error("[pac_get_or_create] Erreur exception non gérée: %s", str(e))
         import traceback
-        logger.error("[pac_get_or_create] Traceback: %s", {traceback.format_exc()})
+        logger.error("[pac_get_or_create] Traceback: %s", traceback.format_exc())
         return Response({
             'error': 'Impossible de traiter la demande',
             'details': str(e)
@@ -700,7 +700,7 @@ def pac_update(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour du PAC: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour du PAC: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -725,7 +725,7 @@ def pac_delete(request, uuid):
 
         # Log de l'activité avant suppression
         logger.info(
-            "Suppression PAC - User: %s, PAC: %s, UUID: %s, IP: %s", {request.user.email}, {pac_info['libelle']}, {pac_info['uuid']}, {get_client_ip(request)}
+            "Suppression PAC - User: %s, PAC: %s, UUID: %s, IP: %s", request.user.email, pac_info['libelle'], pac_info['uuid'], get_client_ip(request)
         )
 
         # Suppression du PAC (cascade sur traitements et suivis)
@@ -740,7 +740,7 @@ def pac_delete(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la suppression du PAC: %s", {str(e)})
+        logger.error("Erreur lors de la suppression du PAC: %s", str(e))
         return Response({
             'error': 'Impossible de supprimer le PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -779,7 +779,7 @@ def pac_validate(request, uuid):
         pac.save()
         
         logger.info(
-            "PAC validé par %s: PAC UUID: %s, IP: %s", {request.user.username}, {uuid}, {get_client_ip(request)}
+            "PAC validé par %s: PAC UUID: %s, IP: %s", request.user.username, uuid, get_client_ip(request)
         )
         
         return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
@@ -789,7 +789,7 @@ def pac_validate(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la validation du PAC: %s", {str(e)})
+        logger.error("Erreur lors de la validation du PAC: %s", str(e))
         return Response({
             'error': 'Impossible de valider le PAC',
             'details': str(e)
@@ -856,7 +856,7 @@ def pac_validate_by_type(request):
                 validated_count += 1
         
         logger.info(
-            "%s PAC(s) validé(s) par %s: processus=%s, annee=%s, num_amendement=%s, IP: %s", {validated_count}, {request.user.username}, {processus_uuid}, {annee_uuid}, {num_amendement}, {get_client_ip(request)}
+            "%s PAC(s) validé(s) par %s: processus=%s, annee=%s, num_amendement=%s, IP: %s", validated_count, request.user.username, processus_uuid, annee_uuid, num_amendement, get_client_ip(request)
         )
         
         return Response({
@@ -866,7 +866,7 @@ def pac_validate_by_type(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error("Erreur lors de la validation par amendement: %s", {str(e)})
+        logger.error("Erreur lors de la validation par amendement: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -897,12 +897,12 @@ def pac_unvalidate(request, uuid):
         return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
         
     except Pac.DoesNotExist:
-        logger.error("Tentative de dévalidation d'un PAC inexistant: %s par %s", {uuid}, {request.user.username})
+        logger.error("Tentative de dévalidation d'un PAC inexistant: %s par %s", uuid, request.user.username)
         return Response({
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la dévalidation du PAC %s: %s", {uuid}, {str(e)})
+        logger.error("Erreur lors de la dévalidation du PAC %s: %s", uuid, str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
