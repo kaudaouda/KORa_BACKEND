@@ -80,7 +80,7 @@ def details_ap_list(request):
             'count': details.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur dans details_ap_list: {str(e)}')
+        logger.error("Erreur dans details_ap_list: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -122,7 +122,7 @@ def details_ap_by_activite_periodique(request, ap_uuid):
             'error': 'Activité Périodique non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans details_ap_by_activite_periodique: {str(e)}')
+        logger.error("Erreur dans details_ap_by_activite_periodique: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -176,12 +176,12 @@ def details_ap_create(request):
             detail = serializer.save()
             # Utiliser DetailsAPSerializer pour la réponse (avec tous les champs read_only)
             response_serializer = DetailsAPSerializer(detail)
-            logger.info(f"[details_ap_create] ✅ Détail créé avec succès: {detail.uuid}, numero_ap: {detail.numero_ap}")
+            logger.info("[details_ap_create] ✅ Détail créé avec succès: %s, numero_ap: %s", detail.uuid, detail.numero_ap)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f'Erreur dans details_ap_create: {str(e)}')
+        logger.error("Erreur dans details_ap_create: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -233,7 +233,7 @@ def details_ap_update(request, uuid):
             'error': 'Détail AP non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans details_ap_update: {str(e)}')
+        logger.error("Erreur dans details_ap_update: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -289,7 +289,7 @@ def details_ap_delete(request, uuid):
             'error': 'Détail AP non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans details_ap_delete: {str(e)}')
+        logger.error("Erreur dans details_ap_delete: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({

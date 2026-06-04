@@ -455,7 +455,7 @@ def dashboard_stats(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statistiques: {str(e)}")
+        logger.error("Erreur lors de la récupération des statistiques: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des statistiques'

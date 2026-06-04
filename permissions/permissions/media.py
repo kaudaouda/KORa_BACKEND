@@ -24,7 +24,7 @@ class DashboardPreuveUpdatePermission(AppActionPermission):
                         and periodicite.indicateur_id.objective_id.tableau_bord.processus):
                     return str(periodicite.indicateur_id.objective_id.tableau_bord.processus.uuid)
             except Exception as e:
-                logger.error(f"[DashboardPreuveUpdatePermission] Erreur extraction processus: {e}")
+                logger.error("[DashboardPreuveUpdatePermission] Erreur extraction processus: %s", e)
         return super()._extract_processus_uuid(request, view, obj)
 
 
@@ -71,7 +71,7 @@ class DashboardMediaUpdatePermission(BasePermission):
                 if can:
                     return True
         except Exception as e:
-            logger.error(f"[DashboardMediaUpdatePermission] Erreur: {e}")
+            logger.error("[DashboardMediaUpdatePermission] Erreur: %s", e)
         return False
 
 
@@ -102,9 +102,8 @@ class DashboardMediaCreatePermission(BasePermission):
                     if can:
                         return True
         except Exception as e:
-            logger.error(f"[DashboardMediaCreatePermission] Erreur: {e}")
+            logger.error("[DashboardMediaCreatePermission] Erreur: %s", e)
         logger.warning(
-            f"[DashboardMediaCreatePermission] ❌ Refus: user={request.user.username} "
-            f"n'a pas update_periodicite dans aucun processus"
+            "[DashboardMediaCreatePermission] \u274c Refus: user=%s n'a pas update_periodicite dans aucun processus", request.user.username
         )
         return False

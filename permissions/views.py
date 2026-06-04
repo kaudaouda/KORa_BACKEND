@@ -66,7 +66,7 @@ def permission_actions_list(request):
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans permission_actions_list: {str(e)}")
+        logger.error("Erreur dans permission_actions_list: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des actions'
@@ -90,7 +90,7 @@ def permission_action_detail(request, action_id):
             'error': 'Action non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur dans permission_action_detail: {str(e)}")
+        logger.error("Erreur dans permission_action_detail: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération de l\'action'
@@ -141,7 +141,7 @@ def role_permission_mappings_list(request):
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans role_permission_mappings_list: {str(e)}")
+        logger.error("Erreur dans role_permission_mappings_list: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des mappings'
@@ -163,8 +163,8 @@ def role_permission_mapping_create(request):
             }, status=status.HTTP_403_FORBIDDEN)
         
         # Logger les données reçues pour debug
-        logger.info(f"Données reçues pour création mapping: {request.data}")
-        logger.info(f"Type de granted reçu: {type(request.data.get('granted'))}, valeur: {request.data.get('granted')}")
+        logger.info("Données reçues pour création mapping: %s", request.data)
+        logger.info("Type de granted reçu: %s, valeur: %s", type(request.data.get('granted')), request.data.get('granted'))
         
         serializer = RolePermissionMappingCreateSerializer(data=request.data)
         if serializer.is_valid():
@@ -177,7 +177,7 @@ def role_permission_mapping_create(request):
             # Le serializer a déjà géré la valeur par défaut dans validate()
             granted = serializer.validated_data.get('granted', True)
             
-            logger.info(f"Données validées - granted: {granted} (type: {type(granted)})")
+            logger.info("Données validées - granted: %s (type: %s)", granted, type(granted))
             
             mapping, created = RolePermissionMapping.objects.update_or_create(
                 role=role_obj,
@@ -191,10 +191,7 @@ def role_permission_mapping_create(request):
             )
             
             logger.info(
-                f"✅ Mapping {'créé' if created else 'mis à jour'}: "
-                f"role={role_obj.code}, action={permission_action_obj.code}, "
-                f"granted={mapping.granted}, priority={mapping.priority}, "
-                f"is_active={mapping.is_active}"
+                "✅ Mapping %s: role=%s, action=%s, granted=%s, priority=%s, is_active=%s", 'créé' if created else 'mis à jour', role_obj.code, permission_action_obj.code, mapping.granted, mapping.priority, mapping.is_active
             )
             
             # Vérifier que le mapping est bien sauvegardé
@@ -203,8 +200,7 @@ def role_permission_mapping_create(request):
                 permission_action=permission_action_obj
             )
             logger.info(
-                f"🔍 Vérification mapping en DB: granted={mapping_refresh.granted}, "
-                f"is_active={mapping_refresh.is_active}"
+                "🔍 Vérification mapping en DB: granted=%s, is_active=%s", mapping_refresh.granted, mapping_refresh.is_active
             )
             
             # Le signal post_save dans middleware.py invalidera automatiquement le cache
@@ -219,18 +215,16 @@ def role_permission_mapping_create(request):
             ).values_list('user_id', flat=True).distinct())
             
             logger.info(
-                f"🔄 Invalidation du cache pour {len(user_ids)} utilisateurs ayant le rôle {role_obj.code}, "
-                f"app_name={permission_action_obj.app_name}, action={permission_action_obj.code}, "
-                f"granted={mapping.granted}"
+                "🔄 Invalidation du cache pour %s utilisateurs ayant le rôle %s, app_name=%s, action=%s, granted=%s", len(user_ids), role_obj.code, permission_action_obj.app_name, permission_action_obj.code, mapping.granted
             )
             
             # Invalider le cache pour tous ces utilisateurs
             for user_id in user_ids:
                 PermissionService.invalidate_user_cache(user_id, app_name=permission_action_obj.app_name)
-                logger.info(f"🔄 Cache invalidé pour user_id={user_id}")
+                logger.info("🔄 Cache invalidé pour user_id=%s", user_id)
             
             logger.info(
-                f"✅ Cache invalidé pour {len(user_ids)} utilisateurs ayant le rôle {role_obj.code}"
+                "✅ Cache invalidé pour %s utilisateurs ayant le rôle %s", len(user_ids), role_obj.code
             )
             
             # Le signal post_save dans middleware.py invalidera automatiquement le cache
@@ -243,15 +237,15 @@ def role_permission_mapping_create(request):
                 'message': 'Mapping créé avec succès' if created else 'Mapping mis à jour avec succès'
             }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
         else:
-            logger.error(f"Erreur de validation serializer: {serializer.errors}")
-            logger.error(f"Données reçues: {request.data}")
+            logger.error("Erreur de validation serializer: %s", serializer.errors)
+            logger.error("Données reçues: %s", request.data)
             return Response({
                 'success': False,
                 'error': 'Données invalides',
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur dans role_permission_mapping_create: {str(e)}")
+        logger.error("Erreur dans role_permission_mapping_create: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -294,9 +288,7 @@ def user_permissions(request, user_id=None):
         
         # Récupérer les permissions via PermissionService
         logger.info(
-            f"[user_permissions] Récupération permissions pour user_id={target_user.id}, "
-            f"username={target_user.username}, app_name={app_name}, "
-            f"processus_uuid={processus_uuid}"
+            "[user_permissions] Récupération permissions pour user_id=%s, username=%s, app_name=%s, processus_uuid=%s", target_user.id, target_user.username, app_name, processus_uuid
         )
         
         permissions = PermissionService.get_user_permissions(
@@ -306,9 +298,7 @@ def user_permissions(request, user_id=None):
         )
         
         logger.info(
-            f"[user_permissions] Permissions récupérées: {len(permissions)} processus, "
-            f"update_cible pour processus {processus_uuid}: "
-            f"{permissions.get(str(processus_uuid), {}).get('update_cible', 'NON TROUVÉ')}"
+            "[user_permissions] Permissions récupérées: %s processus, update_cible pour processus %s: %s", len(permissions), processus_uuid, permissions.get(str(processus_uuid), {}).get('update_cible', 'NON TROUVÉ')
         )
         
         return Response({
@@ -319,7 +309,7 @@ def user_permissions(request, user_id=None):
             'app_name': app_name
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans user_permissions: {str(e)}")
+        logger.error("Erreur dans user_permissions: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des permissions'
@@ -389,7 +379,7 @@ def user_permissions_summary(request, user_id=None):
             'count': len(summary)
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans user_permissions_summary: {str(e)}")
+        logger.error("Erreur dans user_permissions_summary: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération du résumé'
@@ -438,7 +428,7 @@ def permission_overrides_list(request):
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans permission_overrides_list: {str(e)}")
+        logger.error("Erreur dans permission_overrides_list: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des overrides'
@@ -471,15 +461,15 @@ def permission_override_create(request):
                 'message': 'Override créé avec succès'
             }, status=status.HTTP_201_CREATED)
         else:
-            logger.error(f"Erreur de validation serializer: {serializer.errors}")
-            logger.error(f"Données reçues: {request.data}")
+            logger.error("Erreur de validation serializer: %s", serializer.errors)
+            logger.error("Données reçues: %s", request.data)
             return Response({
                 'success': False,
                 'error': 'Données invalides',
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur dans permission_override_create: {str(e)}")
+        logger.error("Erreur dans permission_override_create: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de l\'override'
@@ -510,7 +500,7 @@ def permission_override_delete(request, override_uuid):
                 'error': 'Override non trouvé'
             }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur dans permission_override_delete: {str(e)}")
+        logger.error("Erreur dans permission_override_delete: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de l\'override'
@@ -568,7 +558,7 @@ def permission_audit_list(request):
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans permission_audit_list: {str(e)}")
+        logger.error("Erreur dans permission_audit_list: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des audits'
@@ -612,7 +602,7 @@ def check_permission(request):
             }
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans check_permission: {str(e)}")
+        logger.error("Erreur dans check_permission: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la vérification de la permission'
@@ -648,7 +638,7 @@ def invalidate_cache(request):
             'message': f'Cache invalidé pour user_id={user_id}, app_name={app_name or "toutes"}'
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur dans invalidate_cache: {str(e)}")
+        logger.error("Erreur dans invalidate_cache: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de l\'invalidation du cache'

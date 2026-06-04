@@ -116,10 +116,10 @@ class JWTCookieMiddleware(MiddlewareMixin):
                 
                 # Attacher l'utilisateur à la requête
                 request.user = user
-                logger.debug(f"Utilisateur authentifié depuis JWT cookie: {user.username}")
+                logger.debug("Utilisateur authentifié depuis JWT cookie: %s", user.username)
                 
             except (InvalidToken, TokenError, User.DoesNotExist) as e:
-                logger.debug(f"Erreur authentification JWT cookie: {e}")
+                logger.debug("Erreur authentification JWT cookie: %s", e)
                 pass  # Laisser request.user tel quel (AnonymousUser)
     
     def process_response(self, request, response):

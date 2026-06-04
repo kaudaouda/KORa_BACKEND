@@ -77,7 +77,7 @@ def suivis_ap_list(request):
             'count': suivis.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur dans suivis_ap_list: {str(e)}')
+        logger.error("Erreur dans suivis_ap_list: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -119,7 +119,7 @@ def suivis_ap_by_detail_ap(request, detail_ap_uuid):
             'error': 'Détail AP non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans suivis_ap_by_detail_ap: {str(e)}')
+        logger.error("Erreur dans suivis_ap_by_detail_ap: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -186,7 +186,7 @@ def suivi_ap_create(request):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f'Erreur dans suivi_ap_create: {str(e)}')
+        logger.error("Erreur dans suivi_ap_create: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -243,7 +243,7 @@ def suivi_ap_update(request, uuid):
             'error': 'Suivi AP non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans suivi_ap_update: {str(e)}')
+        logger.error("Erreur dans suivi_ap_update: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -292,7 +292,7 @@ def suivi_ap_delete(request, uuid):
             'error': 'Suivi AP non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans suivi_ap_delete: {str(e)}')
+        logger.error("Erreur dans suivi_ap_delete: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -336,13 +336,13 @@ def get_last_ap_previous_year(request):
         try:
             annee_precedente = Annee.objects.get(annee=annee_precedente_valeur)
         except Annee.DoesNotExist:
-            logger.info(f"[get_last_ap_previous_year] Année précédente {annee_precedente_valeur} non trouvée")
+            logger.info("[get_last_ap_previous_year] Année précédente %s non trouvée", annee_precedente_valeur)
             return Response({
                 'message': f'Aucune année {annee_precedente_valeur} trouvée dans le système',
                 'found': False
             }, status=status.HTTP_404_NOT_FOUND)
 
-        logger.info(f"[get_last_ap_previous_year] Recherche du dernier AP pour processus={processus_uuid}, année={annee_precedente.annee}")
+        logger.info("[get_last_ap_previous_year] Recherche du dernier AP pour processus=%s, année=%s", processus_uuid, annee_precedente.annee)
 
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not user_has_access_to_processus(request.user, processus_uuid):
@@ -359,19 +359,19 @@ def get_last_ap_previous_year(request):
         ).select_related('processus', 'annee', 'cree_par', 'validated_by').order_by('-num_amendement').first()
 
         if ap:
-            logger.info(f"[get_last_ap_previous_year] AP trouvé: {ap.uuid} (num_amendement: {ap.num_amendement})")
+            logger.info("[get_last_ap_previous_year] AP trouvé: %s (num_amendement: %s)", ap.uuid, ap.num_amendement)
             serializer = ActivitePeriodiqueSerializer(ap)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Aucun AP trouvé pour l'année précédente
-        logger.info(f"[get_last_ap_previous_year] Aucun AP trouvé pour l'année {annee_precedente.annee}")
+        logger.info("[get_last_ap_previous_year] Aucun AP trouvé pour l'année %s", annee_precedente.annee)
         return Response({
             'message': f'Aucune Activité Périodique trouvée pour l\'année {annee_precedente.annee}',
             'found': False
         }, status=status.HTTP_404_NOT_FOUND)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du dernier AP de l'année précédente: {str(e)}")
+        logger.error("Erreur lors de la récupération du dernier AP de l'année précédente: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -387,7 +387,7 @@ def get_last_ap_previous_year(request):
 def activite_periodique_stats(request):
     """Statistiques des Activités Périodiques de l'utilisateur connecté"""
     try:
-        logger.info(f"[activite_periodique_stats] Début pour l'utilisateur: {request.user.username}")
+        logger.info("[activite_periodique_stats] Début pour l'utilisateur: %s", request.user.username)
         scope = request.query_params.get('scope', 'tous')
 
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
@@ -407,7 +407,7 @@ def activite_periodique_stats(request):
                     pass
         elif not user_processus_uuids:
             # Aucun processus assigné
-            logger.info(f"[activite_periodique_stats] Aucun processus assigné pour l'utilisateur {request.user.username}")
+            logger.info("[activite_periodique_stats] Aucun processus assigné pour l'utilisateur %s", request.user.username)
             return Response({
                 'success': True,
                 'data': {
@@ -419,7 +419,7 @@ def activite_periodique_stats(request):
         else:
             # Récupérer toutes les Activités Périodiques des processus de l'utilisateur
             aps_base = ActivitePeriodique.objects.filter(processus__uuid__in=user_processus_uuids)
-        logger.info(f"[activite_periodique_stats] Nombre total d'APs: {aps_base.count()}")
+        logger.info("[activite_periodique_stats] Nombre total d'APs: %s", aps_base.count())
         # ========== FIN FILTRAGE ==========
 
         # Filtrer selon le scope
@@ -443,17 +443,17 @@ def activite_periodique_stats(request):
             aps_initiaux = aps_base.filter(
                 num_amendement=0
             )
-        logger.info(f"[activite_periodique_stats] Nombre d'APs initiaux: {aps_initiaux.count()}")
+        logger.info("[activite_periodique_stats] Nombre d'APs initiaux: %s", aps_initiaux.count())
 
         total_aps = aps_initiaux.count()
 
         # Compter les APs validées
         aps_valides = aps_initiaux.filter(is_validated=True).count()
-        logger.info(f"[activite_periodique_stats] APs validées: {aps_valides}")
+        logger.info("[activite_periodique_stats] APs validées: %s", aps_valides)
 
         # Compter les APs en attente
         aps_en_attente = aps_initiaux.filter(is_validated=False).count()
-        logger.info(f"[activite_periodique_stats] APs en attente: {aps_en_attente}")
+        logger.info("[activite_periodique_stats] APs en attente: %s", aps_en_attente)
 
         # Compter le total de détails et suivis pour les APs initiaux
         total_details = DetailsAP.objects.filter(
@@ -464,7 +464,7 @@ def activite_periodique_stats(request):
             details_ap__activite_periodique__in=aps_initiaux
         ).count()
 
-        logger.info(f"[activite_periodique_stats] Détails: {total_details}, Suivis: {total_suivis}")
+        logger.info("[activite_periodique_stats] Détails: %s, Suivis: %s", total_details, total_suivis)
 
         # Construire la réponse
         stats = {
@@ -475,12 +475,12 @@ def activite_periodique_stats(request):
             'total_suivis': total_suivis
         }
 
-        logger.info(f"[activite_periodique_stats] Statistiques calculées: {stats}")
+        logger.info("[activite_periodique_stats] Statistiques calculées: %s", stats)
 
         return Response(stats, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statistiques AP: {str(e)}")
+        logger.error("Erreur lors de la récupération des statistiques AP: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -529,7 +529,7 @@ def media_livrables_by_suivi(request, suivi_uuid):
             'error': 'Suivi AP non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans media_livrables_by_suivi: {str(e)}')
+        logger.error("Erreur dans media_livrables_by_suivi: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -589,7 +589,7 @@ def media_livrable_create(request):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f'Erreur lors de la création du MediaLivrable: {str(e)}')
+        logger.error("Erreur lors de la création du MediaLivrable: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -643,7 +643,7 @@ def media_livrable_update(request, uuid):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f'Erreur lors de la mise à jour du MediaLivrable: {str(e)}')
+        logger.error("Erreur lors de la mise à jour du MediaLivrable: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -690,7 +690,7 @@ def media_livrable_delete(request, uuid):
             'message': 'MediaLivrable supprimé avec succès'
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur lors de la suppression du MediaLivrable: {str(e)}')
+        logger.error("Erreur lors de la suppression du MediaLivrable: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({

@@ -809,7 +809,7 @@ class EmailSettings(models.Model):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ Erreur lors du chiffrement du mot de passe : {str(e)}")
+            logger.error("❌ Erreur lors du chiffrement du mot de passe : %s", str(e))
             raise
 
     def get_password(self):
@@ -879,7 +879,7 @@ class EmailSettings(models.Model):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ Test de connexion SMTP échoué : {str(e)}")
+            logger.error("❌ Test de connexion SMTP échoué : %s", str(e))
             return False, f"Échec de la connexion : {str(e)}"
 
 

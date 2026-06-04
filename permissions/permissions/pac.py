@@ -41,7 +41,7 @@ class PACUpdatePermission(AppActionPermission):
                 if pac.processus:
                     return str(pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACUpdatePermission] Erreur extraction processus depuis pac {pac_uuid}: {e}")
+                logger.warning("[PACUpdatePermission] Erreur extraction processus depuis pac %s: %s", pac_uuid, e)
         
         # Fallback sur la méthode parent pour les autres cas
         return super()._extract_processus_uuid(request, view, obj)
@@ -73,7 +73,7 @@ class PACDeletePermission(AppActionPermission):
                 if pac.processus:
                     return str(pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACDeletePermission] Erreur extraction processus depuis pac {pac_uuid}: {e}")
+                logger.warning("[PACDeletePermission] Erreur extraction processus depuis pac %s: %s", pac_uuid, e)
         
         # Fallback sur la méthode parent pour les autres cas
         return super()._extract_processus_uuid(request, view, obj)
@@ -116,18 +116,17 @@ class PacDetailPermission(BasePermission):
         Refus par défaut si l'objet n'existe pas ou si les permissions échouent
         """
         if not request.user or not request.user.is_authenticated:
-            logger.warning(f"[PacDetailPermission] Utilisateur non authentifié")
+            logger.warning("[PacDetailPermission] Utilisateur non authentifié")
             raise PermissionDenied("Authentification requise")
         
         # Extraire l'UUID depuis les kwargs de la vue
         pac_uuid = view.kwargs.get('uuid')
         if not pac_uuid:
-            logger.warning(f"[PacDetailPermission] UUID du PAC manquant pour user={request.user.username}")
+            logger.warning("[PacDetailPermission] UUID du PAC manquant pour user=%s", request.user.username)
             raise PermissionDenied("UUID du PAC manquant")
         
         logger.info(
-            f"[PacDetailPermission] 🔍 Début vérification permission: "
-            f"user={request.user.username}, method={request.method}, pac_uuid={pac_uuid}"
+            "[PacDetailPermission] 🔍 Début vérification permission: user=%s, method=%s, pac_uuid=%s", request.user.username, request.method, pac_uuid
         )
         
         # Récupérer l'objet Pac pour avoir le processus_uuid
@@ -138,29 +137,27 @@ class PacDetailPermission(BasePermission):
             from parametre.permissions import user_has_access_to_processus
             pac = Pac.objects.select_related('processus').get(uuid=pac_uuid)
             logger.info(
-                f"[PacDetailPermission] ✅ PAC trouvé: uuid={pac.uuid}, processus_uuid={pac.processus.uuid if pac.processus else None}"
+                "[PacDetailPermission] ✅ PAC trouvé: uuid=%s, processus_uuid=%s", pac.uuid, pac.processus.uuid if pac.processus else None
             )
         except Pac.DoesNotExist:
             # Security by Design : Refus par défaut - ne pas révéler si l'objet existe ou non
-            logger.warning(f"[PacDetailPermission] ❌ PAC non trouvé: uuid={pac_uuid}")
+            logger.warning("[PacDetailPermission] ❌ PAC non trouvé: uuid=%s", pac_uuid)
             raise PermissionDenied("Accès refusé à ce PAC")
         
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not pac.processus:
-            logger.warning(f"[PacDetailPermission] ❌ PAC sans processus: uuid={pac_uuid}")
+            logger.warning("[PacDetailPermission] ❌ PAC sans processus: uuid=%s", pac_uuid)
             raise PermissionDenied("Ce PAC n'est associé à aucun processus")
         
         processus_uuid = str(pac.processus.uuid)
         has_access = user_has_access_to_processus(request.user, processus_uuid)
         logger.info(
-            f"[PacDetailPermission] 🔍 Vérification accès processus: "
-            f"user={request.user.username}, processus_uuid={processus_uuid}, has_access={has_access}"
+            "[PacDetailPermission] 🔍 Vérification accès processus: user=%s, processus_uuid=%s, has_access=%s", request.user.username, processus_uuid, has_access
         )
         
         if not has_access:
             logger.warning(
-                f"[PacDetailPermission] ❌ Accès refusé au processus: "
-                f"user={request.user.username}, processus_uuid={processus_uuid}"
+                "[PacDetailPermission] ❌ Accès refusé au processus: user=%s, processus_uuid=%s", request.user.username, processus_uuid
             )
             raise PermissionDenied("Vous n'avez pas accès au processus de ce PAC")
         # ========== FIN VÉRIFICATION ==========
@@ -168,33 +165,33 @@ class PacDetailPermission(BasePermission):
         # Vérifier selon la méthode HTTP
         try:
             if request.method == 'GET':
-                logger.info(f"[PacDetailPermission] 🔍 Vérification permission read_pac pour user={request.user.username}")
+                logger.info("[PacDetailPermission] 🔍 Vérification permission read_pac pour user=%s", request.user.username)
                 permission = PACReadPermission()
                 permission.has_object_permission(request, view, pac)
-                logger.info(f"[PacDetailPermission] ✅ Permission read_pac accordée")
+                logger.info("[PacDetailPermission] ✅ Permission read_pac accordée")
             elif request.method in ['PATCH', 'PUT']:
-                logger.info(f"[PacDetailPermission] 🔍 Vérification permission update_pac pour user={request.user.username}")
+                logger.info("[PacDetailPermission] 🔍 Vérification permission update_pac pour user=%s", request.user.username)
                 permission = PACUpdatePermission()
                 permission.has_object_permission(request, view, pac)
-                logger.info(f"[PacDetailPermission] ✅ Permission update_pac accordée")
+                logger.info("[PacDetailPermission] ✅ Permission update_pac accordée")
             elif request.method == 'DELETE':
-                logger.info(f"[PacDetailPermission] 🔍 Vérification permission delete_pac pour user={request.user.username}")
+                logger.info("[PacDetailPermission] 🔍 Vérification permission delete_pac pour user=%s", request.user.username)
                 permission = PACDeletePermission()
                 permission.has_object_permission(request, view, pac)
-                logger.info(f"[PacDetailPermission] ✅ Permission delete_pac accordée")
+                logger.info("[PacDetailPermission] ✅ Permission delete_pac accordée")
             else:
-                logger.warning(f"[PacDetailPermission] ❌ Méthode HTTP non autorisée: {request.method}")
+                logger.warning("[PacDetailPermission] ❌ Méthode HTTP non autorisée: %s", request.method)
                 raise PermissionDenied(f"Méthode HTTP '{request.method}' non autorisée")
         except PermissionDenied as e:
             # Re-lever l'exception pour que DRF la gère correctement
-            logger.warning(f"[PacDetailPermission] ❌ Permission refusée: {e}")
+            logger.warning("[PacDetailPermission] ❌ Permission refusée: %s", e)
             raise
         except Exception as e:
             # Logger l'erreur et refuser l'accès par sécurité
-            logger.error(f"[PacDetailPermission] ❌ Erreur lors de la vérification de permission: {e}", exc_info=True)
+            logger.error("[PacDetailPermission] ❌ Erreur lors de la vérification de permission: %s", e, exc_info=True)
             raise PermissionDenied("Erreur lors de la vérification des permissions")
         
-        logger.info(f"[PacDetailPermission] ✅ Permission accordée pour user={request.user.username}, method={request.method}")
+        logger.info("[PacDetailPermission] ✅ Permission accordée pour user=%s, method=%s", request.user.username, request.method)
         return True
 
 
@@ -206,8 +203,7 @@ class PACReadPermission(AppActionPermission):
     def _extract_processus_uuid(self, request, view, obj=None):
         """Extrait le processus_uuid depuis obj.processus (si obj est un Pac)"""
         logger.info(
-            f"[PACReadPermission._extract_processus_uuid] 🔍 Extraction processus_uuid: "
-            f"obj={obj}, obj_type={type(obj).__name__ if obj else None}"
+            "[PACReadPermission._extract_processus_uuid] 🔍 Extraction processus_uuid: obj=%s, obj_type=%s", obj, type(obj).__name__ if obj else None
         )
         
         # Si obj est fourni et c'est un objet Pac
@@ -216,36 +212,35 @@ class PACReadPermission(AppActionPermission):
                 # obj.processus est un objet Processus (grâce à select_related)
                 if hasattr(obj.processus, 'uuid'):
                     processus_uuid = str(obj.processus.uuid)
-                    logger.info(f"[PACReadPermission._extract_processus_uuid] ✅ Extrait depuis obj.processus.uuid: {processus_uuid}")
+                    logger.info("[PACReadPermission._extract_processus_uuid] ✅ Extrait depuis obj.processus.uuid: %s", processus_uuid)
                     return processus_uuid
                 # Si c'est une chaîne (cas improbable mais géré)
                 elif isinstance(obj.processus, str):
-                    logger.info(f"[PACReadPermission._extract_processus_uuid] ✅ Extrait depuis obj.processus (str): {obj.processus}")
+                    logger.info("[PACReadPermission._extract_processus_uuid] ✅ Extrait depuis obj.processus (str): %s", obj.processus)
                     return obj.processus
             else:
                 logger.warning(
-                    f"[PACReadPermission._extract_processus_uuid] ⚠️ obj.processus manquant: "
-                    f"has_attr_processus={hasattr(obj, 'processus')}, processus={getattr(obj, 'processus', None)}"
+                    "[PACReadPermission._extract_processus_uuid] ⚠️ obj.processus manquant: has_attr_processus=%s, processus=%s", hasattr(obj, 'processus'), getattr(obj, 'processus', None)
                 )
         
         # Depuis view.kwargs si uuid fourni (pour compatibilité avec les autres méthodes)
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
             pac_uuid = view.kwargs['uuid']
-            logger.info(f"[PACReadPermission._extract_processus_uuid] 🔍 Tentative extraction depuis view.kwargs: pac_uuid={pac_uuid}")
+            logger.info("[PACReadPermission._extract_processus_uuid] 🔍 Tentative extraction depuis view.kwargs: pac_uuid=%s", pac_uuid)
             try:
                 from pac.models import Pac
                 pac = Pac.objects.select_related('processus').get(uuid=pac_uuid)
                 if pac.processus:
                     processus_uuid = str(pac.processus.uuid)
-                    logger.info(f"[PACReadPermission._extract_processus_uuid] ✅ Extrait depuis DB: {processus_uuid}")
+                    logger.info("[PACReadPermission._extract_processus_uuid] ✅ Extrait depuis DB: %s", processus_uuid)
                     return processus_uuid
             except Exception as e:
-                logger.warning(f"[PACReadPermission._extract_processus_uuid] ⚠️ Erreur extraction processus depuis pac {pac_uuid}: {e}")
+                logger.warning("[PACReadPermission._extract_processus_uuid] ⚠️ Erreur extraction processus depuis pac %s: %s", pac_uuid, e)
         
         # Fallback sur la méthode parent pour les autres cas
-        logger.info(f"[PACReadPermission._extract_processus_uuid] 🔍 Fallback sur méthode parent")
+        logger.info("[PACReadPermission._extract_processus_uuid] 🔍 Fallback sur méthode parent")
         result = super()._extract_processus_uuid(request, view, obj)
-        logger.info(f"[PACReadPermission._extract_processus_uuid] {'✅' if result else '❌'} Résultat méthode parent: {result}")
+        logger.info("[PACReadPermission._extract_processus_uuid] %s Résultat méthode parent: %s", '✅' if result else '❌', result)
         return result
 
 
@@ -279,8 +274,7 @@ class PACAmendementCreatePermission(AppActionPermission):
                         return str(initial_pac.processus.uuid)
                 except Exception as e:
                     logger.warning(
-                        f"[PACAmendementCreatePermission] Erreur lors de la récupération "
-                        f"du PAC initial {initial_ref_uuid}: {str(e)}"
+                        "[PACAmendementCreatePermission] Erreur lors de la récupération du PAC initial %s: %s", initial_ref_uuid, str(e)
                     )
             
             # Fallback : processus_uuid ou processus dans request.data
@@ -326,7 +320,7 @@ class PACDetailCreatePermission(AppActionPermission):
                     if pac.processus:
                         return str(pac.processus.uuid)
                 except Exception as e:
-                    logger.warning(f"[PACDetailCreatePermission] Erreur extraction processus depuis pac {pac_uuid}: {e}")
+                    logger.warning("[PACDetailCreatePermission] Erreur extraction processus depuis pac %s: %s", pac_uuid, e)
         
         # Depuis view.kwargs si uuid fourni
         if hasattr(view, 'kwargs') and view.kwargs.get('uuid'):
@@ -337,7 +331,7 @@ class PACDetailCreatePermission(AppActionPermission):
                 if detail.pac and detail.pac.processus:
                     return str(detail.pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACDetailCreatePermission] Erreur extraction processus depuis detail {detail_uuid}: {e}")
+                logger.warning("[PACDetailCreatePermission] Erreur extraction processus depuis detail %s: %s", detail_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -363,7 +357,7 @@ class PACDetailUpdatePermission(AppActionPermission):
                 if detail.pac and detail.pac.processus:
                     return str(detail.pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACDetailUpdatePermission] Erreur extraction processus depuis detail {detail_uuid}: {e}")
+                logger.warning("[PACDetailUpdatePermission] Erreur extraction processus depuis detail %s: %s", detail_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -389,7 +383,7 @@ class PACDetailDeletePermission(AppActionPermission):
                 if detail.pac and detail.pac.processus:
                     return str(detail.pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACDetailDeletePermission] Erreur extraction processus depuis detail {detail_uuid}: {e}")
+                logger.warning("[PACDetailDeletePermission] Erreur extraction processus depuis detail %s: %s", detail_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -418,7 +412,7 @@ class PACTraitementCreatePermission(AppActionPermission):
                     if detail.pac and detail.pac.processus:
                         return str(detail.pac.processus.uuid)
                 except Exception as e:
-                    logger.warning(f"[PACTraitementCreatePermission] Erreur extraction processus depuis details_pac {details_pac_uuid}: {e}")
+                    logger.warning("[PACTraitementCreatePermission] Erreur extraction processus depuis details_pac %s: %s", details_pac_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -445,7 +439,7 @@ class PACTraitementUpdatePermission(AppActionPermission):
                 if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
                     return str(traitement.details_pac.pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACTraitementUpdatePermission] Erreur extraction processus depuis traitement {traitement_uuid}: {e}")
+                logger.warning("[PACTraitementUpdatePermission] Erreur extraction processus depuis traitement %s: %s", traitement_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -472,7 +466,7 @@ class PACTraitementDeletePermission(AppActionPermission):
                 if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
                     return str(traitement.details_pac.pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACTraitementDeletePermission] Erreur extraction processus depuis traitement {traitement_uuid}: {e}")
+                logger.warning("[PACTraitementDeletePermission] Erreur extraction processus depuis traitement %s: %s", traitement_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -502,7 +496,7 @@ class PACSuiviCreatePermission(AppActionPermission):
                     if traitement.details_pac and traitement.details_pac.pac and traitement.details_pac.pac.processus:
                         return str(traitement.details_pac.pac.processus.uuid)
                 except Exception as e:
-                    logger.warning(f"[PACSuiviCreatePermission] Erreur extraction processus depuis traitement {traitement_uuid}: {e}")
+                    logger.warning("[PACSuiviCreatePermission] Erreur extraction processus depuis traitement %s: %s", traitement_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -530,7 +524,7 @@ class PACSuiviUpdatePermission(AppActionPermission):
                 if suivi.traitement and suivi.traitement.details_pac and suivi.traitement.details_pac.pac and suivi.traitement.details_pac.pac.processus:
                     return str(suivi.traitement.details_pac.pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACSuiviUpdatePermission] Erreur extraction processus depuis suivi {suivi_uuid}: {e}")
+                logger.warning("[PACSuiviUpdatePermission] Erreur extraction processus depuis suivi %s: %s", suivi_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -558,7 +552,7 @@ class PACSuiviDeletePermission(AppActionPermission):
                 if suivi.traitement and suivi.traitement.details_pac and suivi.traitement.details_pac.pac and suivi.traitement.details_pac.pac.processus:
                     return str(suivi.traitement.details_pac.pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACSuiviDeletePermission] Erreur extraction processus depuis suivi {suivi_uuid}: {e}")
+                logger.warning("[PACSuiviDeletePermission] Erreur extraction processus depuis suivi %s: %s", suivi_uuid, e)
         
         return super()._extract_processus_uuid(request, view, obj)
 
@@ -589,7 +583,7 @@ class PACUnvalidatePermission(AppActionPermission):
                 if pac.processus:
                     return str(pac.processus.uuid)
             except Exception as e:
-                logger.warning(f"[PACUnvalidatePermission] Erreur extraction processus depuis pac {pac_uuid}: {e}")
+                logger.warning("[PACUnvalidatePermission] Erreur extraction processus depuis pac %s: %s", pac_uuid, e)
         
         # Fallback sur la méthode parent pour les autres cas
         return super()._extract_processus_uuid(request, view, obj)

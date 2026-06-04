@@ -83,7 +83,7 @@ def indicateurs_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des indicateurs: {str(e)}")
+        logger.error("Erreur lors de la récupération des indicateurs: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des indicateurs'
@@ -114,7 +114,7 @@ def indicateurs_detail(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de l'indicateur {uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération de l'indicateur %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération de l\'indicateur'
@@ -166,12 +166,12 @@ def indicateurs_create(request):
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 log_indicateur_creation(request.user, indicateur, ip_address, user_agent)
             except Exception as log_error:
-                logger.error(f"Erreur lors du logging de la création de l'indicateur: {log_error}")
+                logger.error("Erreur lors du logging de la création de l'indicateur: %s", log_error)
 
             # Retourner l'indicateur créé avec tous ses détails
             response_serializer = IndicateurSerializer(indicateur)
 
-            logger.info(f"Indicateur créé: {indicateur.libelle} par {request.user.username}")
+            logger.info("Indicateur créé: %s par %s", indicateur.libelle, request.user.username)
 
             return Response({
                 'success': True,
@@ -186,7 +186,7 @@ def indicateurs_create(request):
             }, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'indicateur: {str(e)}")
+        logger.error("Erreur lors de la création de l'indicateur: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de l\'indicateur'
@@ -227,7 +227,7 @@ def indicateurs_update(request, uuid):
             # Retourner l'indicateur mis à jour avec tous ses détails
             response_serializer = IndicateurSerializer(updated_indicateur)
             
-            logger.info(f"Indicateur mis à jour: {indicateur.libelle} par {request.user.username}")
+            logger.info("Indicateur mis à jour: %s par %s", indicateur.libelle, request.user.username)
             
             return Response({
                 'success': True,
@@ -250,7 +250,7 @@ def indicateurs_update(request, uuid):
     except Exception as e:
         import traceback
         error_traceback = traceback.format_exc()
-        logger.error(f"Erreur lors de la mise à jour de l'indicateur {uuid}: {str(e)}\n{error_traceback}")
+        logger.error("Erreur lors de la mise à jour de l'indicateur %s: %s\n%s", uuid, str(e), error_traceback)
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de l\'indicateur'
@@ -275,7 +275,7 @@ def indicateurs_delete(request, uuid):
         indicateur_libelle = indicateur.libelle
         indicateur.delete()
         
-        logger.info(f"Indicateur supprimé: {indicateur_libelle} par {request.user.username}")
+        logger.info("Indicateur supprimé: %s par %s", indicateur_libelle, request.user.username)
         
         return Response({
             'success': True,
@@ -292,7 +292,7 @@ def indicateurs_delete(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'indicateur {uuid}: {str(e)}", exc_info=True)
+        logger.error("Erreur lors de la suppression de l'indicateur %s: %s", uuid, str(e), exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de l\'indicateur'
@@ -330,7 +330,7 @@ def objectives_indicateurs(request, objective_uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des indicateurs de l'objectif {objective_uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération des indicateurs de l'objectif %s: %s", objective_uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des indicateurs de l\'objectif'

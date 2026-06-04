@@ -50,7 +50,7 @@ def details_cdr_by_cdr(request, cdr_uuid):
             'error': 'CDR non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans details_cdr_by_cdr: {str(e)}')
+        logger.error("Erreur dans details_cdr_by_cdr: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -65,13 +65,13 @@ def details_cdr_by_cdr(request, cdr_uuid):
 def details_cdr_create(request):
     """Créer un nouveau détail CDR"""
     try:
-        logger.info(f"[details_cdr_create] Données reçues: {request.data}")
+        logger.info("[details_cdr_create] Données reçues: %s", request.data)
         
         # Vérifier si la CDR est validée avant la création
         if 'cdr' in request.data:
             try:
                 cdr = CDR.objects.get(uuid=request.data['cdr'])
-                logger.info(f"[details_cdr_create] CDR trouvée: {cdr.uuid}, validée: {cdr.is_validated}")
+                logger.info("[details_cdr_create] CDR trouvée: %s, validée: %s", cdr.uuid, cdr.is_validated)
                 
                 # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
                 if not user_has_access_to_processus(request.user, cdr.processus.uuid):
@@ -92,19 +92,19 @@ def details_cdr_create(request):
                         'error': 'Cette CDR est validée. Impossible de créer un nouveau détail.'
                     }, status=status.HTTP_400_BAD_REQUEST)
             except CDR.DoesNotExist:
-                logger.error(f"[details_cdr_create] CDR non trouvée avec UUID: {request.data['cdr']}")
+                logger.error("[details_cdr_create] CDR non trouvée avec UUID: %s", request.data['cdr'])
                 pass  # La validation du serializer gérera cette erreur
         
         serializer = DetailsCDRCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             detail = serializer.save()
-            logger.info(f"[details_cdr_create] ✅ Détail créé avec succès: {detail.uuid}")
+            logger.info("[details_cdr_create] ✅ Détail créé avec succès: %s", detail.uuid)
             return Response(DetailsCDRSerializer(detail).data, status=status.HTTP_201_CREATED)
         
-        logger.error(f"[details_cdr_create] Erreurs de validation: {serializer.errors}")
+        logger.error("[details_cdr_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du détail CDR: {str(e)}")
+        logger.error("Erreur lors de la création du détail CDR: %s", str(e))
         import traceback
         error_traceback = traceback.format_exc()
         logger.error(error_traceback)
@@ -142,7 +142,7 @@ def evaluations_by_detail_cdr(request, detail_cdr_uuid):
             'error': 'Détail CDR non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans evaluations_by_detail_cdr: {str(e)}')
+        logger.error("Erreur dans evaluations_by_detail_cdr: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -180,7 +180,7 @@ def plans_action_by_detail_cdr(request, detail_cdr_uuid):
             'error': 'Détail CDR non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans plans_action_by_detail_cdr: {str(e)}')
+        logger.error("Erreur dans plans_action_by_detail_cdr: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -212,7 +212,7 @@ def suivi_action_detail(request, uuid):
             'error': 'Suivi d\'action non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans suivi_action_detail: {str(e)}')
+        logger.error("Erreur dans suivi_action_detail: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -246,7 +246,7 @@ def suivis_by_plan_action(request, plan_action_uuid):
             'error': 'Plan d\'action non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans suivis_by_plan_action: {str(e)}')
+        logger.error("Erreur dans suivis_by_plan_action: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -295,7 +295,7 @@ def details_cdr_update(request, uuid):
             'error': 'Détail CDR non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du détail CDR: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du détail CDR: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -338,7 +338,7 @@ def details_cdr_delete(request, uuid):
             'error': 'Détail CDR non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du détail CDR: {str(e)}")
+        logger.error("Erreur lors de la suppression du détail CDR: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings

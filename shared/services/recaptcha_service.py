@@ -62,7 +62,7 @@ class RecaptchaService:
             
             if not result.get('success', False):
                 error_codes = result.get('error-codes', [])
-                logger.warning(f"reCAPTCHA validation échouée: {error_codes}")
+                logger.warning("reCAPTCHA validation échouée: %s", error_codes)
                 return False, {
                     'error': 'Validation reCAPTCHA échouée',
                     'error_codes': error_codes
@@ -72,14 +72,14 @@ class RecaptchaService:
             action = result.get('action', 'verify')
             
             if score < self.min_score:
-                logger.warning(f"Score reCAPTCHA trop faible: {score} < {self.min_score}")
+                logger.warning("Score reCAPTCHA trop faible: %s < %s", score, self.min_score)
                 return False, {
                     'error': f'Score trop faible: {score}',
                     'score': score,
                     'min_score': self.min_score
                 }
             
-            logger.info(f"reCAPTCHA validé avec succès: score={score}, action={action}")
+            logger.info("reCAPTCHA validé avec succès: score=%s, action=%s", score, action)
             return True, {
                 'score': score,
                 'action': action,
@@ -87,11 +87,11 @@ class RecaptchaService:
             }
             
         except requests.RequestException as e:
-            logger.error(f"Erreur lors de la vérification reCAPTCHA: {str(e)}")
+            logger.error("Erreur lors de la vérification reCAPTCHA: %s", str(e))
             raise RecaptchaValidationError(f"Erreur de communication avec reCAPTCHA: {str(e)}")
         
         except Exception as e:
-            logger.error(f"Erreur inattendue lors de la validation reCAPTCHA: {str(e)}")
+            logger.error("Erreur inattendue lors de la validation reCAPTCHA: %s", str(e))
             raise RecaptchaValidationError(f"Erreur de validation: {str(e)}")
 
 

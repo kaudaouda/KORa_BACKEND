@@ -141,7 +141,7 @@ def validate_cdr(request, uuid):
         cdr.valide_par = request.user
         cdr.save()
 
-        logger.info(f"CDR {cdr.uuid} validée par {request.user.username}")
+        logger.info("CDR %s validée par %s", cdr.uuid, request.user.username)
 
         # Log de l'activité
         try:
@@ -149,7 +149,7 @@ def validate_cdr(request, uuid):
             user_agent = request.META.get('HTTP_USER_AGENT', '')
             log_cdr_validation(request.user, cdr, ip_address, user_agent)
         except Exception as log_error:
-            logger.error(f"Erreur lors du logging de la validation de la CDR: {log_error}")
+            logger.error("Erreur lors du logging de la validation de la CDR: %s", log_error)
 
         return Response({
             'success': True,
@@ -168,7 +168,7 @@ def validate_cdr(request, uuid):
             'error': 'CDR non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur validation CDR: {str(e)}")
+        logger.error("Erreur validation CDR: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -238,7 +238,7 @@ def unvalidate_cdr(request, uuid):
         cdr.valide_par = None
         cdr.save()
 
-        logger.info(f"CDR {cdr.uuid} dévalidée par {request.user.username}")
+        logger.info("CDR %s dévalidée par %s", cdr.uuid, request.user.username)
 
         return Response({
             'success': True,
@@ -252,7 +252,7 @@ def unvalidate_cdr(request, uuid):
             'error': 'Cartographie des risques non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur dévalidation CDR: {str(e)}")
+        logger.error("Erreur dévalidation CDR: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -278,7 +278,7 @@ def versions_evaluation_list(request):
 
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur lors de la récupération des versions: {str(e)}')
+        logger.error("Erreur lors de la récupération des versions: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les versions d\'évaluation'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -362,10 +362,10 @@ def create_reevaluation(request, detail_cdr_uuid):
         serializer = EvaluationRisqueCreateSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             reevaluation = serializer.save()
-            logger.info(f"✅ Réévaluation créée: {version.nom} pour détail CDR {detail_cdr.numero_cdr}")
+            logger.info("✅ Réévaluation créée: %s pour détail CDR %s", version.nom, detail_cdr.numero_cdr)
             return Response(EvaluationRisqueSerializer(reevaluation).data, status=status.HTTP_201_CREATED)
 
-        logger.error(f"Erreurs validation réévaluation: {serializer.errors}")
+        logger.error("Erreurs validation réévaluation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except DetailsCDR.DoesNotExist:
@@ -373,7 +373,7 @@ def create_reevaluation(request, detail_cdr_uuid):
             'error': 'Détail CDR non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur création réévaluation: {str(e)}")
+        logger.error("Erreur création réévaluation: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -411,7 +411,7 @@ def get_last_cdr_previous_year(request):
         # Calculer l'année précédente
         annee_precedente = annee - 1
 
-        logger.info(f"[get_last_cdr_previous_year] Recherche du dernier CDR pour processus={processus_uuid}, année={annee_precedente}")
+        logger.info("[get_last_cdr_previous_year] Recherche du dernier CDR pour processus=%s, année=%s", processus_uuid, annee_precedente)
 
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not user_has_access_to_processus(request.user, processus_uuid):
@@ -425,19 +425,19 @@ def get_last_cdr_previous_year(request):
         ).select_related('processus', 'cree_par', 'valide_par').order_by('-num_amendement').first()
 
         if cdr:
-            logger.info(f"[get_last_cdr_previous_year] CDR trouvé: {cdr.uuid} (num_amendement={cdr.num_amendement})")
+            logger.info("[get_last_cdr_previous_year] CDR trouvé: %s (num_amendement=%s)", cdr.uuid, cdr.num_amendement)
             serializer = CDRSerializer(cdr)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Aucun CDR trouvé pour l'année précédente
-        logger.info(f"[get_last_cdr_previous_year] Aucun CDR trouvé pour l'année {annee_precedente}")
+        logger.info("[get_last_cdr_previous_year] Aucun CDR trouvé pour l'année %s", annee_precedente)
         return Response({
             'message': f'Aucune cartographie trouvée pour l\'année {annee_precedente}',
             'found': False
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du dernier CDR de l'année précédente: {str(e)}")
+        logger.error("Erreur lors de la récupération du dernier CDR de l'année précédente: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings

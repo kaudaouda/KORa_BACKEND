@@ -306,7 +306,7 @@ def user_has_write_permission_anywhere(user):
         try:
             role_ecrire = Role.objects.get(code='ecrire', is_active=True)
         except Role.DoesNotExist:
-            logger.warning(f"[user_has_write_permission_anywhere] Rôle 'ecrire' non trouvé")
+            logger.warning("[user_has_write_permission_anywhere] Rôle 'ecrire' non trouvé")
             return False
         
         # Vérifier si l'utilisateur a ce rôle pour au moins un processus actif
@@ -318,7 +318,7 @@ def user_has_write_permission_anywhere(user):
         
         return has_permission
     except Exception as e:
-        logger.error(f"[user_has_write_permission_anywhere] Erreur: {str(e)}")
+        logger.error("[user_has_write_permission_anywhere] Erreur: %s", str(e))
         return False
 
 

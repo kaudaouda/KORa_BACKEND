@@ -151,7 +151,7 @@ class EmailSettingsSerializer(serializers.ModelSerializer):
         # Ports communs pour SMTP
         common_ports = [25, 465, 587, 2525]
         if value not in common_ports:
-            logger.warning(f"⚠️ Port SMTP inhabituel : {value}")
+            logger.warning("⚠️ Port SMTP inhabituel : %s", value)
         
         return value
     
@@ -245,7 +245,7 @@ class EmailSettingsSerializer(serializers.ModelSerializer):
             instance.set_password(password)
             instance.save()
         
-        logger.info(f"✅ Configuration email créée par {self.context.get('request').user.username if self.context.get('request') else 'system'}")
+        logger.info("✅ Configuration email créée par %s", self.context.get('request').user.username if self.context.get('request') else 'system')
         
         return instance
     
@@ -267,7 +267,7 @@ class EmailSettingsSerializer(serializers.ModelSerializer):
             instance.set_password(password)
             instance.save()
         
-        logger.info(f"✅ Configuration email mise à jour par {request.user.username if request and request.user else 'system'}")
+        logger.info("✅ Configuration email mise à jour par %s", request.user.username if request and request.user else 'system')
         
         return instance
 

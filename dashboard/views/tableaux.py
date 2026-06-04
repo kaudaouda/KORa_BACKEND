@@ -157,14 +157,14 @@ def tableaux_bord_list_create(request):
             # Note: La vérification des permissions est maintenant gérée par DashboardTableauCreatePermission
             # via le décorateur @permission_classes et DashboardTableauListCreatePermission
             
-            logger.info(f"Données reçues pour création tableau: {data}")
+            logger.info("Données reçues pour création tableau: %s", data)
             
             serializer = TableauBordSerializer(data=data, context={'request': request})
             if serializer.is_valid():
                 logger.info("Serializer valide, sauvegarde en cours...")
                 try:
                     instance = serializer.save()
-                    logger.info(f"Tableau créé avec succès: {instance.uuid}")
+                    logger.info("Tableau créé avec succès: %s", instance.uuid)
 
                     # Log de l'activité
                     try:
@@ -172,7 +172,7 @@ def tableaux_bord_list_create(request):
                         user_agent = request.META.get('HTTP_USER_AGENT', '')
                         log_tableau_bord_creation(request.user, instance, ip_address, user_agent)
                     except Exception as log_error:
-                        logger.error(f"Erreur lors du logging de la création du tableau: {log_error}")
+                        logger.error("Erreur lors du logging de la création du tableau: %s", log_error)
 
                     # Si amendement et clone demandé, copier les objectifs (+ éléments associés)
                     if instance.num_amendement > 0 and clone and instance.initial_ref:
@@ -237,10 +237,10 @@ def tableaux_bord_list_create(request):
                         'data': TableauBordSerializer(instance).data
                     }, status=status.HTTP_201_CREATED)
                 except Exception as e:
-                    logger.error(f"Erreur lors de la sauvegarde du tableau: {str(e)}")
+                    logger.error("Erreur lors de la sauvegarde du tableau: %s", str(e))
                     return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
             else:
-                logger.error(f"Erreurs de validation serializer: {serializer.errors}")
+                logger.error("Erreurs de validation serializer: %s", serializer.errors)
                 return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
     except PermissionDenied:
         # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
@@ -249,7 +249,7 @@ def tableaux_bord_list_create(request):
     except Exception as e:
         import traceback
         error_traceback = traceback.format_exc()
-        logger.error(f"Erreur tableaux_bord_list_create: {str(e)}\n{error_traceback}")
+        logger.error("Erreur tableaux_bord_list_create: %s\n%s", str(e), error_traceback)
         return Response({
             'success': False, 
             'error': f'Erreur lors du traitement: {str(e)}'
@@ -276,7 +276,7 @@ def tableau_bord_detail(request, uuid):
 
     if request.method == 'GET':
         serializer_data = TableauBordSerializer(tb).data
-        logger.info(f"tableau_bord_detail GET - UUID: {uuid}, num_amendement: {tb.num_amendement}, is_validated: {tb.is_validated}, serializer is_validated: {serializer_data.get('is_validated')}")
+        logger.info("tableau_bord_detail GET - UUID: %s, num_amendement: %s, is_validated: %s, serializer is_validated: %s", uuid, tb.num_amendement, tb.is_validated, serializer_data.get('is_validated'))
         return Response({'success': True, 'data': serializer_data})
     elif request.method == 'PATCH':
         # Note: La vérification des permissions est maintenant gérée par DashboardTableauUpdatePermission
@@ -293,7 +293,7 @@ def tableau_bord_detail(request, uuid):
                     user_agent = request.META.get('HTTP_USER_AGENT', '')
                     log_tableau_bord_update(request.user, instance, ip_address, user_agent)
                 except Exception as log_error:
-                    logger.error(f"Erreur lors du logging de la mise à jour du tableau: {log_error}")
+                    logger.error("Erreur lors du logging de la mise à jour du tableau: %s", log_error)
 
                 return Response({'success': True, 'data': TableauBordSerializer(instance).data})
             except Exception as e:
@@ -364,7 +364,7 @@ def create_amendement(request, tableau_initial_uuid):
         max_existing = result['max_num'] or 0
         next_num = max_existing + 1
 
-        logger.info(f"Prochain num_amendement: {next_num}")
+        logger.info("Prochain num_amendement: %s", next_num)
 
         # Créer l'amendement
         data.update({
@@ -375,13 +375,13 @@ def create_amendement(request, tableau_initial_uuid):
             'is_validated': False
         })
 
-        logger.info(f"Données pour création amendement: {data}")
+        logger.info("Données pour création amendement: %s", data)
 
         serializer = TableauBordSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             try:
                 instance = serializer.save()
-                logger.info(f"Amendement créé avec succès: {instance.uuid}")
+                logger.info("Amendement créé avec succès: %s", instance.uuid)
 
                 # Si clone demandé, copier les objectifs et éléments associés
                 if clone:
@@ -392,8 +392,8 @@ def create_amendement(request, tableau_initial_uuid):
                         num_amendement=next_num - 1
                     ).first() or initial_tableau
 
-                    logger.info(f"Clonage depuis {source_tableau.uuid} (num_amendement={source_tableau.num_amendement})")
-                    logger.info(f"Nombre d'objectifs à cloner: {source_tableau.objectives.count()}")
+                    logger.info("Clonage depuis %s (num_amendement=%s)", source_tableau.uuid, source_tableau.num_amendement)
+                    logger.info("Nombre d'objectifs à cloner: %s", source_tableau.objectives.count())
 
                     for obj in source_tableau.objectives.all():
                         new_obj = Objectives.objects.create(
@@ -426,7 +426,7 @@ def create_amendement(request, tableau_initial_uuid):
                                         realiser=p.realiser
                                     )
                             except Exception as e:
-                                logger.warning(f"Erreur lors du clonage des éléments annexes: {str(e)}")
+                                logger.warning("Erreur lors du clonage des éléments annexes: %s", str(e))
                                 pass
 
                 return Response({
@@ -436,14 +436,14 @@ def create_amendement(request, tableau_initial_uuid):
                 }, status=status.HTTP_201_CREATED)
 
             except Exception as e:
-                logger.error(f"Erreur lors de la création de l'amendement: {str(e)}")
+                logger.error("Erreur lors de la création de l'amendement: %s", str(e))
                 return Response({
                     'success': False,
                     'error': f'Erreur lors de la création: {str(e)}'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-        logger.error(f"Erreur de validation du serializer: {serializer.errors}")
-        logger.error(f"Données envoyées au serializer: {data}")
+        logger.error("Erreur de validation du serializer: %s", serializer.errors)
+        logger.error("Données envoyées au serializer: %s", data)
         return Response({
             'success': False,
             'errors': serializer.errors,
@@ -455,7 +455,7 @@ def create_amendement(request, tableau_initial_uuid):
         import traceback
         from django.conf import settings
         error_traceback = traceback.format_exc()
-        logger.error(f"Erreur create_amendement: {str(e)}\n{error_traceback}")
+        logger.error("Erreur create_amendement: %s\n%s", str(e), error_traceback)
         return Response({
             'success': False, 
             'error': f'Erreur lors de la création de l\'amendement: {str(e)}',
@@ -497,7 +497,7 @@ def get_amendements_by_initial(request, tableau_initial_uuid):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur get_amendements_by_initial: {str(e)}")
+        logger.error("Erreur get_amendements_by_initial: %s", str(e))
         return Response({
             'success': False, 
             'error': 'Erreur lors de la récupération des amendements'
@@ -557,7 +557,7 @@ def validate_tableau_bord(request, uuid):
         tableau.valide_par = request.user
         tableau.save()
         
-        logger.info(f"Tableau {tableau.uuid} validé par {request.user.username}")
+        logger.info("Tableau %s validé par %s", tableau.uuid, request.user.username)
         
         return Response({
             'success': True,
@@ -574,7 +574,7 @@ def validate_tableau_bord(request, uuid):
             'error': 'Tableau de bord non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur validation tableau: {str(e)}")
+        logger.error("Erreur validation tableau: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la validation'
@@ -617,7 +617,7 @@ def devalidate_tableau_bord(request, uuid):
         tableau.valide_par = None
         tableau.save()
         
-        logger.info(f"Tableau {tableau.uuid} dévalidé par {request.user.username}")
+        logger.info("Tableau %s dévalidé par %s", tableau.uuid, request.user.username)
         
         return Response({
             'success': True,
@@ -634,7 +634,7 @@ def devalidate_tableau_bord(request, uuid):
             'error': 'Tableau de bord non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur dévalidation tableau: {str(e)}")
+        logger.error("Erreur dévalidation tableau: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la dévalidation'
@@ -673,7 +673,7 @@ def tableau_bord_objectives(request, uuid):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des objectifs du tableau de bord {uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération des objectifs du tableau de bord %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des objectifs'

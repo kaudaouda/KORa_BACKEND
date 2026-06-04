@@ -69,7 +69,7 @@ def observations_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des observations: {str(e)}")
+        logger.error("Erreur lors de la récupération des observations: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des observations'
@@ -150,7 +150,7 @@ def observations_create(request):
         import traceback
         from django.conf import settings
         logger.error(
-            f"Erreur lors de la création de l'observation: {str(e)}\n{traceback.format_exc()}",
+            "Erreur lors de la création de l'observation: %s\n%s", str(e), traceback.format_exc(),
             exc_info=True
         )
         return Response({
@@ -181,7 +181,7 @@ def observations_detail(request, uuid):
             'error': 'Observation non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de l'observation {uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération de l'observation %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération de l\'observation'
@@ -240,7 +240,7 @@ def observations_update(request, uuid):
             'error': 'Observation non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'observation {uuid}: {str(e)}", exc_info=True)
+        logger.error("Erreur lors de la mise à jour de l'observation %s: %s", uuid, str(e), exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de l\'observation'
@@ -264,7 +264,7 @@ def observations_delete(request, uuid):
         
         observation.delete()
         
-        logger.info(f"Observation supprimée: {uuid} par {request.user.username}")
+        logger.info("Observation supprimée: %s par %s", uuid, request.user.username)
         
         return Response({
             'success': True,
@@ -280,7 +280,7 @@ def observations_delete(request, uuid):
             'error': 'Observation non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'observation {uuid}: {str(e)}", exc_info=True)
+        logger.error("Erreur lors de la suppression de l'observation %s: %s", uuid, str(e), exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de l\'observation'
@@ -308,7 +308,7 @@ def observations_by_indicateur(request, indicateur_uuid):
             'error': 'Aucune observation trouvée pour cet indicateur'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de l'observation de l'indicateur {indicateur_uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération de l'observation de l'indicateur %s: %s", indicateur_uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération de l\'observation de l\'indicateur'
@@ -344,7 +344,7 @@ def get_last_tableau_bord_previous_year(request):
         # Calculer l'année précédente
         annee_precedente = annee - 1
 
-        logger.info(f"[get_last_tableau_bord_previous_year] Recherche du dernier Tableau de Bord pour processus={processus_uuid}, année={annee_precedente}")
+        logger.info("[get_last_tableau_bord_previous_year] Recherche du dernier Tableau de Bord pour processus=%s, année=%s", processus_uuid, annee_precedente)
 
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not user_has_access_to_processus(request.user, processus_uuid):
@@ -360,19 +360,19 @@ def get_last_tableau_bord_previous_year(request):
         ).select_related('processus', 'cree_par', 'valide_par').order_by('-num_amendement').first()
 
         if tableau:
-            logger.info(f"[get_last_tableau_bord_previous_year] Tableau de Bord trouvé: {tableau.uuid} (num_amendement={tableau.num_amendement})")
+            logger.info("[get_last_tableau_bord_previous_year] Tableau de Bord trouvé: %s (num_amendement=%s)", tableau.uuid, tableau.num_amendement)
             serializer = TableauBordSerializer(tableau)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Aucun Tableau de Bord trouvé pour l'année précédente
-        logger.info(f"[get_last_tableau_bord_previous_year] Aucun Tableau de Bord trouvé pour l'année {annee_precedente}")
+        logger.info("[get_last_tableau_bord_previous_year] Aucun Tableau de Bord trouvé pour l'année %s", annee_precedente)
         return Response({
             'message': f'Aucun Tableau de Bord trouvé pour l\'année {annee_precedente}',
             'found': False
         }, status=status.HTTP_404_NOT_FOUND)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du dernier Tableau de Bord de l'année précédente: {str(e)}")
+        logger.error("Erreur lors de la récupération du dernier Tableau de Bord de l'année précédente: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({

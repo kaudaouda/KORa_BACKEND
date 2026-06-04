@@ -29,7 +29,7 @@ from .utils import check_cdr_action_or_403, _get_next_num_amendement_for_cdr
 def evaluation_risque_create(request):
     """Créer une nouvelle évaluation de risque"""
     try:
-        logger.info(f"[evaluation_risque_create] Données reçues: {request.data}")
+        logger.info("[evaluation_risque_create] Données reçues: %s", request.data)
 
         # Vérifier l'accès au processus et la permission "ecrire"
         if 'details_cdr' in request.data:
@@ -64,9 +64,9 @@ def evaluation_risque_create(request):
                         'error': 'Aucune version d\'évaluation disponible. Veuillez initialiser les versions.'
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                 request.data['version_evaluation'] = str(version_initiale.uuid)
-                logger.info(f"[evaluation_risque_create] Version par défaut assignée: {version_initiale.nom}")
+                logger.info("[evaluation_risque_create] Version par défaut assignée: %s", version_initiale.nom)
             except Exception as e:
-                logger.error(f"[evaluation_risque_create] Erreur récupération version: {str(e)}")
+                logger.error("[evaluation_risque_create] Erreur récupération version: %s", str(e))
                 return Response({
                     'error': 'Erreur lors de la récupération de la version d\'évaluation.'
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -74,13 +74,13 @@ def evaluation_risque_create(request):
         serializer = EvaluationRisqueCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             evaluation = serializer.save()
-            logger.info(f"[evaluation_risque_create] ✅ Évaluation créée avec succès: {evaluation.uuid}")
+            logger.info("[evaluation_risque_create] ✅ Évaluation créée avec succès: %s", evaluation.uuid)
             return Response(EvaluationRisqueSerializer(evaluation).data, status=status.HTTP_201_CREATED)
 
-        logger.error(f"[evaluation_risque_create] Erreurs de validation: {serializer.errors}")
+        logger.error("[evaluation_risque_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'évaluation: {str(e)}")
+        logger.error("Erreur lors de la création de l'évaluation: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -155,7 +155,7 @@ def evaluation_risque_update(request, uuid):
             'error': 'Évaluation de risque non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'évaluation: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de l'évaluation: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -168,7 +168,7 @@ def evaluation_risque_update(request, uuid):
 def plan_action_create(request):
     """Créer un nouveau plan d'action"""
     try:
-        logger.info(f"[plan_action_create] Données reçues: {request.data}")
+        logger.info("[plan_action_create] Données reçues: %s", request.data)
         
         # Vérifier l'accès au processus et la permission "ecrire"
         if 'details_cdr' in request.data:
@@ -194,13 +194,13 @@ def plan_action_create(request):
         serializer = PlanActionCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             plan = serializer.save()
-            logger.info(f"[plan_action_create] ✅ Plan d'action créé avec succès: {plan.uuid}")
+            logger.info("[plan_action_create] ✅ Plan d'action créé avec succès: %s", plan.uuid)
             return Response(PlanActionSerializer(plan).data, status=status.HTTP_201_CREATED)
         
-        logger.error(f"[plan_action_create] Erreurs de validation: {serializer.errors}")
+        logger.error("[plan_action_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du plan d'action: {str(e)}")
+        logger.error("Erreur lors de la création du plan d'action: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -241,14 +241,14 @@ def plan_action_update(request, uuid):
         if serializer.is_valid():
             plan = serializer.save()
             return Response(PlanActionSerializer(plan).data)
-        logger.error(f"Erreurs de validation du serializer: {serializer.errors}")
+        logger.error("Erreurs de validation du serializer: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except PlanAction.DoesNotExist:
         return Response({
             'error': 'Plan d\'action non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du plan d'action: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du plan d'action: %s", str(e))
         import traceback
         error_traceback = traceback.format_exc()
         logger.error(error_traceback)
@@ -264,7 +264,7 @@ def plan_action_update(request, uuid):
 def suivi_action_create(request):
     """Créer un nouveau suivi d'action"""
     try:
-        logger.info(f"[suivi_action_create] Données reçues: {request.data}")
+        logger.info("[suivi_action_create] Données reçues: %s", request.data)
         
         # Vérifier si un amendement existe avant de créer un suivi (bloquer la création de suivis dans le tableau précédent)
         # SAUF lors d'une copie d'amendement (from_amendment_copy=True)
@@ -311,13 +311,13 @@ def suivi_action_create(request):
         serializer = SuiviActionCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             suivi = serializer.save()
-            logger.info(f"[suivi_action_create] ✅ Suivi créé avec succès: {suivi.uuid}")
+            logger.info("[suivi_action_create] ✅ Suivi créé avec succès: %s", suivi.uuid)
             return Response(SuiviActionSerializer(suivi).data, status=status.HTTP_201_CREATED)
         
-        logger.error(f"[suivi_action_create] Erreurs de validation: {serializer.errors}")
+        logger.error("[suivi_action_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du suivi: {str(e)}")
+        logger.error("Erreur lors de la création du suivi: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -380,7 +380,7 @@ def suivi_action_update(request, uuid):
             'error': 'Suivi d\'action non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du suivi: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du suivi: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({

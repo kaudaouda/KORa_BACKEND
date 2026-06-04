@@ -117,8 +117,7 @@ class AppActionPermission(BasePermission):
             # Les super admins (is_staff ET is_superuser) ont toutes les permissions
             if PermissionService._is_super_admin(request.user):
                 logger.info(
-                    f"[AppActionPermission.has_permission] ✅ Super admin bypass: "
-                    f"user={request.user.username}, app={self.app_name}, action={self.action}"
+                    "[AppActionPermission.has_permission] ✅ Super admin bypass: user=%s, app=%s, action=%s", request.user.username, self.app_name, self.action
                 )
                 return True
 
@@ -126,33 +125,26 @@ class AppActionPermission(BasePermission):
             from parametre.permissions import is_supervisor_smi
             if is_supervisor_smi(request.user):
                 logger.info(
-                    f"[AppActionPermission.has_permission] ✅ Superviseur SMI bypass: "
-                    f"user={request.user.username}, app={self.app_name}, action={self.action}"
+                    "[AppActionPermission.has_permission] ✅ Superviseur SMI bypass: user=%s, app=%s, action=%s", request.user.username, self.app_name, self.action
                 )
                 return True
             
             # Log pour déboguer
             logger.warning(
-                f"[AppActionPermission.has_permission] 🔍 DÉBUT Vérification permission: "
-                f"app={self.app_name}, action={self.action}, user={request.user.username}, "
-                f"has_view={view is not None}, view_kwargs={view.kwargs if (view and hasattr(view, 'kwargs')) else 'N/A'}"
+                "[AppActionPermission.has_permission] 🔍 DÉBUT Vérification permission: app=%s, action=%s, user=%s, has_view=%s, view_kwargs=%s", self.app_name, self.action, request.user.username, view is not None, view.kwargs if view and hasattr(view, 'kwargs') else 'N/A'
             )
             
             # Extraire le processus_uuid
             processus_uuid = self._extract_processus_uuid(request, view)
             
             logger.warning(
-                f"[AppActionPermission.has_permission] 🔍 Vérification permission: "
-                f"app={self.app_name}, action={self.action}, user={request.user.username}, "
-                f"processus_uuid={processus_uuid}"
+                "[AppActionPermission.has_permission] 🔍 Vérification permission: app=%s, action=%s, user=%s, processus_uuid=%s", self.app_name, self.action, request.user.username, processus_uuid
             )
             
             if not processus_uuid:
                 # Si on ne peut pas extraire le processus, on refuse par sécurité
                 logger.error(
-                    f"[AppActionPermission] ❌ ERREUR: Impossible d'extraire processus_uuid pour "
-                    f"app={self.app_name}, action={self.action}, user={request.user.username}, "
-                    f"has_view={view is not None}, view_kwargs={view.kwargs if (view and hasattr(view, 'kwargs')) else 'N/A'}"
+                    "[AppActionPermission] ❌ ERREUR: Impossible d'extraire processus_uuid pour app=%s, action=%s, user=%s, has_view=%s, view_kwargs=%s", self.app_name, self.action, request.user.username, view is not None, view.kwargs if view and hasattr(view, 'kwargs') else 'N/A'
                 )
                 raise PermissionDenied(
                     f"Impossible de déterminer le processus pour vérifier la permission '{self.action}'"
@@ -168,24 +160,19 @@ class AppActionPermission(BasePermission):
                 )
                 
                 logger.warning(
-                    f"[AppActionPermission.has_permission] ✅ Résultat vérification: "
-                    f"can_perform={can_perform}, reason={reason}, "
-                    f"app={self.app_name}, action={self.action}, user={request.user.username}, "
-                    f"processus_uuid={processus_uuid}"
+                    "[AppActionPermission.has_permission] ✅ Résultat vérification: can_perform=%s, reason=%s, app=%s, action=%s, user=%s, processus_uuid=%s", can_perform, reason, self.app_name, self.action, request.user.username, processus_uuid
                 )
                 
                 if not can_perform:
                     logger.error(
-                        f"[AppActionPermission.has_permission] ❌ PERMISSION REFUSÉE: "
-                        f"app={self.app_name}, action={self.action}, user={request.user.username}, "
-                        f"processus_uuid={processus_uuid}, reason={reason}"
+                        "[AppActionPermission.has_permission] ❌ PERMISSION REFUSÉE: app=%s, action=%s, user=%s, processus_uuid=%s, reason=%s", self.app_name, self.action, request.user.username, processus_uuid, reason
                     )
                     raise PermissionDenied(reason or f"Action '{self.action}' non autorisée")
             except PermissionDenied:
                 raise
             except Exception as e:
                 logger.error(
-                    f"[AppActionPermission.has_permission] ❌ EXCEPTION dans PermissionService.can_perform_action: {e}",
+                    "[AppActionPermission.has_permission] ❌ EXCEPTION dans PermissionService.can_perform_action: %s", e,
                     exc_info=True
                 )
                 raise PermissionDenied(
@@ -199,7 +186,7 @@ class AppActionPermission(BasePermission):
         except Exception as e:
             # Logger toute autre exception et refuser par sécurité
             logger.error(
-                f"[AppActionPermission.has_permission] Erreur lors de la vérification de permission: {e}",
+                "[AppActionPermission.has_permission] Erreur lors de la vérification de permission: %s", e,
                 exc_info=True
             )
             raise PermissionDenied(
@@ -212,20 +199,17 @@ class AppActionPermission(BasePermission):
         Applique les conditions contextuelles si check_context=True
         """
         logger.info(
-            f"[AppActionPermission.has_object_permission] 🔍 Début vérification: "
-            f"app={self.app_name}, action={self.action}, user={request.user.username if request.user else None}, "
-            f"obj={obj}, obj_type={type(obj).__name__ if obj else None}"
+            "[AppActionPermission.has_object_permission] 🔍 Début vérification: app=%s, action=%s, user=%s, obj=%s, obj_type=%s", self.app_name, self.action, request.user.username if request.user else None, obj, type(obj).__name__ if obj else None
         )
         
         if not request.user or not request.user.is_authenticated:
-            logger.warning(f"[AppActionPermission.has_object_permission] ❌ User non authentifié")
+            logger.warning("[AppActionPermission.has_object_permission] ❌ User non authentifié")
             return False
         
         # Security by Design : Vérifier le super admin AVANT d'extraire le processus_uuid
         if PermissionService._is_super_admin(request.user):
             logger.info(
-                f"[AppActionPermission.has_object_permission] ✅ Super admin bypass: "
-                f"user={request.user.username}, app={self.app_name}, action={self.action}"
+                "[AppActionPermission.has_object_permission] ✅ Super admin bypass: user=%s, app=%s, action=%s", request.user.username, self.app_name, self.action
             )
             return True
 
@@ -233,8 +217,7 @@ class AppActionPermission(BasePermission):
         from parametre.permissions import is_supervisor_smi
         if is_supervisor_smi(request.user):
             logger.info(
-                f"[AppActionPermission.has_object_permission] ✅ Superviseur SMI bypass: "
-                f"user={request.user.username}, app={self.app_name}, action={self.action}"
+                "[AppActionPermission.has_object_permission] ✅ Superviseur SMI bypass: user=%s, app=%s, action=%s", request.user.username, self.app_name, self.action
             )
             return True
 
@@ -243,16 +226,14 @@ class AppActionPermission(BasePermission):
         
         if not processus_uuid:
             logger.warning(
-                f"[AppActionPermission.has_object_permission] ❌ Impossible d'extraire processus_uuid depuis l'objet "
-                f"pour app={self.app_name}, action={self.action}, user={request.user.username}"
+                "[AppActionPermission.has_object_permission] ❌ Impossible d'extraire processus_uuid depuis l'objet pour app=%s, action=%s, user=%s", self.app_name, self.action, request.user.username
             )
             raise PermissionDenied(
                 f"Impossible de déterminer le processus pour vérifier la permission '{self.action}'"
             )
         
         logger.info(
-            f"[AppActionPermission.has_object_permission] 🔍 processus_uuid extrait: {processus_uuid}, "
-            f"check_context={self.check_context}"
+            "[AppActionPermission.has_object_permission] 🔍 processus_uuid extrait: %s, check_context=%s", processus_uuid, self.check_context
         )
         
         # Vérifier via PermissionService avec l'instance de l'objet pour les conditions contextuelles
@@ -267,9 +248,7 @@ class AppActionPermission(BasePermission):
         )
         
         logger.info(
-            f"[AppActionPermission.has_object_permission] {'✅' if can_perform else '❌'} Résultat PermissionService: "
-            f"can_perform={can_perform}, reason={reason}, app={self.app_name}, action={self.action}, "
-            f"user={request.user.username}, processus_uuid={processus_uuid}"
+            "[AppActionPermission.has_object_permission] %s Résultat PermissionService: can_perform=%s, reason=%s, app=%s, action=%s, user=%s, processus_uuid=%s", '✅' if can_perform else '❌', can_perform, reason, self.app_name, self.action, request.user.username, processus_uuid
         )
         
         if not can_perform:

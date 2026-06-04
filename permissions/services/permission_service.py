@@ -69,8 +69,7 @@ class PermissionService:
         # Security by Design : is_staff ET is_superuser = toutes les permissions
         if user.is_staff and user.is_superuser:
             logger.info(
-                f"[PermissionService._is_super_admin] ✅ User {user.username} "
-                f"est super admin (is_staff={user.is_staff}, is_superuser={user.is_superuser})"
+                "[PermissionService._is_super_admin] ✅ User %s est super admin (is_staff=%s, is_superuser=%s)", user.username, user.is_staff, user.is_superuser
             )
             return True
         
@@ -109,7 +108,7 @@ class PermissionService:
             
             return False
         except Exception as e:
-            logger.error(f"[PermissionService._is_super_admin] Erreur: {str(e)}")
+            logger.error("[PermissionService._is_super_admin] Erreur: %s", str(e))
             return False
     
     @classmethod
@@ -176,11 +175,11 @@ class PermissionService:
         cache_key = cls._get_bulk_cache_key(user.id, app_name, processus_uuid)
         cached_permissions = cache.get(cache_key)
         if cached_permissions is not None:
-            logger.info(f"[PermissionService] ⚠️ Cache HIT pour {cache_key}")
+            logger.info("[PermissionService] ⚠️ Cache HIT pour %s", cache_key)
             return cached_permissions
         
         # Cache miss : calculer les permissions depuis la DB
-        logger.info(f"[PermissionService] ✅ Cache MISS, calcul depuis DB pour {cache_key}")
+        logger.info("[PermissionService] ✅ Cache MISS, calcul depuis DB pour %s", cache_key)
 
         # 1a. Récupérer les rôles spécifiques (non-globaux) de l'utilisateur
         specific_roles_query = UserProcessusRole.objects.filter(
@@ -205,20 +204,16 @@ class PermissionService:
         )
 
         logger.info(
-            f"[PermissionService.get_user_permissions] User {user.username} ({user.id}), "
-            f"app={app_name}, processus_uuid={processus_uuid}, "
-            f"{len(specific_roles)} rôle(s) spécifique(s), "
-            f"{len(global_roles)} rôle(s) global/globaux"
+            "[PermissionService.get_user_permissions] User %s (%s), app=%s, processus_uuid=%s, %s rôle(s) spécifique(s), %s rôle(s) global/globaux", user.username, user.id, app_name, processus_uuid, len(specific_roles), len(global_roles)
         )
 
         for user_role in specific_roles:
             logger.info(
-                f"[PermissionService.get_user_permissions] Rôle spécifique: {user_role.role.code} "
-                f"pour processus: {user_role.processus.nom} ({user_role.processus.uuid})"
+                "[PermissionService.get_user_permissions] Rôle spécifique: %s pour processus: %s (%s)", user_role.role.code, user_role.processus.nom, user_role.processus.uuid
             )
         for global_role in global_roles:
             logger.info(
-                f"[PermissionService.get_user_permissions] Rôle global: {global_role.role.code}"
+                "[PermissionService.get_user_permissions] Rôle global: %s", global_role.role.code
             )
 
         if not specific_roles and not global_roles:
@@ -226,8 +221,7 @@ class PermissionService:
             result = {}
             cache.set(cache_key, result, cls.CACHE_TIMEOUT)
             logger.warning(
-                f"[PermissionService.get_user_permissions] ⚠️ Aucun rôle trouvé pour "
-                f"user={user.username}, processus_uuid={processus_uuid}"
+                "[PermissionService.get_user_permissions] ⚠️ Aucun rôle trouvé pour user=%s, processus_uuid=%s", user.username, processus_uuid
             )
             return result
 
@@ -333,24 +327,19 @@ class PermissionService:
                     ).order_by('-priority')
                     
                     logger.info(
-                        f"[PermissionService] Rôle {role.code} pour action {action_code}: "
-                        f"{mappings.count()} mappings trouvés"
+                        "[PermissionService] Rôle %s pour action %s: %s mappings trouvés", role.code, action_code, mappings.count()
                     )
                     
                     # Log spécifique pour update_cible
                     if action_code == 'update_cible':
                         mappings_list = [(m.id, m.granted, m.priority, m.is_active) for m in mappings]
                         logger.info(
-                            f"[PermissionService] 🔍 DEBUG update_cible - Rôle {role.code}: "
-                            f"{mappings.count()} mappings, "
-                            f"détails: {mappings_list}"
+                            "[PermissionService] 🔍 DEBUG update_cible - Rôle %s: %s mappings, détails: %s", role.code, mappings.count(), mappings_list
                         )
                     
                     for mapping in mappings:
                         logger.info(
-                            f"[PermissionService] Mapping trouvé: role={role.code}, "
-                            f"action={action_code}, granted={mapping.granted}, "
-                            f"priority={mapping.priority}, is_active={mapping.is_active}"
+                            "[PermissionService] Mapping trouvé: role=%s, action=%s, granted=%s, priority=%s, is_active=%s", role.code, action_code, mapping.granted, mapping.priority, mapping.is_active
                         )
                         if mapping.granted:
                             # Permission accordée : prendre celle avec la plus haute priorité
@@ -369,20 +358,17 @@ class PermissionService:
                     granted = True
                     conditions = granted_mapping.conditions or {}
                     logger.info(
-                        f"[PermissionService] ✅ Permission {action_code} ACCORDÉE "
-                        f"(rôle: {granted_mapping.role.code}, priorité: {granted_mapping.priority})"
+                        "[PermissionService] ✅ Permission %s ACCORDÉE (rôle: %s, priorité: %s)", action_code, granted_mapping.role.code, granted_mapping.priority
                     )
                 elif denied_mapping:
                     granted = False
                     conditions = denied_mapping.conditions or {}
                     logger.info(
-                        f"[PermissionService] ❌ Permission {action_code} REFUSÉE "
-                        f"(rôle: {denied_mapping.role.code}, priorité: {denied_mapping.priority})"
+                        "[PermissionService] ❌ Permission %s REFUSÉE (rôle: %s, priorité: %s)", action_code, denied_mapping.role.code, denied_mapping.priority
                     )
                 else:
                     logger.info(
-                        f"[PermissionService] ⚠️ Permission {action_code} NON TROUVÉE "
-                        f"(refus par défaut) - Aucun mapping trouvé pour les rôles: {[r.code for r in roles]}"
+                        "[PermissionService] ⚠️ Permission %s NON TROUVÉE (refus par défaut) - Aucun mapping trouvé pour les rôles: %s", action_code, [r.code for r in roles]
                     )
                 
                 result[processus_uuid_str][action_code] = {
@@ -394,16 +380,10 @@ class PermissionService:
                 # Log spécifique pour update_cible pour déboguer
                 if action_code == 'update_cible':
                     logger.info(
-                        f"[PermissionService] 🔍 DEBUG update_cible pour user={user.username}, "
-                        f"processus={processus_uuid_str}: granted={granted}, "
-                        f"granted_mapping={granted_mapping.role.code if granted_mapping else None} "
-                        f"(priority={granted_mapping.priority if granted_mapping else None}), "
-                        f"denied_mapping={denied_mapping.role.code if denied_mapping else None} "
-                        f"(priority={denied_mapping.priority if denied_mapping else None})"
+                        "[PermissionService] 🔍 DEBUG update_cible pour user=%s, processus=%s: granted=%s, granted_mapping=%s (priority=%s), denied_mapping=%s (priority=%s)", user.username, processus_uuid_str, granted, granted_mapping.role.code if granted_mapping else None, granted_mapping.priority if granted_mapping else None, denied_mapping.role.code if denied_mapping else None, denied_mapping.priority if denied_mapping else None
                     )
                     logger.info(
-                        f"[PermissionService] 🔍 DEBUG update_cible - Résultat final: "
-                        f"granted={granted}, conditions={conditions}, source=role_mapping"
+                        "[PermissionService] 🔍 DEBUG update_cible - Résultat final: granted=%s, conditions=%s, source=role_mapping", granted, conditions
                     )
         
         # Mettre en cache
@@ -452,17 +432,13 @@ class PermissionService:
         cached_result = cache.get(cache_key)
         
         logger.warning(
-            f"[PermissionService.can_perform_action] 🔍 Cache check: "
-            f"user={user.username}, app={app_name}, action={action}, "
-            f"processus_uuid={processus_uuid}, cache_key={cache_key}, "
-            f"cached_result={cached_result}"
+            "[PermissionService.can_perform_action] 🔍 Cache check: user=%s, app=%s, action=%s, processus_uuid=%s, cache_key=%s, cached_result=%s", user.username, app_name, action, processus_uuid, cache_key, cached_result
         )
         
         if cached_result is not None:
             granted, reason = cached_result
             logger.warning(
-                f"[PermissionService.can_perform_action] ✅ Cache HIT: "
-                f"granted={granted}, reason={reason}"
+                "[PermissionService.can_perform_action] ✅ Cache HIT: granted=%s, reason=%s", granted, reason
             )
             cls._log_audit(
                 user, app_name, action, processus_uuid, granted, 
@@ -471,16 +447,14 @@ class PermissionService:
             return granted, reason
         
         logger.warning(
-            f"[PermissionService.can_perform_action] ❌ Cache MISS, "
-            f"récupération des permissions depuis la DB"
+            "[PermissionService.can_perform_action] ❌ Cache MISS, récupération des permissions depuis la DB"
         )
         
         # 3. Récupérer les permissions (utilise le cache bulk si disponible)
         permissions = cls.get_user_permissions(user, app_name, processus_uuid)
         
         logger.warning(
-            f"[PermissionService.can_perform_action] 📦 Permissions récupérées: "
-            f"processus_uuid={processus_uuid}, permissions_keys={list(permissions.get(str(processus_uuid), {}).keys())}"
+            "[PermissionService.can_perform_action] 📦 Permissions récupérées: processus_uuid=%s, permissions_keys=%s", processus_uuid, list(permissions.get(str(processus_uuid), {}).keys())
         )
         
         processus_uuid_str = str(processus_uuid)
@@ -488,7 +462,7 @@ class PermissionService:
             reason = f"Aucune permission trouvée pour le processus {processus_uuid_str}"
             result = (False, reason)
             logger.error(
-                f"[PermissionService.can_perform_action] ❌ {reason}"
+                "[PermissionService.can_perform_action] ❌ %s", reason
             )
             cache.set(cache_key, result, cls.CACHE_TIMEOUT)
             cls._log_audit(
@@ -499,15 +473,14 @@ class PermissionService:
         
         action_permission = permissions[processus_uuid_str].get(action)
         logger.warning(
-            f"[PermissionService.can_perform_action] 🔍 Action permission: "
-            f"action={action}, action_permission={action_permission}"
+            "[PermissionService.can_perform_action] 🔍 Action permission: action=%s, action_permission=%s", action, action_permission
         )
         
         if not action_permission:
             reason = f"Action '{action}' non trouvée pour l'app '{app_name}'"
             result = (False, reason)
             logger.error(
-                f"[PermissionService.can_perform_action] ❌ {reason}"
+                "[PermissionService.can_perform_action] ❌ %s", reason
             )
             cache.set(cache_key, result, cls.CACHE_TIMEOUT)
             cls._log_audit(
@@ -527,7 +500,7 @@ class PermissionService:
                 ).first()
                 action_nom = permission_action.nom if permission_action else action
             except Exception as e:
-                logger.warning(f"[PermissionService] Erreur lors de la récupération du nom de l'action: {e}")
+                logger.warning("[PermissionService] Erreur lors de la récupération du nom de l'action: %s", e)
                 action_nom = action
             
             # Récupérer les rôles de l'utilisateur pour ce processus
@@ -550,14 +523,13 @@ class PermissionService:
                 )
                 roles_str = ", ".join(roles_noms) if roles_noms else "aucun rôle"
             except Exception as e:
-                logger.warning(f"[PermissionService] Erreur lors de la récupération des rôles: {e}")
+                logger.warning("[PermissionService] Erreur lors de la récupération des rôles: %s", e)
                 roles_str = "rôle inconnu"
             
             reason = f"Vous n'avez pas la permission '{action_nom}' pour ce processus. Rôles actuels: {roles_str}."
             result = (False, reason)
             logger.error(
-                f"[PermissionService.can_perform_action] ❌ {reason}, "
-                f"action_permission={action_permission}"
+                "[PermissionService.can_perform_action] ❌ %s, action_permission=%s", reason, action_permission
             )
             cache.set(cache_key, result, cls.CACHE_TIMEOUT)
             cls._log_audit(
@@ -567,8 +539,7 @@ class PermissionService:
             return result
         
         logger.warning(
-            f"[PermissionService.can_perform_action] ✅ Permission accordée: "
-            f"granted={action_permission['granted']}, source={action_permission.get('source')}"
+            "[PermissionService.can_perform_action] ✅ Permission accordée: granted=%s, source=%s", action_permission['granted'], action_permission.get('source')
         )
         
         # 5. Appliquer les conditions contextuelles
@@ -626,13 +597,13 @@ class PermissionService:
             # Invalider seulement pour cette app
             bulk_key = cls._get_bulk_cache_key(user_id, app_name)
             cache.delete(bulk_key)
-            logger.info(f"[PermissionService] Cache bulk invalidé: {bulk_key}")
+            logger.info("[PermissionService] Cache bulk invalidé: %s", bulk_key)
             
             # Si processus_uuid et action sont fournis, invalider aussi le cache individuel
             if processus_uuid and action:
                 individual_key = cls._get_cache_key(user_id, app_name, processus_uuid, action)
                 cache.delete(individual_key)
-                logger.info(f"[PermissionService] Cache individuel invalidé: {individual_key}")
+                logger.info("[PermissionService] Cache individuel invalidé: %s", individual_key)
             elif processus_uuid:
                 # Invalider tous les caches individuels pour ce processus
                 # On ne peut pas faire de wildcard, mais on peut essayer de récupérer toutes les actions
@@ -642,16 +613,16 @@ class PermissionService:
                     for action_code in actions:
                         individual_key = cls._get_cache_key(user_id, app_name, processus_uuid, action_code)
                         cache.delete(individual_key)
-                    logger.info(f"[PermissionService] Tous les caches individuels invalidés pour processus {processus_uuid}")
+                    logger.info("[PermissionService] Tous les caches individuels invalidés pour processus %s", processus_uuid)
                 except Exception as e:
-                    logger.warning(f"[PermissionService] Erreur lors de l'invalidation des caches individuels: {e}")
+                    logger.warning("[PermissionService] Erreur lors de l'invalidation des caches individuels: %s", e)
         else:
             # Invalider toutes les apps connues
-            logger.info(f"[PermissionService] Invalidation complète du cache pour user {user_id}")
+            logger.info("[PermissionService] Invalidation complète du cache pour user %s", user_id)
             for app in ['cdr', 'dashboard', 'pac']:  # Applications connues
                 bulk_key = cls._get_bulk_cache_key(user_id, app)
                 cache.delete(bulk_key)
-                logger.info(f"[PermissionService] Cache bulk invalidé: {bulk_key}")
+                logger.info("[PermissionService] Cache bulk invalidé: %s", bulk_key)
     
     @classmethod
     def _log_audit(
@@ -702,4 +673,4 @@ class PermissionService:
                 cache_hit=cache_hit
             )
         except Exception as e:
-            logger.error(f"[PermissionService._log_audit] Erreur lors du log: {str(e)}")
+            logger.error("[PermissionService._log_audit] Erreur lors du log: %s", str(e))

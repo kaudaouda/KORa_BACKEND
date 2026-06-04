@@ -182,7 +182,7 @@ class EmailSettings(models.Model):
             self.email_host_password_encrypted = EmailPasswordEncryption.encrypt_password(password)
             logger.info("✅ Mot de passe SMTP chiffré avec succès")
         except Exception as e:
-            logger.error(f"❌ Erreur lors du chiffrement du mot de passe : {str(e)}")
+            logger.error("❌ Erreur lors du chiffrement du mot de passe : %s", str(e))
             raise ValidationError("Impossible de chiffrer le mot de passe")
 
     def get_password(self) -> str:
@@ -254,7 +254,7 @@ class EmailSettings(models.Model):
             return True, "Connexion SMTP établie avec succès"
             
         except Exception as e:
-            logger.error(f"❌ Test de connexion SMTP échoué : {str(e)}")
+            logger.error("❌ Test de connexion SMTP échoué : %s", str(e))
             return False, f"Échec de la connexion : {str(e)}"
 
     def mark_test_success(self):

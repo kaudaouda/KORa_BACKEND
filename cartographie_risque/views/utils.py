@@ -58,7 +58,7 @@ def _get_next_num_amendement_for_cdr(user, annee, processus_uuid):
     0 si aucun CDR n'existe encore, sinon max_existant + 1.
     """
     try:
-        logger.info(f"[_get_next_num_amendement_for_cdr] user={user}, annee={annee}, processus_uuid={processus_uuid}")
+        logger.info("[_get_next_num_amendement_for_cdr] user=%s, annee=%s, processus_uuid=%s", user, annee, processus_uuid)
         existing = CDR.objects.filter(
             cree_par=user,
             annee=annee,
@@ -68,10 +68,10 @@ def _get_next_num_amendement_for_cdr(user, annee, processus_uuid):
             logger.info("[_get_next_num_amendement_for_cdr] Aucun CDR existant, retourne 0 (initial)")
             return 0
         next_num = existing.num_amendement + 1
-        logger.info(f"[_get_next_num_amendement_for_cdr] Retourne {next_num}")
+        logger.info("[_get_next_num_amendement_for_cdr] Retourne %s", next_num)
         return next_num
     except Exception as e:
-        logger.error(f"[_get_next_num_amendement_for_cdr] Erreur: {e}")
+        logger.error("[_get_next_num_amendement_for_cdr] Erreur: %s", e)
         import traceback
         logger.error(traceback.format_exc())
         raise

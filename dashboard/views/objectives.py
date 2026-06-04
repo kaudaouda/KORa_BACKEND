@@ -83,7 +83,7 @@ def objectives_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des objectifs: {str(e)}")
+        logger.error("Erreur lors de la récupération des objectifs: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des objectifs'
@@ -115,7 +115,7 @@ def objectives_detail(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de l'objectif {uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération de l'objectif %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération de l\'objectif'
@@ -172,7 +172,7 @@ def objectives_create(request):
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 log_objectif_creation(request.user, objective, ip_address, user_agent)
             except Exception as log_error:
-                logger.error(f"Erreur lors du logging de la création de l'objectif: {log_error}")
+                logger.error("Erreur lors du logging de la création de l'objectif: %s", log_error)
 
             # Retourner l'objectif créé avec tous ses détails
             response_serializer = ObjectivesSerializer(objective)
@@ -193,7 +193,7 @@ def objectives_create(request):
         # Security by Design : Ne pas capturer PermissionDenied, laisser DRF la gérer correctement
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'objectif: {str(e)}", exc_info=True)
+        logger.error("Erreur lors de la création de l'objectif: %s", str(e), exc_info=True)
         return Response({
             'success': False,
             'error': f'Erreur lors de la création de l\'objectif: {str(e)}'
@@ -238,7 +238,7 @@ def objectives_update(request, uuid):
             # Retourner l'objectif mis à jour avec tous ses détails
             response_serializer = ObjectivesSerializer(updated_objective)
             
-            logger.info(f"Objectif mis à jour: {objective.number} par {request.user.username}")
+            logger.info("Objectif mis à jour: %s par %s", objective.number, request.user.username)
             
             return Response({
                 'success': True,
@@ -262,7 +262,7 @@ def objectives_update(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'objectif {uuid}: {str(e)}", exc_info=True)
+        logger.error("Erreur lors de la mise à jour de l'objectif %s: %s", uuid, str(e), exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de l\'objectif'
@@ -287,7 +287,7 @@ def objectives_delete(request, uuid):
         objective_number = objective.number
         objective.delete()
         
-        logger.info(f"Objectif supprimé: {objective_number} par {request.user.username}")
+        logger.info("Objectif supprimé: %s par %s", objective_number, request.user.username)
         
         return Response({
             'success': True,
@@ -304,7 +304,7 @@ def objectives_delete(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'objectif {uuid}: {str(e)}", exc_info=True)
+        logger.error("Erreur lors de la suppression de l'objectif %s: %s", uuid, str(e), exc_info=True)
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de l\'objectif'

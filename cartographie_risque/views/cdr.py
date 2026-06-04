@@ -38,7 +38,7 @@ def cartographie_risque_home(request):
             }
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur dans cartographie_risque_home: {str(e)}')
+        logger.error("Erreur dans cartographie_risque_home: %s", str(e))
         from django.conf import settings
         return Response({
             'success': False,
@@ -82,7 +82,7 @@ def cdr_list(request):
             'count': cdrs.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur dans cdr_list: {str(e)}')
+        logger.error("Erreur dans cdr_list: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -99,7 +99,7 @@ def cdr_list(request):
 def cdr_stats(request):
     """Statistiques des CDR de l'utilisateur connecté (compatible super admin)"""
     try:
-        logger.info(f"[cdr_stats] Début pour l'utilisateur: {request.user.username}")
+        logger.info("[cdr_stats] Début pour l'utilisateur: %s", request.user.username)
         scope = request.query_params.get('scope', 'tous')
 
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
@@ -117,7 +117,7 @@ def cdr_stats(request):
                 except (ValueError, TypeError):
                     pass
         elif not user_processus_uuids:
-            logger.info(f"[cdr_stats] Aucun processus assigné pour l'utilisateur {request.user.username}")
+            logger.info("[cdr_stats] Aucun processus assigné pour l'utilisateur %s", request.user.username)
             return Response({
                 'total_cdrs': 0,
                 'cdrs_valides': 0,
@@ -170,11 +170,11 @@ def cdr_stats(request):
             'total_details': total_details,
             'total_plans_action': total_plans_action,
         }
-        logger.info(f"[cdr_stats] Statistiques calculées: {stats}")
+        logger.info("[cdr_stats] Statistiques calculées: %s", stats)
         return Response(stats, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statistiques CDR: {str(e)}")
+        logger.error("Erreur lors de la récupération des statistiques CDR: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -216,7 +216,7 @@ def cdr_detail(request, uuid):
             'error': 'CDR non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans cdr_detail: {str(e)}')
+        logger.error("Erreur dans cdr_detail: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         from django.conf import settings
@@ -233,7 +233,7 @@ def cdr_get_or_create(request):
     Récupérer ou créer une CDR unique pour (processus, annee, num_amendement).
     """
     try:
-        logger.info(f"[cdr_get_or_create] Début - données reçues: {request.data}")
+        logger.info("[cdr_get_or_create] Début - données reçues: %s", request.data)
         data = request.data.copy()
         annee = data.get('annee')
         processus_uuid = data.get('processus')
@@ -254,7 +254,7 @@ def cdr_get_or_create(request):
                 num_amendement_value = _get_next_num_amendement_for_cdr(request.user, annee, processus_uuid)
                 data['num_amendement'] = num_amendement_value
             except Exception as tt_error:
-                logger.error(f"[cdr_get_or_create] Erreur détermination automatique num_amendement: {tt_error}")
+                logger.error("[cdr_get_or_create] Erreur détermination automatique num_amendement: %s", tt_error)
                 num_amendement_value = 0
                 data['num_amendement'] = 0
         else:
@@ -279,7 +279,7 @@ def cdr_get_or_create(request):
                         'initial_cdr_uuid': str(cdr_initial.uuid)
                     }, status=status.HTTP_400_BAD_REQUEST)
                 data['initial_ref'] = str(cdr_initial.uuid)
-                logger.info(f"[cdr_get_or_create] CDR initial trouvé automatiquement: {cdr_initial.uuid}")
+                logger.info("[cdr_get_or_create] CDR initial trouvé automatiquement: %s", cdr_initial.uuid)
             else:
                 return Response({
                     'error': 'Aucun CDR initial trouvé pour créer cet amendement. Veuillez d\'abord créer et valider un CDR initial.'
@@ -288,7 +288,7 @@ def cdr_get_or_create(request):
             # CDR initial : pas d'initial_ref
             data.pop('initial_ref', None)
 
-        logger.info(f"[cdr_get_or_create] annee={annee}, processus_uuid={processus_uuid}, num_amendement={num_amendement_value}")
+        logger.info("[cdr_get_or_create] annee=%s, processus_uuid=%s, num_amendement=%s", annee, processus_uuid, num_amendement_value)
 
         if not (annee and processus_uuid):
             logger.warning("[cdr_get_or_create] annee ou processus manquant")
@@ -314,7 +314,7 @@ def cdr_get_or_create(request):
                 num_amendement=num_amendement_value,
                 cree_par=request.user
             )
-            logger.info(f"[cdr_get_or_create] CDR existante trouvée: {cdr.uuid}")
+            logger.info("[cdr_get_or_create] CDR existante trouvée: %s", cdr.uuid)
 
             # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
             if not user_has_access_to_processus(request.user, cdr.processus.uuid):
@@ -328,15 +328,15 @@ def cdr_get_or_create(request):
             }, status=status.HTTP_200_OK)
 
         except CDR.DoesNotExist:
-            logger.info(f"[cdr_get_or_create] Aucune CDR existante, création d'une nouvelle CDR")
+            logger.info("[cdr_get_or_create] Aucune CDR existante, création d'une nouvelle CDR")
 
             # Créer une nouvelle CDR
             serializer = CDRCreateSerializer(data=data, context={'request': request})
 
             if serializer.is_valid():
-                logger.info(f"[cdr_get_or_create] Serializer valide, données validées: {serializer.validated_data}")
+                logger.info("[cdr_get_or_create] Serializer valide, données validées: %s", serializer.validated_data)
                 cdr = serializer.save()
-                logger.info(f"[cdr_get_or_create] CDR créée avec succès: {cdr.uuid}")
+                logger.info("[cdr_get_or_create] CDR créée avec succès: %s", cdr.uuid)
 
                 # Log de l'activité
                 try:
@@ -344,13 +344,13 @@ def cdr_get_or_create(request):
                     user_agent = request.META.get('HTTP_USER_AGENT', '')
                     log_cdr_creation(request.user, cdr, ip_address, user_agent)
                 except Exception as log_error:
-                    logger.error(f"Erreur lors du logging de la création de la CDR: {log_error}")
+                    logger.error("Erreur lors du logging de la création de la CDR: %s", log_error)
 
                 # Sérialiser la CDR créée pour la réponse
                 response_serializer = CDRSerializer(cdr)
                 return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
-            logger.error(f"[cdr_get_or_create] Erreurs de validation: {serializer.errors}")
+            logger.error("[cdr_get_or_create] Erreurs de validation: %s", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
         except CDR.MultipleObjectsReturned:
@@ -365,9 +365,9 @@ def cdr_get_or_create(request):
             return Response(serializer.data, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"[cdr_get_or_create] Erreur exception non gérée: {str(e)}")
+        logger.error("[cdr_get_or_create] Erreur exception non gérée: %s", str(e))
         import traceback
-        logger.error(f"[cdr_get_or_create] Traceback: {traceback.format_exc()}")
+        logger.error("[cdr_get_or_create] Traceback: %s", traceback.format_exc())
         from django.conf import settings
         return Response({
             'error': CDR_500_MESSAGE,

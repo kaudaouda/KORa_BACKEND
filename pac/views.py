@@ -97,17 +97,17 @@ def _get_next_num_amendement_for_pac(user, annee_uuid, processus_uuid):
     """
     try:
         from django.db.models import Max
-        logger.info(f"[_get_next_num_amendement_for_pac] annee_uuid={annee_uuid}, processus_uuid={processus_uuid}")
+        logger.info("[_get_next_num_amendement_for_pac] annee_uuid=%s, processus_uuid=%s", annee_uuid, processus_uuid)
         result = Pac.objects.filter(
             annee_id=annee_uuid,
             processus_id=processus_uuid
         ).aggregate(max_num=Max('num_amendement'))
         max_num = result['max_num']
         next_num = 0 if max_num is None else max_num + 1
-        logger.info(f"[_get_next_num_amendement_for_pac] next_num={next_num}")
+        logger.info("[_get_next_num_amendement_for_pac] next_num=%s", next_num)
         return next_num
     except Exception as e:
-        logger.error(f"[_get_next_num_amendement_for_pac] Erreur: {e}")
+        logger.error("[_get_next_num_amendement_for_pac] Erreur: %s", e)
         import traceback
         logger.error(traceback.format_exc())
         raise
@@ -144,17 +144,17 @@ def register(request):
                 )
                 
                 if not is_valid:
-                    logger.warning(f"reCAPTCHA validation échouée pour l'inscription: {recaptcha_data}")
+                    logger.warning("reCAPTCHA validation échouée pour l'inscription: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
                         'recaptcha_error': recaptcha_data.get('error'),
                         'recaptcha_required': True
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                logger.info(f"reCAPTCHA validé pour l'inscription: score={recaptcha_data.get('score')}")
+                logger.info("reCAPTCHA validé pour l'inscription: score=%s", recaptcha_data.get('score'))
                 
             except RecaptchaValidationError as e:
-                logger.error(f"Erreur reCAPTCHA lors de l'inscription: {str(e)}")
+                logger.error("Erreur reCAPTCHA lors de l'inscription: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
                     'recaptcha_error': str(e),
@@ -229,7 +229,7 @@ def register(request):
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'utilisateur: {str(e)}")
+        logger.error("Erreur lors de la création de l'utilisateur: %s", str(e))
         return Response({
             'error': 'Impossible de créer le compte. Réessayez plus tard.',
             'code': 'REGISTER_FAILED'
@@ -265,17 +265,17 @@ def login(request):
                 )
                 
                 if not is_valid:
-                    logger.warning(f"reCAPTCHA validation échouée pour la connexion: {recaptcha_data}")
+                    logger.warning("reCAPTCHA validation échouée pour la connexion: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
                         'recaptcha_error': recaptcha_data.get('error'),
                         'recaptcha_required': True
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                logger.info(f"reCAPTCHA validé pour la connexion: score={recaptcha_data.get('score')}")
+                logger.info("reCAPTCHA validé pour la connexion: score=%s", recaptcha_data.get('score'))
                 
             except RecaptchaValidationError as e:
-                logger.error(f"Erreur reCAPTCHA lors de la connexion: {str(e)}")
+                logger.error("Erreur reCAPTCHA lors de la connexion: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
                     'recaptcha_error': str(e),
@@ -356,7 +356,7 @@ def login(request):
                             'is_manual':      False,
                         }
                     )
-                    logger.warning(f"[SECURITY] IP bloquée: {ip} ({ip_count} échecs)")
+                    logger.warning("[SECURITY] IP bloquée: %s (%s échecs)", ip, ip_count)
 
                 email_count = FailedLoginAttempt.objects.filter(
                     email_attempted=email, created_at__gte=window_start
@@ -370,7 +370,7 @@ def login(request):
                             'is_manual':      False,
                         }
                     )
-                    logger.warning(f"[SECURITY] Email bloqué: {email} ({email_count} échecs)")
+                    logger.warning("[SECURITY] Email bloqué: %s (%s échecs)", email, email_count)
 
             if reason == 'inactive_account':
                 return Response({'error': 'Compte utilisateur désactivé'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -403,7 +403,7 @@ def login(request):
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la connexion: {str(e)}")
+        logger.error("Erreur lors de la connexion: %s", str(e))
         return Response({
             'error': 'Impossible de se connecter. Réessayez plus tard.',
             'code': 'LOGIN_FAILED'
@@ -441,7 +441,7 @@ def logout(request):
         return AuthService.clear_auth_cookies(response)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la déconnexion: {str(e)}")
+        logger.error("Erreur lors de la déconnexion: %s", str(e))
         return Response({
             'error': 'Problème lors de la déconnexion',
             'code': 'LOGOUT_FAILED'
@@ -493,7 +493,7 @@ def refresh_token(request):
             return response
 
         except (InvalidToken, TokenError) as e:
-            logger.warning(f"Refresh token invalide: {str(e)}")
+            logger.warning("Refresh token invalide: %s", str(e))
             return Response({
                 'error': 'Refresh token invalide',
                 'details': str(e),
@@ -501,7 +501,7 @@ def refresh_token(request):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
     except Exception as e:
-        logger.error(f"Erreur lors du rafraîchissement du token: {str(e)}")
+        logger.error("Erreur lors du rafraîchissement du token: %s", str(e))
         return Response({
             'error': 'Session expirée, veuillez vous reconnecter',
             'code': 'REFRESH_FAILED'
@@ -522,13 +522,13 @@ def user_profile(request):
             response.delete_cookie('refresh_token')
             return response
 
-        logger.debug(f"user_profile appelé pour user: {request.user}")
+        logger.debug("user_profile appelé pour user: %s", request.user)
         serializer = UserSerializer(request.user)
         return Response({
             'user': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du profil: {str(e)}")
+        logger.error("Erreur lors de la récupération du profil: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer le profil',
             'code': 'PROFILE_FAILED'
@@ -564,7 +564,7 @@ def update_profile(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du profil: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du profil: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le profil',
             'code': 'UPDATE_PROFILE_FAILED'
@@ -619,7 +619,7 @@ def admin_update_profile(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du profil par admin: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du profil par admin: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le profil',
             'code': 'ADMIN_UPDATE_PROFILE_FAILED'
@@ -680,7 +680,7 @@ def change_password(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors du changement de mot de passe: {str(e)}")
+        logger.error("Erreur lors du changement de mot de passe: %s", str(e))
         return Response({
             'error': 'Impossible de changer le mot de passe',
             'code': 'CHANGE_PASSWORD_FAILED'
@@ -701,14 +701,14 @@ def check_invitation(request):
     try:
         logger.info("=" * 60)
         logger.info("DEBUT check_invitation")
-        logger.info(f"IP: {get_client_ip(request)}")
+        logger.info("IP: %s", get_client_ip(request))
         
         # Récupérer les paramètres depuis la query string
         uidb64 = request.GET.get('uid')
         token = request.GET.get('token')
         
-        logger.info(f"uidb64: {uidb64}")
-        logger.info(f"token: {token[:20] if token else None}...")
+        logger.info("uidb64: %s", uidb64)
+        logger.info("token: %s...", token[:20] if token else None)
         
         # Validation des paramètres requis
         if not uidb64 or not token:
@@ -724,9 +724,9 @@ def check_invitation(request):
             decoded_bytes = urlsafe_base64_decode(uidb64)
             uid = force_str(decoded_bytes)
             user = User.objects.get(pk=uid)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+            logger.info("Utilisateur trouvé: username=%s, email=%s, id=%s, is_active=%s, has_usable_password=%s", user.username, user.email, user.id, user.is_active, user.has_usable_password())
         except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
-            logger.warning(f"Erreur lors du décodage ou utilisateur non trouvé: {str(e)}")
+            logger.warning("Erreur lors du décodage ou utilisateur non trouvé: %s", str(e))
             return Response({
                 'valid': False,
                 'error': 'Lien d\'invitation invalide',
@@ -737,10 +737,10 @@ def check_invitation(request):
         # Car quand le mot de passe est défini, le token devient invalide automatiquement
         # Il faut donc vérifier has_usable_password() AVANT de vérifier le token
         has_usable = user.has_usable_password()
-        logger.info(f"Utilisateur a un mot de passe utilisable: {has_usable}")
+        logger.info("Utilisateur a un mot de passe utilisable: %s", has_usable)
         
         if has_usable:
-            logger.info(f"Lien d'invitation déjà utilisé pour {user.username} (mot de passe déjà défini)")
+            logger.info("Lien d'invitation déjà utilisé pour %s (mot de passe déjà défini)", user.username)
             return Response({
                 'valid': True,
                 'already_used': True,
@@ -755,10 +755,10 @@ def check_invitation(request):
         
         # Vérifier le token d'invitation seulement si le mot de passe n'est pas encore défini
         token_valid = default_token_generator.check_token(user, token)
-        logger.info(f"Token valide: {token_valid}")
+        logger.info("Token valide: %s", token_valid)
         
         if not token_valid:
-            logger.warning(f"Token d'invitation invalide ou expiré pour l'utilisateur {user.username}")
+            logger.warning("Token d'invitation invalide ou expiré pour l'utilisateur %s", user.username)
             return Response({
                 'valid': False,
                 'error': 'Lien d\'invitation invalide ou expiré',
@@ -766,7 +766,7 @@ def check_invitation(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Le lien est valide et n'a pas encore été utilisé
-        logger.info(f"Lien d'invitation valide et disponible pour {user.username}")
+        logger.info("Lien d'invitation valide et disponible pour %s", user.username)
         return Response({
             'valid': True,
             'already_used': False,
@@ -781,10 +781,10 @@ def check_invitation(request):
         
     except Exception as e:
         logger.error("=" * 60)
-        logger.error(f"ERREUR EXCEPTION dans check_invitation: {str(e)}")
-        logger.error(f"Type d'erreur: {type(e).__name__}")
+        logger.error("ERREUR EXCEPTION dans check_invitation: %s", str(e))
+        logger.error("Type d'erreur: %s", type(e).__name__)
         import traceback
-        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("Traceback complet:\n%s", traceback.format_exc())
         logger.error("=" * 60)
         return Response({
             'valid': False,
@@ -808,9 +808,9 @@ def complete_invitation(request):
     try:
         logger.info("=" * 60)
         logger.info("DEBUT complete_invitation")
-        logger.info(f"Content-Type: {request.content_type}")
-        logger.info(f"Method: {request.method}")
-        logger.info(f"IP: {get_client_ip(request)}")
+        logger.info("Content-Type: %s", request.content_type)
+        logger.info("Method: %s", request.method)
+        logger.info("IP: %s", get_client_ip(request))
         
         # ========== RATE LIMITING (Security by Design) ==========
         # Protection contre les attaques par force brute sur les tokens
@@ -823,7 +823,7 @@ def complete_invitation(request):
         rate_limit_window = 3600  # 1 heure
         
         if attempts >= max_attempts:
-            logger.warning(f"Rate limit dépassé pour complete_invitation depuis IP: {client_ip}")
+            logger.warning("Rate limit dépassé pour complete_invitation depuis IP: %s", client_ip)
             return Response({
                 'error': 'Trop de tentatives. Veuillez réessayer dans 1 heure.',
                 'code': 'RATE_LIMIT_EXCEEDED'
@@ -833,8 +833,8 @@ def complete_invitation(request):
         cache.set(rate_limit_key, attempts + 1, rate_limit_window)
         # ========== FIN RATE LIMITING ==========
         
-        logger.info(f"request.data type: {type(request.data)}")
-        logger.info(f"request.data: {request.data}")
+        logger.info("request.data type: %s", type(request.data))
+        logger.info("request.data: %s", request.data)
 
         # IMPORTANT : ne plus toucher à request.body ici, DRF l'a déjà consommé
         # On se fie uniquement à request.data, qui contient déjà les données parsées
@@ -845,7 +845,7 @@ def complete_invitation(request):
         if recaptcha_service.is_enabled():
             recaptcha_token = data.get('recaptcha_token')
             if not recaptcha_token:
-                logger.warning(f"reCAPTCHA token manquant pour complete_invitation depuis IP: {client_ip}")
+                logger.warning("reCAPTCHA token manquant pour complete_invitation depuis IP: %s", client_ip)
                 return Response({
                     'error': 'Vérification de sécurité requise',
                     'recaptcha_required': True,
@@ -860,7 +860,7 @@ def complete_invitation(request):
                 )
                 
                 if not is_valid:
-                    logger.warning(f"reCAPTCHA validation échouée pour complete_invitation: {recaptcha_data}")
+                    logger.warning("reCAPTCHA validation échouée pour complete_invitation: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
                         'recaptcha_error': recaptcha_data.get('error'),
@@ -868,10 +868,10 @@ def complete_invitation(request):
                         'code': 'RECAPTCHA_FAILED'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                logger.info(f"reCAPTCHA validé pour complete_invitation: score={recaptcha_data.get('score')}")
+                logger.info("reCAPTCHA validé pour complete_invitation: score=%s", recaptcha_data.get('score'))
                 
             except RecaptchaValidationError as e:
-                logger.error(f"Erreur reCAPTCHA lors de la finalisation de l'invitation: {str(e)}")
+                logger.error("Erreur reCAPTCHA lors de la finalisation de l'invitation: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
                     'recaptcha_error': str(e),
@@ -885,10 +885,10 @@ def complete_invitation(request):
         password = data.get('password')
         password_confirm = data.get('password_confirm')
         
-        logger.info(f"uidb64: {uidb64}")
-        logger.info(f"token: {token[:20] if token else None}...")
-        logger.info(f"password présent: {bool(password)}")
-        logger.info(f"password_confirm présent: {bool(password_confirm)}")
+        logger.info("uidb64: %s", uidb64)
+        logger.info("token: %s...", token[:20] if token else None)
+        logger.info("password présent: %s", bool(password))
+        logger.info("password_confirm présent: %s", bool(password_confirm))
         
         # Validation des données requises
         missing_fields = []
@@ -902,7 +902,7 @@ def complete_invitation(request):
             missing_fields.append('password_confirm')
         
         if missing_fields:
-            logger.error(f"Champs manquants: {missing_fields}")
+            logger.error("Champs manquants: %s", missing_fields)
             return Response({
                 'error': f'Champs requis manquants: {", ".join(missing_fields)}',
                 'code': 'MISSING_FIELDS',
@@ -911,7 +911,7 @@ def complete_invitation(request):
         
         # Vérifier que les mots de passe correspondent
         if password != password_confirm:
-            logger.error(f"Les mots de passe ne correspondent pas")
+            logger.error("Les mots de passe ne correspondent pas")
             return Response({
                 'error': 'Les mots de passe ne correspondent pas.',
                 'code': 'PASSWORD_MISMATCH'
@@ -922,39 +922,39 @@ def complete_invitation(request):
         # Décoder l'uid et récupérer l'utilisateur
         try:
             decoded_bytes = urlsafe_base64_decode(uidb64)
-            logger.info(f"uidb64 décodé en bytes: {decoded_bytes}")
+            logger.info("uidb64 décodé en bytes: %s", decoded_bytes)
             uid = force_str(decoded_bytes)
-            logger.info(f"uid décodé (string): {uid}")
+            logger.info("uid décodé (string): %s", uid)
             user = User.objects.get(pk=uid)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+            logger.info("Utilisateur trouvé: username=%s, email=%s, id=%s, is_active=%s, has_usable_password=%s", user.username, user.email, user.id, user.is_active, user.has_usable_password())
         except TypeError as e:
-            logger.error(f"TypeError lors du décodage: {str(e)}")
+            logger.error("TypeError lors du décodage: %s", str(e))
             return Response({
                 'error': 'Lien d\'invitation invalide ou expiré (TypeError)',
                 'code': 'INVALID_LINK'
             }, status=status.HTTP_400_BAD_REQUEST)
         except ValueError as e:
-            logger.error(f"ValueError lors du décodage: {str(e)}")
+            logger.error("ValueError lors du décodage: %s", str(e))
             return Response({
                 'error': 'Lien d\'invitation invalide ou expiré (ValueError)',
                 'code': 'INVALID_LINK'
             }, status=status.HTTP_400_BAD_REQUEST)
         except OverflowError as e:
-            logger.error(f"OverflowError lors du décodage: {str(e)}")
+            logger.error("OverflowError lors du décodage: %s", str(e))
             return Response({
                 'error': 'Lien d\'invitation invalide ou expiré (OverflowError)',
                 'code': 'INVALID_LINK'
             }, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
-            logger.error(f"Utilisateur non trouvé avec uid: {uid}")
+            logger.error("Utilisateur non trouvé avec uid: %s", uid)
             return Response({
                 'error': 'Lien d\'invitation invalide ou expiré (User not found)',
                 'code': 'INVALID_LINK'
             }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            logger.error(f"Exception inattendue lors du décodage: {type(e).__name__}: {str(e)}")
+            logger.error("Exception inattendue lors du décodage: %s: %s", type(e).__name__, str(e))
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error("Traceback: %s", traceback.format_exc())
             return Response({
                 'error': f'Erreur lors du décodage du lien: {str(e)}',
                 'code': 'DECODE_ERROR'
@@ -963,10 +963,10 @@ def complete_invitation(request):
         # Vérifier le token d'invitation
         logger.info("Vérification du token d'invitation...")
         token_valid = default_token_generator.check_token(user, token)
-        logger.info(f"Token valide: {token_valid}")
+        logger.info("Token valide: %s", token_valid)
         
         if not token_valid:
-            logger.warning(f"Token d'invitation invalide ou expiré pour l'utilisateur {user.username}")
+            logger.warning("Token d'invitation invalide ou expiré pour l'utilisateur %s", user.username)
             # Vérifier si c'est une expiration ou une invalidation
             from django.conf import settings
             invitation_timeout = getattr(settings, 'INVITATION_TOKEN_TIMEOUT', 604800)  # 7 jours par défaut
@@ -984,10 +984,10 @@ def complete_invitation(request):
         
         # Vérifier que l'utilisateur n'a pas déjà un mot de passe défini (sécurité supplémentaire)
         has_usable = user.has_usable_password()
-        logger.info(f"Utilisateur a un mot de passe utilisable: {has_usable}")
+        logger.info("Utilisateur a un mot de passe utilisable: %s", has_usable)
         
         if has_usable:
-            logger.warning(f"Tentative d'utilisation d'un lien d'invitation déjà utilisé pour: {user.username}")
+            logger.warning("Tentative d'utilisation d'un lien d'invitation déjà utilisé pour: %s", user.username)
             
             # Logger cette tentative pour audit de sécurité
             try:
@@ -1002,7 +1002,7 @@ def complete_invitation(request):
                     user_agent=request.META.get('HTTP_USER_AGENT', '')
                 )
             except Exception as log_error:
-                logger.warning(f"ERREUR lors du log d'audit (non bloquant): {str(log_error)}")
+                logger.warning("ERREUR lors du log d'audit (non bloquant): %s", str(log_error))
             
             return Response({
                 'error': 'Ce lien d\'invitation a déjà été utilisé. Votre compte est déjà activé. Si vous avez oublié votre mot de passe, utilisez la fonctionnalité de réinitialisation de mot de passe.',
@@ -1015,7 +1015,7 @@ def complete_invitation(request):
             validate_password(password, user=user)
             logger.info("Mot de passe validé avec succès")
         except ValidationError as e:
-            logger.error(f"Mot de passe invalide: {list(e.messages)}")
+            logger.error("Mot de passe invalide: %s", list(e.messages))
             return Response({
                 'error': 'Mot de passe invalide',
                 'details': list(e.messages),
@@ -1033,7 +1033,7 @@ def complete_invitation(request):
         user.set_password(password)
         user.is_active = True
         user.save()
-        logger.info(f"Compte activé et mot de passe défini pour {user.username}")
+        logger.info("Compte activé et mot de passe défini pour %s", user.username)
         
         # Logger l'utilisation réussie de l'invitation dans ActivityLog
         try:
@@ -1047,11 +1047,11 @@ def complete_invitation(request):
                 ip_address=get_client_ip(request),
                 user_agent=request.META.get('HTTP_USER_AGENT', '')
             )
-            logger.info(f"Log d'activité enregistré pour l'activation du compte de {user.username}")
+            logger.info("Log d'activité enregistré pour l'activation du compte de %s", user.username)
         except Exception as log_error:
-            logger.warning(f"ERREUR lors du log d'activité (non bloquant): {str(log_error)}")
+            logger.warning("ERREUR lors du log d'activité (non bloquant): %s", str(log_error))
             import traceback
-            logger.warning(f"Traceback log activité: {traceback.format_exc()}")
+            logger.warning("Traceback log activité: %s", traceback.format_exc())
             # Ne pas bloquer si le log échoue
         
         # Générer les tokens JWT et connecter automatiquement l'utilisateur
@@ -1060,20 +1060,20 @@ def complete_invitation(request):
             access_token, refresh_token = AuthService.create_tokens(user)
             logger.info("Tokens JWT générés avec succès")
         except Exception as token_error:
-            logger.error(f"ERREUR lors de la génération des tokens: {str(token_error)}")
+            logger.error("ERREUR lors de la génération des tokens: %s", str(token_error))
             import traceback
-            logger.error(f"Traceback tokens: {traceback.format_exc()}")
+            logger.error("Traceback tokens: %s", traceback.format_exc())
             raise
         
         # Créer la réponse avec les tokens dans les cookies
         logger.info("Création de la réponse...")
         try:
             user_data = UserSerializer(user).data
-            logger.info(f"Données utilisateur sérialisées: {list(user_data.keys())}")
+            logger.info("Données utilisateur sérialisées: %s", list(user_data.keys()))
         except Exception as serializer_error:
-            logger.error(f"ERREUR lors de la sérialisation de l'utilisateur: {str(serializer_error)}")
+            logger.error("ERREUR lors de la sérialisation de l'utilisateur: %s", str(serializer_error))
             import traceback
-            logger.error(f"Traceback serializer: {traceback.format_exc()}")
+            logger.error("Traceback serializer: %s", traceback.format_exc())
             raise
         
         response = Response({
@@ -1087,9 +1087,9 @@ def complete_invitation(request):
             AuthService.set_auth_cookies(response, access_token, refresh_token)
             logger.info("Cookies d'authentification définis")
         except Exception as cookie_error:
-            logger.error(f"ERREUR lors de la définition des cookies: {str(cookie_error)}")
+            logger.error("ERREUR lors de la définition des cookies: %s", str(cookie_error))
             import traceback
-            logger.error(f"Traceback cookies: {traceback.format_exc()}")
+            logger.error("Traceback cookies: %s", traceback.format_exc())
             raise
         
         # Logger la connexion automatique après finalisation de l'invitation
@@ -1101,28 +1101,28 @@ def complete_invitation(request):
                 user_agent=request.META.get('HTTP_USER_AGENT', '')
             )
         except Exception as log_error:
-            logger.warning(f"ERREUR lors du log de connexion (non bloquant): {str(log_error)}")
+            logger.warning("ERREUR lors du log de connexion (non bloquant): %s", str(log_error))
             import traceback
-            logger.warning(f"Traceback log: {traceback.format_exc()}")
+            logger.warning("Traceback log: %s", traceback.format_exc())
             # Ne pas bloquer si le log échoue
         
-        logger.info(f"Invitation finalisée avec succès pour {user.username}")
+        logger.info("Invitation finalisée avec succès pour %s", user.username)
         logger.info("=" * 60)
         
         return response
         
     except json.JSONDecodeError as e:
-        logger.error(f"Erreur de parsing JSON: {str(e)}")
+        logger.error("Erreur de parsing JSON: %s", str(e))
         return Response({
             'error': 'Format de données invalide',
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error("=" * 60)
-        logger.error(f"ERREUR EXCEPTION dans complete_invitation: {str(e)}")
-        logger.error(f"Type d'erreur: {type(e).__name__}")
+        logger.error("ERREUR EXCEPTION dans complete_invitation: %s", str(e))
+        logger.error("Type d'erreur: %s", type(e).__name__)
         import traceback
-        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("Traceback complet:\n%s", traceback.format_exc())
         logger.error("=" * 60)
         return Response({
             'error': f'Erreur lors de la finalisation de l\'invitation: {str(e)}',
@@ -1145,16 +1145,16 @@ def password_reset_request(request):
     try:
         logger.info("=" * 60)
         logger.info("DEBUT password_reset_request")
-        logger.info(f"Utilisateur qui demande: {request.user.username} (is_staff={request.user.is_staff}, is_superuser={request.user.is_superuser})")
-        logger.info(f"IP: {get_client_ip(request)}")
+        logger.info("Utilisateur qui demande: %s (is_staff=%s, is_superuser=%s)", request.user.username, request.user.is_staff, request.user.is_superuser)
+        logger.info("IP: %s", get_client_ip(request))
         
         # ========== VÉRIFICATION DE SÉCURITÉ ==========
         from parametre.permissions import can_manage_users
         can_manage = can_manage_users(request.user)
-        logger.info(f"can_manage_users: {can_manage}")
+        logger.info("can_manage_users: %s", can_manage)
         
         if not can_manage:
-            logger.warning(f"Accès refusé pour {request.user.username}")
+            logger.warning("Accès refusé pour %s", request.user.username)
             return Response({
                 'success': False,
                 'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent demander une réinitialisation de mot de passe.',
@@ -1165,7 +1165,7 @@ def password_reset_request(request):
         # Rate limiting pour éviter le spam
         user_limit_ok = EmailRateLimiter.check_user_limit(request.user.id)
         global_limit_ok = EmailRateLimiter.check_global_limit()
-        logger.info(f"Rate limiting - user_limit: {user_limit_ok}, global_limit: {global_limit_ok}")
+        logger.info("Rate limiting - user_limit: %s, global_limit: %s", user_limit_ok, global_limit_ok)
         
         if not user_limit_ok or not global_limit_ok:
             SecureEmailLogger.log_security_event('password_reset_rate_limit_exceeded', {
@@ -1173,7 +1173,7 @@ def password_reset_request(request):
                 'ip': get_client_ip(request),
                 'type': 'password_reset_request'
             })
-            logger.warning(f"Rate limit dépassé pour {request.user.username}")
+            logger.warning("Rate limit dépassé pour %s", request.user.username)
             return Response({
                 'success': False,
                 'error': "Trop de tentatives de réinitialisation, veuillez réessayer plus tard."
@@ -1181,7 +1181,7 @@ def password_reset_request(request):
         
         # Récupérer l'email depuis les données
         email = request.data.get('email', '').strip()
-        logger.info(f"Email reçu pour réinitialisation: {email}")
+        logger.info("Email reçu pour réinitialisation: %s", email)
         
         if not email:
             return Response({
@@ -1201,11 +1201,11 @@ def password_reset_request(request):
         # Chercher l'utilisateur par email
         try:
             user = User.objects.get(email=email)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}")
+            logger.info("Utilisateur trouvé: username=%s, email=%s, id=%s, is_active=%s", user.username, user.email, user.id, user.is_active)
         except User.DoesNotExist:
             # Security by Design : Ne pas révéler si l'email existe ou non
             # Retourner un succès générique pour éviter l'énumération d'emails
-            logger.warning(f"Email non trouvé pour réinitialisation: {email}")
+            logger.warning("Email non trouvé pour réinitialisation: %s", email)
             return Response({
                 'success': True,
                 'message': 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé.'
@@ -1213,7 +1213,7 @@ def password_reset_request(request):
         
         # Vérifier que l'utilisateur a un mot de passe utilisable (sinon c'est une invitation, pas une réinitialisation)
         if not user.has_usable_password():
-            logger.warning(f"Tentative de réinitialisation pour un utilisateur sans mot de passe: {user.username}")
+            logger.warning("Tentative de réinitialisation pour un utilisateur sans mot de passe: %s", user.username)
             return Response({
                 'success': False,
                 'error': 'Cet utilisateur n\'a pas encore défini de mot de passe. Utilisez la fonctionnalité d\'invitation.',
@@ -1223,7 +1223,7 @@ def password_reset_request(request):
         # Générer un token de réinitialisation
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        logger.info(f"Token de réinitialisation généré: uid={uid}, token={token[:20]}...")
+        logger.info("Token de réinitialisation généré: uid=%s, token=%s...", uid, token[:20])
         
         frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
         raw_reset_url = f"{frontend_base}/reset-password?uid={uid}&token={token}"
@@ -1255,8 +1255,8 @@ def password_reset_request(request):
             logger.warning("Configuration EmailSettings incomplète, utilisation de la configuration actuelle des settings.")
 
         # Envoyer l'email
-        logger.info(f"Envoi de l'email de réinitialisation à {user.email}...")
-        logger.info(f"URL de réinitialisation: {reset_url}")
+        logger.info("Envoi de l'email de réinitialisation à %s...", user.email)
+        logger.info("URL de réinitialisation: %s", reset_url)
         
         try:
             send_mail(
@@ -1267,9 +1267,9 @@ def password_reset_request(request):
                 recipient_list=[user.email],
                 fail_silently=False,
             )
-            logger.info(f"Email envoyé avec succès à {user.email}")
+            logger.info("Email envoyé avec succès à %s", user.email)
         except Exception as email_error:
-            logger.error(f"ERREUR lors de l'envoi de l'email: {str(email_error)}")
+            logger.error("ERREUR lors de l'envoi de l'email: %s", str(email_error))
             SecureEmailLogger.log_email_sent(user.email, subject, False)
             return Response({
                 'success': False,
@@ -1291,7 +1291,7 @@ def password_reset_request(request):
             user_agent=request.META.get('HTTP_USER_AGENT', '')
         )
         
-        logger.info(f"Demande de réinitialisation terminée avec succès pour {user.email}")
+        logger.info("Demande de réinitialisation terminée avec succès pour %s", user.email)
         logger.info("=" * 60)
         
         return Response({
@@ -1301,10 +1301,10 @@ def password_reset_request(request):
         
     except Exception as e:
         logger.error("=" * 60)
-        logger.error(f"ERREUR EXCEPTION dans password_reset_request: {str(e)}")
-        logger.error(f"Type d'erreur: {type(e).__name__}")
+        logger.error("ERREUR EXCEPTION dans password_reset_request: %s", str(e))
+        logger.error("Type d'erreur: %s", type(e).__name__)
         import traceback
-        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("Traceback complet:\n%s", traceback.format_exc())
         logger.error("=" * 60)
         return Response({
             'success': False,
@@ -1328,9 +1328,9 @@ def password_reset_confirm(request):
     try:
         logger.info("=" * 60)
         logger.info("DEBUT password_reset_confirm")
-        logger.info(f"Content-Type: {request.content_type}")
-        logger.info(f"Method: {request.method}")
-        logger.info(f"IP: {get_client_ip(request)}")
+        logger.info("Content-Type: %s", request.content_type)
+        logger.info("Method: %s", request.method)
+        logger.info("IP: %s", get_client_ip(request))
         
         # ========== RATE LIMITING (Security by Design) ==========
         from django.core.cache import cache
@@ -1342,7 +1342,7 @@ def password_reset_confirm(request):
         rate_limit_window = 3600  # 1 heure
         
         if attempts >= max_attempts:
-            logger.warning(f"Rate limit dépassé pour password_reset_confirm depuis IP: {client_ip}")
+            logger.warning("Rate limit dépassé pour password_reset_confirm depuis IP: %s", client_ip)
             return Response({
                 'error': 'Trop de tentatives. Veuillez réessayer dans 1 heure.',
                 'code': 'RATE_LIMIT_EXCEEDED'
@@ -1352,8 +1352,8 @@ def password_reset_confirm(request):
         cache.set(rate_limit_key, attempts + 1, rate_limit_window)
         # ========== FIN RATE LIMITING ==========
         
-        logger.info(f"request.data type: {type(request.data)}")
-        logger.info(f"request.data: {request.data}")
+        logger.info("request.data type: %s", type(request.data))
+        logger.info("request.data: %s", request.data)
         
         data = request.data
         
@@ -1361,7 +1361,7 @@ def password_reset_confirm(request):
         if recaptcha_service.is_enabled():
             recaptcha_token = data.get('recaptcha_token')
             if not recaptcha_token:
-                logger.warning(f"reCAPTCHA token manquant pour password_reset_confirm depuis IP: {client_ip}")
+                logger.warning("reCAPTCHA token manquant pour password_reset_confirm depuis IP: %s", client_ip)
                 return Response({
                     'error': 'Vérification de sécurité requise',
                     'recaptcha_required': True,
@@ -1376,7 +1376,7 @@ def password_reset_confirm(request):
                 )
                 
                 if not is_valid:
-                    logger.warning(f"reCAPTCHA validation échouée pour password_reset_confirm: {recaptcha_data}")
+                    logger.warning("reCAPTCHA validation échouée pour password_reset_confirm: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
                         'recaptcha_error': recaptcha_data.get('error'),
@@ -1384,10 +1384,10 @@ def password_reset_confirm(request):
                         'code': 'RECAPTCHA_FAILED'
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
-                logger.info(f"reCAPTCHA validé pour password_reset_confirm: score={recaptcha_data.get('score')}")
+                logger.info("reCAPTCHA validé pour password_reset_confirm: score=%s", recaptcha_data.get('score'))
                 
             except RecaptchaValidationError as e:
-                logger.error(f"Erreur reCAPTCHA lors de la réinitialisation: {str(e)}")
+                logger.error("Erreur reCAPTCHA lors de la réinitialisation: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
                     'recaptcha_error': str(e),
@@ -1401,10 +1401,10 @@ def password_reset_confirm(request):
         password = data.get('password')
         password_confirm = data.get('password_confirm')
         
-        logger.info(f"uidb64: {uidb64}")
-        logger.info(f"token: {token[:20] if token else None}...")
-        logger.info(f"password présent: {bool(password)}")
-        logger.info(f"password_confirm présent: {bool(password_confirm)}")
+        logger.info("uidb64: %s", uidb64)
+        logger.info("token: %s...", token[:20] if token else None)
+        logger.info("password présent: %s", bool(password))
+        logger.info("password_confirm présent: %s", bool(password_confirm))
         
         # Validation des données requises
         missing_fields = []
@@ -1418,7 +1418,7 @@ def password_reset_confirm(request):
             missing_fields.append('password_confirm')
         
         if missing_fields:
-            logger.error(f"Champs manquants: {missing_fields}")
+            logger.error("Champs manquants: %s", missing_fields)
             return Response({
                 'error': f'Champs requis manquants: {", ".join(missing_fields)}',
                 'code': 'MISSING_FIELDS',
@@ -1427,7 +1427,7 @@ def password_reset_confirm(request):
         
         # Vérifier que les mots de passe correspondent
         if password != password_confirm:
-            logger.error(f"Les mots de passe ne correspondent pas")
+            logger.error("Les mots de passe ne correspondent pas")
             return Response({
                 'error': 'Les mots de passe ne correspondent pas.',
                 'code': 'PASSWORD_MISMATCH'
@@ -1438,13 +1438,13 @@ def password_reset_confirm(request):
         # Décoder l'uid et récupérer l'utilisateur
         try:
             decoded_bytes = urlsafe_base64_decode(uidb64)
-            logger.info(f"uidb64 décodé en bytes: {decoded_bytes}")
+            logger.info("uidb64 décodé en bytes: %s", decoded_bytes)
             uid = force_str(decoded_bytes)
-            logger.info(f"uid décodé (string): {uid}")
+            logger.info("uid décodé (string): %s", uid)
             user = User.objects.get(pk=uid)
-            logger.info(f"Utilisateur trouvé: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}, has_usable_password={user.has_usable_password()}")
+            logger.info("Utilisateur trouvé: username=%s, email=%s, id=%s, is_active=%s, has_usable_password=%s", user.username, user.email, user.id, user.is_active, user.has_usable_password())
         except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
-            logger.error(f"Erreur lors du décodage ou utilisateur non trouvé: {type(e).__name__}: {str(e)}")
+            logger.error("Erreur lors du décodage ou utilisateur non trouvé: %s: %s", type(e).__name__, str(e))
             return Response({
                 'error': 'Lien de réinitialisation invalide ou expiré',
                 'code': 'INVALID_LINK'
@@ -1453,10 +1453,10 @@ def password_reset_confirm(request):
         # Vérifier le token de réinitialisation
         logger.info("Vérification du token de réinitialisation...")
         token_valid = default_token_generator.check_token(user, token)
-        logger.info(f"Token valide: {token_valid}")
+        logger.info("Token valide: %s", token_valid)
         
         if not token_valid:
-            logger.warning(f"Token de réinitialisation invalide ou expiré pour l'utilisateur {user.username}")
+            logger.warning("Token de réinitialisation invalide ou expiré pour l'utilisateur %s", user.username)
             password_reset_timeout = getattr(settings, 'PASSWORD_RESET_TIMEOUT', 604800)  # 7 jours par défaut
             error_message = f'Le lien de réinitialisation est invalide ou a expiré. Les liens sont valides pendant {password_reset_timeout // 86400} jours. Veuillez demander une nouvelle réinitialisation.'
             
@@ -1467,10 +1467,10 @@ def password_reset_confirm(request):
         
         # Vérifier que l'utilisateur a un mot de passe utilisable (doit être True pour une réinitialisation)
         has_usable = user.has_usable_password()
-        logger.info(f"Utilisateur a un mot de passe utilisable: {has_usable}")
+        logger.info("Utilisateur a un mot de passe utilisable: %s", has_usable)
         
         if not has_usable:
-            logger.warning(f"Tentative de réinitialisation pour un utilisateur sans mot de passe: {user.username}")
+            logger.warning("Tentative de réinitialisation pour un utilisateur sans mot de passe: %s", user.username)
             return Response({
                 'error': 'Cet utilisateur n\'a pas encore défini de mot de passe. Utilisez la fonctionnalité d\'invitation.',
                 'code': 'NO_PASSWORD_SET'
@@ -1482,7 +1482,7 @@ def password_reset_confirm(request):
             validate_password(password, user=user)
             logger.info("Mot de passe validé avec succès")
         except ValidationError as e:
-            logger.error(f"Mot de passe invalide: {list(e.messages)}")
+            logger.error("Mot de passe invalide: %s", list(e.messages))
             
             # Traduire les messages d'erreur Django en français
             translated_messages = []
@@ -1515,7 +1515,7 @@ def password_reset_confirm(request):
         logger.info("Définition du nouveau mot de passe...")
         user.set_password(password)
         user.save()
-        logger.info(f"Mot de passe réinitialisé pour {user.username}")
+        logger.info("Mot de passe réinitialisé pour %s", user.username)
         
         # Générer les tokens JWT et connecter automatiquement l'utilisateur
         logger.info("Génération des tokens JWT...")
@@ -1523,20 +1523,20 @@ def password_reset_confirm(request):
             access_token, refresh_token = AuthService.create_tokens(user)
             logger.info("Tokens JWT générés avec succès")
         except Exception as token_error:
-            logger.error(f"ERREUR lors de la génération des tokens: {str(token_error)}")
+            logger.error("ERREUR lors de la génération des tokens: %s", str(token_error))
             import traceback
-            logger.error(f"Traceback tokens: {traceback.format_exc()}")
+            logger.error("Traceback tokens: %s", traceback.format_exc())
             raise
         
         # Créer la réponse avec les tokens dans les cookies
         logger.info("Création de la réponse...")
         try:
             user_data = UserSerializer(user).data
-            logger.info(f"Données utilisateur sérialisées: {list(user_data.keys())}")
+            logger.info("Données utilisateur sérialisées: %s", list(user_data.keys()))
         except Exception as serializer_error:
-            logger.error(f"ERREUR lors de la sérialisation de l'utilisateur: {str(serializer_error)}")
+            logger.error("ERREUR lors de la sérialisation de l'utilisateur: %s", str(serializer_error))
             import traceback
-            logger.error(f"Traceback serializer: {traceback.format_exc()}")
+            logger.error("Traceback serializer: %s", traceback.format_exc())
             raise
         
         response = Response({
@@ -1550,9 +1550,9 @@ def password_reset_confirm(request):
             AuthService.set_auth_cookies(response, access_token, refresh_token)
             logger.info("Cookies d'authentification définis")
         except Exception as cookie_error:
-            logger.error(f"ERREUR lors de la définition des cookies: {str(cookie_error)}")
+            logger.error("ERREUR lors de la définition des cookies: %s", str(cookie_error))
             import traceback
-            logger.error(f"Traceback cookies: {traceback.format_exc()}")
+            logger.error("Traceback cookies: %s", traceback.format_exc())
             raise
         
         # Logger la connexion automatique après réinitialisation
@@ -1564,9 +1564,9 @@ def password_reset_confirm(request):
                 user_agent=request.META.get('HTTP_USER_AGENT', '')
             )
         except Exception as log_error:
-            logger.warning(f"ERREUR lors du log de connexion (non bloquant): {str(log_error)}")
+            logger.warning("ERREUR lors du log de connexion (non bloquant): %s", str(log_error))
             import traceback
-            logger.warning(f"Traceback log: {traceback.format_exc()}")
+            logger.warning("Traceback log: %s", traceback.format_exc())
         
         # Logger l'activité de réinitialisation
         try:
@@ -1580,27 +1580,27 @@ def password_reset_confirm(request):
                 ip_address=get_client_ip(request),
                 user_agent=request.META.get('HTTP_USER_AGENT', '')
             )
-            logger.info(f"Log d'activité enregistré pour la réinitialisation du mot de passe de {user.username}")
+            logger.info("Log d'activité enregistré pour la réinitialisation du mot de passe de %s", user.username)
         except Exception as log_error:
-            logger.warning(f"ERREUR lors du log d'activité (non bloquant): {str(log_error)}")
+            logger.warning("ERREUR lors du log d'activité (non bloquant): %s", str(log_error))
         
-        logger.info(f"Réinitialisation finalisée avec succès pour {user.username}")
+        logger.info("Réinitialisation finalisée avec succès pour %s", user.username)
         logger.info("=" * 60)
         
         return response
         
     except json.JSONDecodeError as e:
-        logger.error(f"Erreur de parsing JSON: {str(e)}")
+        logger.error("Erreur de parsing JSON: %s", str(e))
         return Response({
             'error': 'Format de données invalide',
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.error("=" * 60)
-        logger.error(f"ERREUR EXCEPTION dans password_reset_confirm: {str(e)}")
-        logger.error(f"Type d'erreur: {type(e).__name__}")
+        logger.error("ERREUR EXCEPTION dans password_reset_confirm: %s", str(e))
+        logger.error("Type d'erreur: %s", type(e).__name__)
         import traceback
-        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("Traceback complet:\n%s", traceback.format_exc())
         logger.error("=" * 60)
         return Response({
             'error': f'Erreur lors de la réinitialisation du mot de passe: {str(e)}',
@@ -1633,11 +1633,11 @@ def recaptcha_config(request):
             'min_score': recaptcha_service.get_min_score(),
         }
         
-        logger.debug(f"recaptcha_config: {config}")
+        logger.debug("recaptcha_config: %s", config)
         return Response(config, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la config reCAPTCHA: {str(e)}")
+        logger.error("Erreur lors de la récupération de la config reCAPTCHA: %s", str(e))
         return Response({
             'error': 'Configuration de sécurité indisponible'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1654,7 +1654,7 @@ def processus_list(request):
         serializer = ProcessusSerializer(processus, many=True)
         return Response(serializer.data)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des processus: {str(e)}")
+        logger.error("Erreur lors de la récupération des processus: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les processus'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1671,7 +1671,7 @@ def processus_create(request):
             return Response(ProcessusSerializer(processus).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du processus: {str(e)}")
+        logger.error("Erreur lors de la création du processus: %s", str(e))
         return Response({
             'error': 'Impossible de créer le processus'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1698,7 +1698,7 @@ def processus_detail(request, uuid):
             'error': 'Processus non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du processus: {str(e)}")
+        logger.error("Erreur lors de la récupération du processus: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer le processus'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1711,7 +1711,7 @@ def processus_detail(request, uuid):
 def pac_list(request):
     """Liste des PACs de l'utilisateur connecté avec leurs détails"""
     try:
-        logger.info(f"[pac_list] Utilisateur connecté: {request.user.username} (ID: {request.user.id})")
+        logger.info("[pac_list] Utilisateur connecté: %s (ID: %s)", request.user.username, request.user.id)
 
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
         user_processus_uuids = get_user_processus_list(request.user)
@@ -1728,7 +1728,7 @@ def pac_list(request):
             'details__source'
         )
         elif not user_processus_uuids:
-            logger.info(f"[pac_list] Aucun processus assigné pour l'utilisateur {request.user.username}")
+            logger.info("[pac_list] Aucun processus assigné pour l'utilisateur %s", request.user.username)
             return Response({
                 'success': True,
                 'data': [],
@@ -1747,18 +1747,18 @@ def pac_list(request):
             )
         # ========== FIN FILTRAGE ==========
 
-        logger.info(f"[pac_list] Nombre de PACs pour l'utilisateur {request.user.username}: {pacs.count()}")
+        logger.info("[pac_list] Nombre de PACs pour l'utilisateur %s: %s", request.user.username, pacs.count())
 
         # Utiliser PacCompletSerializer pour inclure les détails
         serializer = PacCompletSerializer(pacs, many=True)
-        logger.info(f"[pac_list] Données sérialisées: {len(serializer.data)} PACs")
+        logger.info("[pac_list] Données sérialisées: %s PACs", len(serializer.data))
         return Response({
             'success': True,
             'data': serializer.data,
             'count': pacs.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des PACs: {str(e)}")
+        logger.error("Erreur lors de la récupération des PACs: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les PACs'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1773,7 +1773,7 @@ def pac_create(request):
     Retourne 400 si doublon.
     """
     try:
-        logger.info(f"[pac_create] Données reçues: {request.data}")
+        logger.info("[pac_create] Données reçues: %s", request.data)
         data = request.data.copy()
         clone = str(data.pop('clone', 'false')).lower() in ['1', 'true', 'yes', 'on']
 
@@ -1853,11 +1853,11 @@ def pac_create(request):
         # ========== CRÉATION ==========
         serializer = PacCreateSerializer(data=data, context={'request': request})
         if not serializer.is_valid():
-            logger.error(f"[pac_create] Erreurs de validation: {serializer.errors}")
+            logger.error("[pac_create] Erreurs de validation: %s", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         pac = serializer.save()
-        logger.info(f"[pac_create] PAC créé: {pac.uuid}")
+        logger.info("[pac_create] PAC créé: %s", pac.uuid)
 
         log_pac_creation(
             user=request.user,
@@ -1936,7 +1936,7 @@ def pac_create(request):
                             user_agent=request.META.get('HTTP_USER_AGENT')
                         )
                     except Exception as log_err:
-                        logger.warning(f"[pac_create] Erreur log clonage: {log_err}")
+                        logger.warning("[pac_create] Erreur log clonage: %s", log_err)
 
         return Response({
             'success': True,
@@ -1946,7 +1946,7 @@ def pac_create(request):
 
     except Exception as e:
         import traceback
-        logger.error(f"[pac_create] Erreur: {str(e)}\n{traceback.format_exc()}")
+        logger.error("[pac_create] Erreur: %s\n%s", str(e), traceback.format_exc())
         return Response({
             'success': False,
             'error': 'Impossible de créer le PAC',
@@ -1972,7 +1972,7 @@ def pac_detail(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du PAC: {str(e)}")
+        logger.error("Erreur lors de la récupération du PAC: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer le PAC'
@@ -2016,7 +2016,7 @@ def pac_complet(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du PAC complet: {str(e)}")
+        logger.error("Erreur lors de la récupération du PAC complet: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer le PAC complet'
@@ -2031,7 +2031,7 @@ def pac_get_or_create(request):
     Si num_amendement est absent, le calcule automatiquement.
     """
     try:
-        logger.info(f"[pac_get_or_create] Début - données reçues: {request.data}")
+        logger.info("[pac_get_or_create] Début - données reçues: %s", request.data)
         data = request.data
 
         def _to_uuid(val):
@@ -2059,7 +2059,7 @@ def pac_get_or_create(request):
         else:
             num_amendement = None
 
-        logger.info(f"[pac_get_or_create] annee_uuid={annee_uuid}, processus_uuid={processus_uuid}, num_amendement={num_amendement}")
+        logger.info("[pac_get_or_create] annee_uuid=%s, processus_uuid=%s, num_amendement=%s", annee_uuid, processus_uuid, num_amendement)
 
         if not (annee_uuid and processus_uuid):
             logger.warning("[pac_get_or_create] annee ou processus manquant")
@@ -2080,9 +2080,9 @@ def pac_get_or_create(request):
             logger.info("[pac_get_or_create] num_amendement absent, calcul automatique")
             try:
                 num_amendement = _get_next_num_amendement_for_pac(request.user, annee_uuid, processus_uuid)
-                logger.info(f"[pac_get_or_create] num_amendement automatique: {num_amendement}")
+                logger.info("[pac_get_or_create] num_amendement automatique: %s", num_amendement)
             except Exception as tt_error:
-                logger.error(f"[pac_get_or_create] Erreur calcul num_amendement: {tt_error}")
+                logger.error("[pac_get_or_create] Erreur calcul num_amendement: %s", tt_error)
                 import traceback
                 logger.error(traceback.format_exc())
                 return Response({
@@ -2116,14 +2116,14 @@ def pac_get_or_create(request):
                 annee__uuid=annee_uuid,
                 num_amendement=num_amendement,
             )
-            logger.info(f"[pac_get_or_create] PAC existant trouvé: {pac.uuid}")
+            logger.info("[pac_get_or_create] PAC existant trouvé: %s", pac.uuid)
             serializer = PacSerializer(pac)
             response_data = dict(serializer.data)
             response_data['created'] = False
             return Response(response_data, status=status.HTTP_200_OK)
 
         except Pac.DoesNotExist:
-            logger.info(f"[pac_get_or_create] Aucun PAC existant, création d'un nouveau PAC")
+            logger.info("[pac_get_or_create] Aucun PAC existant, création d'un nouveau PAC")
 
             from django.http import QueryDict
             if isinstance(data, QueryDict):
@@ -2168,16 +2168,16 @@ def pac_get_or_create(request):
             }
             if initial_ref_uuid:
                 create_payload['initial_ref'] = initial_ref_uuid
-            logger.info(f"[pac_get_or_create] Payload création: {create_payload}")
+            logger.info("[pac_get_or_create] Payload création: %s", create_payload)
             create_serializer = PacCreateSerializer(data=create_payload, context={'request': request})
 
             if create_serializer.is_valid():
                 logger.info("[pac_get_or_create] Serializer valide, sauvegarde...")
                 try:
                     pac = create_serializer.save()
-                    logger.info(f"[pac_get_or_create] PAC créé avec succès: {pac.uuid}")
+                    logger.info("[pac_get_or_create] PAC créé avec succès: %s", pac.uuid)
                 except Exception as save_error:
-                    logger.error(f"[pac_get_or_create] Erreur lors de la sauvegarde: {save_error}")
+                    logger.error("[pac_get_or_create] Erreur lors de la sauvegarde: %s", save_error)
                     import traceback
                     logger.error(traceback.format_exc())
                     if 'UNIQUE constraint' in str(save_error):
@@ -2206,7 +2206,7 @@ def pac_get_or_create(request):
                         user_agent=request.META.get('HTTP_USER_AGENT')
                     )
                 except Exception as log_error:
-                    logger.error(f"[pac_get_or_create] Erreur log (non bloquant): {log_error}")
+                    logger.error("[pac_get_or_create] Erreur log (non bloquant): %s", log_error)
 
                 try:
                     serializer = PacSerializer(pac)
@@ -2214,19 +2214,19 @@ def pac_get_or_create(request):
                     response_data['created'] = True
                     return Response(response_data, status=status.HTTP_201_CREATED)
                 except Exception as serializer_error:
-                    logger.error(f"[pac_get_or_create] Erreur sérialisation: {serializer_error}")
+                    logger.error("[pac_get_or_create] Erreur sérialisation: %s", serializer_error)
                     return Response({
                         'error': 'Erreur lors de la sérialisation du PAC',
                         'details': str(serializer_error)
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            logger.error(f"[pac_get_or_create] Erreurs de validation: {create_serializer.errors}")
+            logger.error("[pac_get_or_create] Erreurs de validation: %s", create_serializer.errors)
             return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
-        logger.error(f"[pac_get_or_create] Erreur exception non gérée: {str(e)}")
+        logger.error("[pac_get_or_create] Erreur exception non gérée: %s", str(e))
         import traceback
-        logger.error(f"[pac_get_or_create] Traceback: {traceback.format_exc()}")
+        logger.error("[pac_get_or_create] Traceback: %s", traceback.format_exc())
         return Response({
             'error': 'Impossible de traiter la demande',
             'details': str(e)
@@ -2271,7 +2271,7 @@ def pac_update(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du PAC: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du PAC: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2296,9 +2296,7 @@ def pac_delete(request, uuid):
 
         # Log de l'activité avant suppression
         logger.info(
-            f"Suppression PAC - User: {request.user.email}, "
-            f"PAC: {pac_info['libelle']}, UUID: {pac_info['uuid']}, "
-            f"IP: {get_client_ip(request)}"
+            "Suppression PAC - User: %s, PAC: %s, UUID: %s, IP: %s", request.user.email, pac_info['libelle'], pac_info['uuid'], get_client_ip(request)
         )
 
         # Suppression du PAC (cascade sur traitements et suivis)
@@ -2313,7 +2311,7 @@ def pac_delete(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du PAC: {str(e)}")
+        logger.error("Erreur lors de la suppression du PAC: %s", str(e))
         return Response({
             'error': 'Impossible de supprimer le PAC'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2401,9 +2399,7 @@ def pac_validate(request, uuid):
         pac.save()
         
         logger.info(
-            f"PAC validé par {request.user.username}: "
-            f"PAC UUID: {uuid}, "
-            f"IP: {get_client_ip(request)}"
+            "PAC validé par %s: PAC UUID: %s, IP: %s", request.user.username, uuid, get_client_ip(request)
         )
         
         return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
@@ -2413,7 +2409,7 @@ def pac_validate(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la validation du PAC: {str(e)}")
+        logger.error("Erreur lors de la validation du PAC: %s", str(e))
         return Response({
             'error': 'Impossible de valider le PAC',
             'details': str(e)
@@ -2480,9 +2476,7 @@ def pac_validate_by_type(request):
                 validated_count += 1
         
         logger.info(
-            f"{validated_count} PAC(s) validé(s) par {request.user.username}: "
-            f"processus={processus_uuid}, annee={annee_uuid}, num_amendement={num_amendement}, "
-            f"IP: {get_client_ip(request)}"
+            "%s PAC(s) validé(s) par %s: processus=%s, annee=%s, num_amendement=%s, IP: %s", validated_count, request.user.username, processus_uuid, annee_uuid, num_amendement, get_client_ip(request)
         )
         
         return Response({
@@ -2492,7 +2486,7 @@ def pac_validate_by_type(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la validation par amendement: {str(e)}")
+        logger.error("Erreur lors de la validation par amendement: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -2523,12 +2517,12 @@ def pac_unvalidate(request, uuid):
         return Response(PacSerializer(pac).data, status=status.HTTP_200_OK)
         
     except Pac.DoesNotExist:
-        logger.error(f"Tentative de dévalidation d'un PAC inexistant: {uuid} par {request.user.username}")
+        logger.error("Tentative de dévalidation d'un PAC inexistant: %s par %s", uuid, request.user.username)
         return Response({
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la dévalidation du PAC {uuid}: {str(e)}")
+        logger.error("Erreur lors de la dévalidation du PAC %s: %s", uuid, str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -2571,7 +2565,7 @@ def traitement_list(request):
             'count': traitements.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des traitements: {str(e)}")
+        logger.error("Erreur lors de la récupération des traitements: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer les traitements'
@@ -2583,16 +2577,16 @@ def traitement_list(request):
 def traitement_create(request):
     """Créer un nouveau traitement"""
     try:
-        logger.info(f"[traitement_create] Données reçues: {request.data}")
+        logger.info("[traitement_create] Données reçues: %s", request.data)
         
         # Vérifier si le PAC est validé avant la création
         if 'details_pac' in request.data:
             details_pac_uuid = request.data['details_pac']
-            logger.info(f"[traitement_create] Recherche du DetailsPac avec UUID: {details_pac_uuid}")
+            logger.info("[traitement_create] Recherche du DetailsPac avec UUID: %s", details_pac_uuid)
             
             try:
                 details_pac = DetailsPac.objects.select_related('pac').get(uuid=details_pac_uuid)
-                logger.info(f"[traitement_create] DetailsPac trouvé: {details_pac.uuid}, PAC validé: {details_pac.pac.is_validated}")
+                logger.info("[traitement_create] DetailsPac trouvé: %s, PAC validé: %s", details_pac.uuid, details_pac.pac.is_validated)
                 
                 # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
                 if not user_has_access_to_processus(request.user, details_pac.pac.processus.uuid):
@@ -2618,7 +2612,7 @@ def traitement_create(request):
                 # Vérifier si un traitement existe déjà pour ce détail
                 existing_traitement = TraitementPac.objects.filter(details_pac=details_pac).first()
                 if existing_traitement:
-                    logger.warning(f"[traitement_create] Un traitement existe déjà pour ce détail: {existing_traitement.uuid}")
+                    logger.warning("[traitement_create] Un traitement existe déjà pour ce détail: %s", existing_traitement.uuid)
                     return Response({
                         'details_pac': ["Un traitement existe déjà pour ce détail PAC. Un détail ne peut avoir qu'un seul traitement."]
                     }, status=status.HTTP_400_BAD_REQUEST)
@@ -2628,7 +2622,7 @@ def traitement_create(request):
                         'details_pac': ['Ce PAC est validé. Impossible de créer un nouveau traitement.']
                     }, status=status.HTTP_400_BAD_REQUEST)
             except DetailsPac.DoesNotExist:
-                logger.error(f"[traitement_create] DetailsPac non trouvé avec UUID: {details_pac_uuid}")
+                logger.error("[traitement_create] DetailsPac non trouvé avec UUID: %s", details_pac_uuid)
                 return Response({
                     'details_pac': [f'Aucun détail PAC trouvé avec l\'UUID fourni: {details_pac_uuid}']
                 }, status=status.HTTP_400_BAD_REQUEST)
@@ -2646,7 +2640,7 @@ def traitement_create(request):
                     user_agent=request.META.get('HTTP_USER_AGENT')
                 )
             except Exception as log_error:
-                logger.error(f"Erreur lors du log de création du traitement: {str(log_error)}")
+                logger.error("Erreur lors du log de création du traitement: %s", str(log_error))
                 # Continue même si le log échoue
 
             # Sérialiser la réponse
@@ -2654,7 +2648,7 @@ def traitement_create(request):
                 response_data = TraitementPacSerializer(traitement).data
                 return Response(response_data, status=status.HTTP_201_CREATED)
             except Exception as serializer_error:
-                logger.error(f"Erreur lors de la sérialisation du traitement créé: {str(serializer_error)}")
+                logger.error("Erreur lors de la sérialisation du traitement créé: %s", str(serializer_error))
                 import traceback
                 logger.error(traceback.format_exc())
                 # Le traitement a été créé, retourner au moins l'UUID
@@ -2663,10 +2657,10 @@ def traitement_create(request):
                     'action': traitement.action
                 }, status=status.HTTP_201_CREATED)
 
-        logger.error(f"[traitement_create] Erreurs de validation: {serializer.errors}")
+        logger.error("[traitement_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du traitement: {str(e)}")
+        logger.error("Erreur lors de la création du traitement: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -2703,7 +2697,7 @@ def pac_traitements(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des traitements du PAC: {str(e)}")
+        logger.error("Erreur lors de la récupération des traitements du PAC: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer les traitements'
@@ -2735,7 +2729,7 @@ def traitement_detail(request, uuid):
             'error': 'Traitement non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du traitement: {str(e)}")
+        logger.error("Erreur lors de la récupération du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer le traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2764,7 +2758,7 @@ def traitement_update(request, uuid):
             'error': 'Traitement non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du traitement: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2804,7 +2798,7 @@ def suivi_list(request):
             'count': suivis.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des suivis: {str(e)}")
+        logger.error("Erreur lors de la récupération des suivis: %s", str(e))
         return Response({
             'success': False,
             'error': 'Impossible de récupérer les suivis'
@@ -2842,7 +2836,7 @@ def traitement_suivis(request, uuid):
                 'error': 'Traitement non trouvé'
             }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des suivis du traitement: {str(e)}")
+        logger.error("Erreur lors de la récupération des suivis du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les suivis du traitement'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2888,7 +2882,7 @@ def suivi_create(request):
                     user_agent=request.META.get('HTTP_USER_AGENT')
                 )
             except Exception as log_error:
-                logger.error(f"Erreur lors du log de création du suivi: {str(log_error)}")
+                logger.error("Erreur lors du log de création du suivi: %s", str(log_error))
                 # Continue même si le log échoue
 
             # Sérialiser la réponse
@@ -2896,7 +2890,7 @@ def suivi_create(request):
                 response_data = PacSuiviSerializer(suivi).data
                 return Response(response_data, status=status.HTTP_201_CREATED)
             except Exception as serializer_error:
-                logger.error(f"Erreur lors de la sérialisation du suivi créé: {str(serializer_error)}")
+                logger.error("Erreur lors de la sérialisation du suivi créé: %s", str(serializer_error))
                 import traceback
                 logger.error(traceback.format_exc())
                 # Le suivi a été créé, retourner au moins l'UUID
@@ -2907,7 +2901,7 @@ def suivi_create(request):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du suivi: {str(e)}")
+        logger.error("Erreur lors de la création du suivi: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -2942,7 +2936,7 @@ def suivi_detail(request, uuid):
     except PacSuivi.DoesNotExist:
         return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du suivi: {str(e)}")
+        logger.error("Erreur lors de la récupération du suivi: %s", str(e))
         return Response({'error': "Impossible de récupérer le suivi"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2978,7 +2972,7 @@ def suivi_update(request, uuid):
     except PacSuivi.DoesNotExist:
         return Response({'error': 'Suivi non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du suivi: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du suivi: %s", str(e))
         return Response({'error': "Impossible de mettre à jour le suivi"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3015,7 +3009,7 @@ def details_pac_list(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des détails du traitement: {str(e)}")
+        logger.error("Erreur lors de la récupération des détails du traitement: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer les détails'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -3026,13 +3020,13 @@ def details_pac_list(request, uuid):
 def details_pac_create(request):
     """Créer un nouveau détail de PAC"""
     try:
-        logger.info(f"[details_pac_create] Données reçues: {request.data}")
+        logger.info("[details_pac_create] Données reçues: %s", request.data)
         
         # Vérifier si le PAC est validé avant la création
         if 'pac' in request.data:
             try:
                 pac = Pac.objects.get(uuid=request.data['pac'])
-                logger.info(f"[details_pac_create] PAC trouvé: {pac.uuid}, validé: {pac.is_validated}")
+                logger.info("[details_pac_create] PAC trouvé: %s, validé: %s", pac.uuid, pac.is_validated)
                 
                 # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
                 if not user_has_access_to_processus(request.user, pac.processus.uuid):
@@ -3060,19 +3054,19 @@ def details_pac_create(request):
                         'error': 'Ce PAC est validé. Impossible de créer un nouveau détail.'
                     }, status=status.HTTP_400_BAD_REQUEST)
             except Pac.DoesNotExist:
-                logger.error(f"[details_pac_create] PAC non trouvé avec UUID: {request.data['pac']}")
+                logger.error("[details_pac_create] PAC non trouvé avec UUID: %s", request.data['pac'])
                 pass  # La validation du serializer gérera cette erreur
         
         serializer = DetailsPacCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             detail = serializer.save()
-            logger.info(f"[details_pac_create] ✅ Détail créé avec succès: {detail.uuid}")
+            logger.info("[details_pac_create] ✅ Détail créé avec succès: %s", detail.uuid)
             return Response(DetailsPacSerializer(detail).data, status=status.HTTP_201_CREATED)
         
-        logger.error(f"[details_pac_create] Erreurs de validation: {serializer.errors}")
+        logger.error("[details_pac_create] Erreurs de validation: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du détail: {str(e)}")
+        logger.error("Erreur lors de la création du détail: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -3099,7 +3093,7 @@ def details_pac_detail(request, uuid):
             'error': 'Détail non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du détail: {str(e)}")
+        logger.error("Erreur lors de la récupération du détail: %s", str(e))
         return Response({
             'error': 'Impossible de récupérer le détail'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -3128,7 +3122,7 @@ def details_pac_update(request, uuid):
             'error': 'Détail non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du détail: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du détail: %s", str(e))
         return Response({
             'error': 'Impossible de mettre à jour le détail'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -3165,7 +3159,7 @@ def details_pac_delete(request, uuid):
             'error': 'Détail non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du détail: {str(e)}")
+        logger.error("Erreur lors de la suppression du détail: %s", str(e))
         return Response({
             'error': 'Impossible de supprimer le détail'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -3246,7 +3240,7 @@ def pac_upcoming_notifications(request):
                 try:
                     diff_days = (delai_date - today).days
                 except (TypeError, AttributeError) as e:
-                    logger.warning(f"[pac_upcoming_notifications] Erreur lors du calcul de la différence de jours: {e}")
+                    logger.warning("[pac_upcoming_notifications] Erreur lors du calcul de la différence de jours: %s", e)
                     continue
                 
                 # Inclure les traitements arrivés à terme (en retard) et bientôt à terme (dans les 7 prochains jours)
@@ -3340,9 +3334,9 @@ def pac_upcoming_notifications(request):
                         notifications[-1]['notification_uuid'] = str(notif.uuid)
                         notifications[-1]['read_at'] = notif.read_at.isoformat() if notif.read_at else None
                     except Exception as notif_err:
-                        logger.warning(f"[pac_upcoming_notifications] Notification get_or_create: {notif_err}")
+                        logger.warning("[pac_upcoming_notifications] Notification get_or_create: %s", notif_err)
             except Exception as e:
-                logger.error(f"[pac_upcoming_notifications] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
+                logger.error("[pac_upcoming_notifications] Erreur lors du traitement du traitement %s: %s", traitement.uuid, e)
                 import traceback
                 logger.error(traceback.format_exc())
                 continue
@@ -3353,7 +3347,7 @@ def pac_upcoming_notifications(request):
             x['due_date']
         ))
         
-        logger.info(f"[pac_upcoming_notifications] {len(notifications)} notifications trouvées pour l'utilisateur {request.user.username}")
+        logger.info("[pac_upcoming_notifications] %s notifications trouvées pour l'utilisateur %s", len(notifications), request.user.username)
         
         return Response({
             'success': True,
@@ -3361,7 +3355,7 @@ def pac_upcoming_notifications(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des notifications: {str(e)}")
+        logger.error("Erreur lors de la récupération des notifications: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -3378,7 +3372,7 @@ def pac_upcoming_notifications(request):
 def pac_stats(request):
     """Statistiques des PACs de l'utilisateur connecté"""
     try:
-        logger.info(f"[pac_stats] Début de la fonction pour l'utilisateur: {request.user.username}")
+        logger.info("[pac_stats] Début de la fonction pour l'utilisateur: %s", request.user.username)
         scope = request.query_params.get('scope', 'tous')
         
         # ========== FILTRAGE PAR PROCESSUS (Security by Design) ==========
@@ -3414,10 +3408,10 @@ def pac_stats(request):
             processus_uuid_filter = request.query_params.get('processus_uuid', None)
             if processus_uuid_filter and str(processus_uuid_filter) in [str(u) for u in user_processus_uuids]:
                 pacs_base = pacs_base.filter(processus__uuid=processus_uuid_filter)
-        logger.info(f"[pac_stats] Queryset créé")
+        logger.info("[pac_stats] Queryset créé")
         # ========== FIN FILTRAGE ==========
         
-        logger.info(f"[pac_stats] Nombre total de PACs de l'utilisateur: {pacs_base.count()}")
+        logger.info("[pac_stats] Nombre total de PACs de l'utilisateur: %s", pacs_base.count())
 
         # Filtrer selon le scope
         if scope == 'dernier':
@@ -3433,21 +3427,21 @@ def pac_stats(request):
         else:
             # Filtrer les PACs initiaux uniquement (num_amendement == 0)
             pacs_initiaux_base = pacs_base.filter(num_amendement=0)
-        logger.info(f"[pac_stats] Nombre de PACs initiaux: {pacs_initiaux_base.count()}")
+        logger.info("[pac_stats] Nombre de PACs initiaux: %s", pacs_initiaux_base.count())
         
         total_pacs = pacs_initiaux_base.count()
         
         # Compter les PACs initiaux validés
         # Debug: Vérifier tous les PACs initiaux et leur statut de validation
-        logger.info(f"[pac_stats] Vérification des PACs initiaux et leur statut de validation:")
+        logger.info("[pac_stats] Vérification des PACs initiaux et leur statut de validation:")
         for pac in pacs_initiaux_base:
             # Recharger depuis la DB pour être sûr d'avoir la valeur à jour
             pac.refresh_from_db()
-            logger.info(f"[pac_stats] PAC {pac.uuid}: is_validated={pac.is_validated} (type: {type(pac.is_validated).__name__}), validated_at={pac.validated_at}, validated_by={pac.validated_by}")
+            logger.info("[pac_stats] PAC %s: is_validated=%s (type: %s), validated_at=%s, validated_by=%s", pac.uuid, pac.is_validated, type(pac.is_validated).__name__, pac.validated_at, pac.validated_by)
             
             # Vérifier aussi avec une requête directe
             pac_direct = Pac.objects.get(uuid=pac.uuid)
-            logger.info(f"[pac_stats] PAC {pac.uuid} (requête directe): is_validated={pac_direct.is_validated} (type: {type(pac_direct.is_validated).__name__})")
+            logger.info("[pac_stats] PAC %s (requête directe): is_validated=%s (type: %s)", pac.uuid, pac_direct.is_validated, type(pac_direct.is_validated).__name__)
         
         # Utiliser une requête directe sur la base filtrée
         # Un PAC est considéré comme validé si is_validated=True OU si validated_at/validated_by sont remplis
@@ -3456,11 +3450,11 @@ def pac_stats(request):
         pacs_valides_filter1 = pacs_initiaux_base.filter(
             Q(is_validated=True) | Q(validated_at__isnull=False) | Q(validated_by__isnull=False)
         ).count()
-        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (via filter avec Q): {pacs_valides_filter1}")
+        logger.info("[pac_stats] Nombre de PACs initiaux validés (via filter avec Q): %s", pacs_valides_filter1)
         
         # Essayer avec une requête qui vérifie explicitement que ce n'est pas False
         pacs_valides_filter2 = pacs_initiaux_base.exclude(is_validated=False).count()
-        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (via exclude is_validated=False): {pacs_valides_filter2}")
+        logger.info("[pac_stats] Nombre de PACs initiaux validés (via exclude is_validated=False): %s", pacs_valides_filter2)
         
         # Compter aussi manuellement pour vérifier (plus fiable)
         # Un PAC est considéré comme validé si is_validated=True OU si validated_at/validated_by sont remplis
@@ -3478,13 +3472,13 @@ def pac_stats(request):
             )
             if is_validated:
                 pacs_valides_manual += 1
-                logger.info(f"[pac_stats] PAC {pac.uuid} considéré comme validé: is_validated={pac.is_validated}, validated_at={pac.validated_at}, validated_by={pac.validated_by}")
-        logger.info(f"[pac_stats] Nombre de PACs initiaux validés (manuel): {pacs_valides_manual}")
+                logger.info("[pac_stats] PAC %s considéré comme validé: is_validated=%s, validated_at=%s, validated_by=%s", pac.uuid, pac.is_validated, pac.validated_at, pac.validated_by)
+        logger.info("[pac_stats] Nombre de PACs initiaux validés (manuel): %s", pacs_valides_manual)
         
         # Utiliser le comptage manuel (plus fiable que la requête filter)
         # Si les deux méthodes donnent des résultats différents, utiliser le manuel
         if pacs_valides_filter1 != pacs_valides_manual or pacs_valides_filter2 != pacs_valides_manual:
-            logger.warning(f"[pac_stats] Incohérence détectée! filter1()={pacs_valides_filter1}, filter2()={pacs_valides_filter2}, manuel={pacs_valides_manual}. Utilisation du comptage manuel.")
+            logger.warning("[pac_stats] Incohérence détectée! filter1()=%s, filter2()=%s, manuel=%s. Utilisation du comptage manuel.", pacs_valides_filter1, pacs_valides_filter2, pacs_valides_manual)
             pacs_valides = pacs_valides_manual
         else:
             pacs_valides = pacs_valides_filter1
@@ -3505,7 +3499,7 @@ def pac_stats(request):
             'processus', 'cree_par', 'annee'
         ).prefetch_related('details__traitement', 'details__traitement__suivi')
         
-        logger.info(f"[pac_stats] Nombre total de PACs (initiaux + amendements): {all_pacs.count()}")
+        logger.info("[pac_stats] Nombre total de PACs (initiaux + amendements): %s", all_pacs.count())
         
         # Compter les PACs avec traitement (tous types confondus)
         for pac in all_pacs:
@@ -3524,23 +3518,23 @@ def pac_stats(request):
                                 has_suivi = True
                                 break
                     except Exception as e:
-                        logger.warning(f"[pac_stats] Erreur lors de l'accès au traitement du détail {detail.uuid}: {e}")
+                        logger.warning("[pac_stats] Erreur lors de l'accès au traitement du détail %s: %s", detail.uuid, e)
                         continue
                 
                 # Compter une seule fois par PAC
                 if has_traitement:
                     pacs_avec_traitement += 1
-                    logger.info(f"[pac_stats] PAC {pac.uuid} (num_amendement={pac.num_amendement}) a un traitement")
+                    logger.info("[pac_stats] PAC %s (num_amendement=%s) a un traitement", pac.uuid, pac.num_amendement)
                 if has_suivi:
                     pacs_avec_suivi += 1
             except Exception as e:
-                logger.error(f"[pac_stats] Erreur lors du traitement du PAC {pac.uuid}: {e}")
+                logger.error("[pac_stats] Erreur lors du traitement du PAC %s: %s", pac.uuid, e)
                 import traceback
                 logger.error(traceback.format_exc())
                 continue
         
-        logger.info(f"[pac_stats] Nombre de PACs avec traitement (tous types): {pacs_avec_traitement}")
-        logger.info(f"[pac_stats] Nombre de PACs avec suivi (tous types): {pacs_avec_suivi}")
+        logger.info("[pac_stats] Nombre de PACs avec traitement (tous types): %s", pacs_avec_traitement)
+        logger.info("[pac_stats] Nombre de PACs avec suivi (tous types): %s", pacs_avec_suivi)
         
         # Pour les autres stats, continuer avec les PACs initiaux uniquement
         
@@ -3565,7 +3559,7 @@ def pac_stats(request):
                 delai_realisation__isnull=False
             ).select_related('details_pac', 'details_pac__pac')
         
-        logger.info(f"[pac_stats] Nombre de traitements avec délai trouvés (PACs initiaux uniquement): {traitements.count()}")
+        logger.info("[pac_stats] Nombre de traitements avec délai trouvés (PACs initiaux uniquement): %s", traitements.count())
         
         for traitement in traitements:
             try:
@@ -3591,18 +3585,18 @@ def pac_stats(request):
                 try:
                     if delai_date < today:
                         traitements_arrives_termes += 1
-                        logger.debug(f"[pac_stats] Traitement arrivé à terme: {traitement.uuid}, délai: {delai_date}")
+                        logger.debug("[pac_stats] Traitement arrivé à terme: %s, délai: %s", traitement.uuid, delai_date)
                     # Traitement bientôt à terme (dans les 7 prochains jours)
                     else:
                         diff_days = (delai_date - today).days
                         if 0 <= diff_days <= 7:
                             traitements_bientot_termes += 1
-                            logger.debug(f"[pac_stats] Traitement bientôt à terme: {traitement.uuid}, délai: {delai_date}, jours restants: {diff_days}")
+                            logger.debug("[pac_stats] Traitement bientôt à terme: %s, délai: %s, jours restants: %s", traitement.uuid, delai_date, diff_days)
                 except (TypeError, AttributeError) as e:
-                    logger.warning(f"[pac_stats] Erreur lors de la comparaison de dates: {e}, type: {type(delai_date)}")
+                    logger.warning("[pac_stats] Erreur lors de la comparaison de dates: %s, type: %s", e, type(delai_date))
                     continue
             except Exception as e:
-                logger.error(f"[pac_stats] Erreur lors du traitement du traitement {traitement.uuid}: {e}")
+                logger.error("[pac_stats] Erreur lors du traitement du traitement %s: %s", traitement.uuid, e)
                 import traceback
                 logger.error(traceback.format_exc())
                 continue
@@ -3629,10 +3623,7 @@ def pac_stats(request):
                 traitement__details_pac__pac__uuid__in=pacs_initiaux_uuids
             ).count()
         
-        logger.info(f"[pac_stats] Statistiques calculées: total_pacs={total_pacs}, pacs_valides={pacs_valides}, "
-                   f"pacs_avec_traitement={pacs_avec_traitement}, pacs_avec_suivi={pacs_avec_suivi}, "
-                   f"total_traitements={total_traitements}, total_suivis={total_suivis}, "
-                   f"traitements_arrives_termes={traitements_arrives_termes}, traitements_bientot_termes={traitements_bientot_termes}")
+        logger.info("[pac_stats] Statistiques calculées: total_pacs=%s, pacs_valides=%s, pacs_avec_traitement=%s, pacs_avec_suivi=%s, total_traitements=%s, total_suivis=%s, traitements_arrives_termes=%s, traitements_bientot_termes=%s", total_pacs, pacs_valides, pacs_avec_traitement, pacs_avec_suivi, total_traitements, total_suivis, traitements_arrives_termes, traitements_bientot_termes)
         
         # Statistiques pour les graphiques
         stats = {
@@ -3646,7 +3637,7 @@ def pac_stats(request):
             'traitements_bientot_termes': traitements_bientot_termes
         }
         
-        logger.info(f"[pac_stats] Stats à retourner: {stats}")
+        logger.info("[pac_stats] Stats à retourner: %s", stats)
         
         return Response({
             'success': True,
@@ -3654,7 +3645,7 @@ def pac_stats(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statistiques PAC: {str(e)}")
+        logger.error("Erreur lors de la récupération des statistiques PAC: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -3693,14 +3684,14 @@ def get_last_pac_previous_year(request):
             annee_precedente_valeur = annee_actuelle.annee - 1
             annee_precedente = Annee.objects.get(annee=annee_precedente_valeur)
         except Annee.DoesNotExist:
-            logger.info(f"[get_last_pac_previous_year] Année précédente {annee_precedente_valeur if 'annee_precedente_valeur' in locals() else 'N/A'} non trouvée")
+            logger.info("[get_last_pac_previous_year] Année précédente %s non trouvée", annee_precedente_valeur if 'annee_precedente_valeur' in locals() else 'N/A')
             return Response({
                 'message': f'Aucune année {annee_precedente_valeur if "annee_precedente_valeur" in locals() else "précédente"} trouvée dans le système',
                 'found': False,
                 'data': None
             }, status=status.HTTP_200_OK)
 
-        logger.info(f"[get_last_pac_previous_year] Recherche du dernier PAC pour processus={processus_uuid}, année={annee_precedente.annee}")
+        logger.info("[get_last_pac_previous_year] Recherche du dernier PAC pour processus=%s, année=%s", processus_uuid, annee_precedente.annee)
 
         # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
         if not user_has_access_to_processus(request.user, processus_uuid):
@@ -3717,12 +3708,12 @@ def get_last_pac_previous_year(request):
         ).select_related('processus', 'annee', 'cree_par', 'validated_by').order_by('-num_amendement').first()
 
         if pac:
-            logger.info(f"[get_last_pac_previous_year] PAC trouvé: {pac.uuid} (num_amendement={pac.num_amendement})")
+            logger.info("[get_last_pac_previous_year] PAC trouvé: %s (num_amendement=%s)", pac.uuid, pac.num_amendement)
             serializer = PacSerializer(pac)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Aucun PAC trouvé pour l'année précédente (200 pour que le frontend ne voit pas 404)
-        logger.info(f"[get_last_pac_previous_year] Aucun PAC trouvé pour l'année {annee_precedente.annee}")
+        logger.info("[get_last_pac_previous_year] Aucun PAC trouvé pour l'année %s", annee_precedente.annee)
         return Response({
             'message': f'Aucun Plan d\'Action de Conformité trouvé pour l\'année {annee_precedente.annee}',
             'found': False,
@@ -3730,7 +3721,7 @@ def get_last_pac_previous_year(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération du dernier PAC de l'année précédente: {str(e)}")
+        logger.error("Erreur lors de la récupération du dernier PAC de l'année précédente: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({

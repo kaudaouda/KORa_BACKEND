@@ -61,7 +61,7 @@ def _has_amendements_following(ap):
             num_amendement=ap.num_amendement + 1
         ).exists()
     except Exception as e:
-        logger.error(f'Erreur dans _has_amendements_following: {str(e)}')
+        logger.error("Erreur dans _has_amendements_following: %s", str(e))
         return False
 
 
@@ -71,7 +71,7 @@ def _get_next_num_amendement_for_ap(user, annee, processus_uuid):
     0 si aucun AP n'existe encore, sinon max_existant + 1.
     """
     try:
-        logger.info(f"[_get_next_num_amendement_for_ap] user={user}, annee={annee}, processus_uuid={processus_uuid}")
+        logger.info("[_get_next_num_amendement_for_ap] user=%s, annee=%s, processus_uuid=%s", user, annee, processus_uuid)
         existing = ActivitePeriodique.objects.filter(
             cree_par=user,
             annee__annee=annee,
@@ -81,10 +81,10 @@ def _get_next_num_amendement_for_ap(user, annee, processus_uuid):
             logger.info("[_get_next_num_amendement_for_ap] Aucun AP existant, retourne 0 (initial)")
             return 0
         next_num = existing.num_amendement + 1
-        logger.info(f"[_get_next_num_amendement_for_ap] Retourne {next_num}")
+        logger.info("[_get_next_num_amendement_for_ap] Retourne %s", next_num)
         return next_num
     except Exception as e:
-        logger.error(f"[_get_next_num_amendement_for_ap] Erreur: {e}")
+        logger.error("[_get_next_num_amendement_for_ap] Erreur: %s", e)
         import traceback
         logger.error(traceback.format_exc())
         raise

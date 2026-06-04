@@ -63,7 +63,7 @@ def activite_periodique_home(request):
             }
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur dans activite_periodique_home: {str(e)}')
+        logger.error("Erreur dans activite_periodique_home: %s", str(e))
         return Response({
             'success': False,
             'message': 'Erreur serveur',
@@ -87,7 +87,7 @@ def activites_periodiques_list(request):
             ).prefetch_related('amendements').order_by('-annee__annee', 'processus__numero_processus')
         elif not user_processus_uuids:
             # Aucun processus assigné
-            logger.info(f"[activites_periodiques_list] Aucun processus assigné pour l'utilisateur {request.user.username}")
+            logger.info("[activites_periodiques_list] Aucun processus assigné pour l'utilisateur %s", request.user.username)
             return Response({
                 'success': True,
                 'data': [],
@@ -108,7 +108,7 @@ def activites_periodiques_list(request):
             'count': aps.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f'Erreur dans activites_periodiques_list: {str(e)}')
+        logger.error("Erreur dans activites_periodiques_list: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -147,7 +147,7 @@ def activite_periodique_detail(request, uuid):
             'error': 'Activité Périodique non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans activite_periodique_detail: {str(e)}')
+        logger.error("Erreur dans activite_periodique_detail: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -163,7 +163,7 @@ def activite_periodique_get_or_create(request):
     Récupérer ou créer une Activité Périodique unique pour (processus, annee, num_amendement).
     """
     try:
-        logger.info(f"[activite_periodique_get_or_create] Début - données reçues: {request.data}")
+        logger.info("[activite_periodique_get_or_create] Début - données reçues: %s", request.data)
         data = request.data.copy()
         annee_value = data.get('annee')
         processus_uuid = data.get('processus')
@@ -184,7 +184,7 @@ def activite_periodique_get_or_create(request):
                 num_amendement_value = _get_next_num_amendement_for_ap(request.user, annee_value, processus_uuid)
                 data['num_amendement'] = num_amendement_value
             except Exception as tt_error:
-                logger.error(f"[activite_periodique_get_or_create] Erreur détermination automatique num_amendement: {tt_error}")
+                logger.error("[activite_periodique_get_or_create] Erreur détermination automatique num_amendement: %s", tt_error)
                 num_amendement_value = 0
                 data['num_amendement'] = num_amendement_value
         else:
@@ -194,7 +194,7 @@ def activite_periodique_get_or_create(request):
                 num_amendement_value = 0
             data['num_amendement'] = num_amendement_value
 
-        logger.info(f"[activite_periodique_get_or_create] annee={annee_value}, processus_uuid={processus_uuid}, num_amendement={num_amendement_value}")
+        logger.info("[activite_periodique_get_or_create] annee=%s, processus_uuid=%s, num_amendement=%s", annee_value, processus_uuid, num_amendement_value)
 
         if not (annee_value and processus_uuid):
             logger.warning("[activite_periodique_get_or_create] annee ou processus manquant")
@@ -225,7 +225,7 @@ def activite_periodique_get_or_create(request):
                 num_amendement=num_amendement_value,
                 cree_par=request.user
             )
-            logger.info(f"[activite_periodique_get_or_create] AP existante trouvée: {ap.uuid}")
+            logger.info("[activite_periodique_get_or_create] AP existante trouvée: %s", ap.uuid)
             
             # ========== VÉRIFICATION D'ACCÈS AU PROCESSUS (Security by Design) ==========
             # Même si l'AP a été créée par l'utilisateur, vérifier qu'il a toujours accès au processus
@@ -243,7 +243,7 @@ def activite_periodique_get_or_create(request):
             }, status=status.HTTP_200_OK)
             
         except ActivitePeriodique.DoesNotExist:
-            logger.info(f"[activite_periodique_get_or_create] Aucune AP existante, création d'une nouvelle AP")
+            logger.info("[activite_periodique_get_or_create] Aucune AP existante, création d'une nouvelle AP")
 
             # Créer une nouvelle AP
             data['annee'] = str(annee_obj.uuid)
@@ -252,9 +252,9 @@ def activite_periodique_get_or_create(request):
             serializer = ActivitePeriodiqueSerializer(data=data, context={'request': request})
 
             if serializer.is_valid():
-                logger.info(f"[activite_periodique_get_or_create] Serializer valide, données validées: {serializer.validated_data}")
+                logger.info("[activite_periodique_get_or_create] Serializer valide, données validées: %s", serializer.validated_data)
                 ap = serializer.save()
-                logger.info(f"[activite_periodique_get_or_create] AP créée avec succès: {ap.uuid}")
+                logger.info("[activite_periodique_get_or_create] AP créée avec succès: %s", ap.uuid)
 
                 # Log de l'activité
                 try:
@@ -262,18 +262,18 @@ def activite_periodique_get_or_create(request):
                     user_agent = request.META.get('HTTP_USER_AGENT', '')
                     log_activite_periodique_creation(request.user, ap, ip_address, user_agent)
                 except Exception as log_error:
-                    logger.error(f"Erreur lors du logging de la création de l'AP: {log_error}")
+                    logger.error("Erreur lors du logging de la création de l'AP: %s", log_error)
 
                 response_serializer = ActivitePeriodiqueSerializer(ap)
                 return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
-            logger.error(f"[activite_periodique_get_or_create] Erreurs de validation: {serializer.errors}")
+            logger.error("[activite_periodique_get_or_create] Erreurs de validation: %s", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"[activite_periodique_get_or_create] Erreur exception non gérée: {str(e)}")
+        logger.error("[activite_periodique_get_or_create] Erreur exception non gérée: %s", str(e))
         import traceback
-        logger.error(f"[activite_periodique_get_or_create] Traceback: {traceback.format_exc()}")
+        logger.error("[activite_periodique_get_or_create] Traceback: %s", traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la création/récupération de l\'Activité Périodique',
             'details': str(e)
@@ -305,14 +305,14 @@ def activite_periodique_create(request):
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 log_activite_periodique_creation(request.user, ap, ip_address, user_agent)
             except Exception as log_error:
-                logger.error(f"Erreur lors du logging de la création de l'AP: {log_error}")
+                logger.error("Erreur lors du logging de la création de l'AP: %s", log_error)
 
             response_serializer = ActivitePeriodiqueSerializer(ap)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f'Erreur dans activite_periodique_create: {str(e)}')
+        logger.error("Erreur dans activite_periodique_create: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -358,7 +358,7 @@ def activite_periodique_update(request, uuid):
                 user_agent = request.META.get('HTTP_USER_AGENT', '')
                 log_activite_periodique_update(request.user, ap, ip_address, user_agent)
             except Exception as log_error:
-                logger.error(f"Erreur lors du logging de la mise à jour de l'AP: {log_error}")
+                logger.error("Erreur lors du logging de la mise à jour de l'AP: %s", log_error)
 
             return Response(serializer.data, status=status.HTTP_200_OK)
         
@@ -368,7 +368,7 @@ def activite_periodique_update(request, uuid):
             'error': 'Activité Périodique non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans activite_periodique_update: {str(e)}')
+        logger.error("Erreur dans activite_periodique_update: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -407,7 +407,7 @@ def activite_periodique_delete(request, uuid):
             'error': 'Activité Périodique non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans activite_periodique_delete: {str(e)}')
+        logger.error("Erreur dans activite_periodique_delete: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -497,7 +497,7 @@ def activite_periodique_validate(request, uuid):
             user_agent = request.META.get('HTTP_USER_AGENT', '')
             log_activite_periodique_validation(request.user, ap, ip_address, user_agent)
         except Exception as log_error:
-            logger.error(f"Erreur lors du logging de la validation de l'AP: {log_error}")
+            logger.error("Erreur lors du logging de la validation de l'AP: %s", log_error)
 
         serializer = ActivitePeriodiqueSerializer(ap)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -506,7 +506,7 @@ def activite_periodique_validate(request, uuid):
             'error': 'Activité Périodique non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans activite_periodique_validate: {str(e)}')
+        logger.error("Erreur dans activite_periodique_validate: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({
@@ -549,24 +549,21 @@ def activite_periodique_unvalidate(request, uuid):
             ip_address = get_client_ip(request)
             user_agent = request.META.get('HTTP_USER_AGENT', '')
             logger.info(
-                f"Dévalidation AP - User: {request.user.email}, "
-                f"AP: {ap.numero_ap or ap.uuid}, UUID: {ap.uuid}, "
-                f"Processus: {ap.processus.nom if ap.processus else None}, "
-                f"IP: {ip_address}, User-Agent: {user_agent}"
+                "Dévalidation AP - User: %s, AP: %s, UUID: %s, Processus: %s, IP: %s, User-Agent: %s", request.user.email, ap.numero_ap or ap.uuid, ap.uuid, ap.processus.nom if ap.processus else None, ip_address, user_agent
             )
         except Exception as log_error:
-            logger.error(f"Erreur lors du logging de la dévalidation de l'AP: {log_error}")
+            logger.error("Erreur lors du logging de la dévalidation de l'AP: %s", log_error)
         
         serializer = ActivitePeriodiqueSerializer(ap)
         return Response(serializer.data, status=status.HTTP_200_OK)
         
     except ActivitePeriodique.DoesNotExist:
-        logger.error(f"Tentative de dévalidation d'une AP inexistante: {uuid} par {request.user.username}")
+        logger.error("Tentative de dévalidation d'une AP inexistante: %s par %s", uuid, request.user.username)
         return Response({
             'error': 'Activité Périodique non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f'Erreur dans activite_periodique_unvalidate: {str(e)}')
+        logger.error("Erreur dans activite_periodique_unvalidate: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({

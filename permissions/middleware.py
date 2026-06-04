@@ -47,13 +47,10 @@ def invalidate_cache_on_user_processus_role_change(sender, instance, **kwargs):
             # Invalider le cache pour toutes les apps pour cet utilisateur
             PermissionService.invalidate_user_cache(user_id, app_name=None)
             logger.info(
-                f"[PermissionCache] Cache invalidé pour user_id={user_id} "
-                f"(UserProcessusRole modifié/supprimé)"
-            )
+                "[PermissionCache] Cache invalid\u00e9 pour user_id=%s (UserProcessusRole modifi\u00e9/supprim\u00e9)", user_id           )
     except Exception as e:
         logger.error(
-            f"[PermissionCache] Erreur lors de l'invalidation du cache"
-            f"pour UserProcessusRole: {str(e)}"
+            "[PermissionCache] Erreur lors de l'invalidation du cachepour UserProcessusRole: %s", str(e)
         )
 
 
@@ -84,10 +81,7 @@ def invalidate_cache_on_role_mapping_change(sender, instance, **kwargs):
         print(f"{'='*80}\n")
         
         logger.info(
-            f"[PermissionCache]  Signal déclenché pour RolePermissionMapping: "
-            f"role={role.code}, action={action_code}, "
-            f"granted={granted_value}, "
-            f"app_name={app_name}"
+            "[PermissionCache]  Signal d\u00e9clench\u00e9 pour RolePermissionMapping: role=%s, action=%s, granted=%s, app_name=%s", role.code, action_code, granted_value, app_name
         )
         
         # Récupérer tous les utilisateurs ayant ce rôle avec leurs processus
@@ -100,8 +94,7 @@ def invalidate_cache_on_role_mapping_change(sender, instance, **kwargs):
         processus_uuids = list(set([str(upr['processus__uuid']) for upr in user_processus_roles if upr['processus__uuid']]))
         
         logger.info(
-            f"[PermissionCache] {len(user_ids)} utilisateurs trouvés avec le rôle {role.code}, "
-            f"{len(processus_uuids)} processus distincts"
+            "[PermissionCache] %s utilisateurs trouv\u00e9s avec le r\u00f4le %s, %s processus distincts", len(user_ids), role.code, len(processus_uuids)
         )
         
         # Récupérer le code de l'action
@@ -127,13 +120,10 @@ def invalidate_cache_on_role_mapping_change(sender, instance, **kwargs):
                 PermissionService.invalidate_user_cache(user_id, app_name=app_name)
         
         logger.info(
-            f"[PermissionCache]  Cache invalidé pour {len(user_ids)} utilisateurs "
-            f"(RolePermissionMapping modifié pour rôle={role.code}, app={app_name})"
-        )
+            "[PermissionCache]  Cache invalid\u00e9 pour %s utilisateurs (RolePermissionMapping modifi\u00e9 pour r\u00f4le=%s, app=%s)", len(user_ids), role.code, app_name       )
     except Exception as e:
         logger.error(
-            f"[PermissionCache] Erreur lors de l'invalidation du cache "
-            f"pour RolePermissionMapping: {str(e)}"
+            "[PermissionCache] Erreur lors de l'invalidation du cache pour RolePermissionMapping: %s", str(e)
         )
 
 
@@ -150,11 +140,8 @@ def invalidate_cache_on_override_change(sender, instance, **kwargs):
         if user_id:
             PermissionService.invalidate_user_cache(user_id, app_name=app_name)
             logger.info(
-                f"[PermissionCache] Cache invalidé pour user_id={user_id}, "
-                f"app_name={app_name} (PermissionOverride modifié/supprimé)"
-            )
+                "[PermissionCache] Cache invalid\u00e9 pour user_id=%s, app_name=%s (PermissionOverride modifi\u00e9/supprim\u00e9)", user_id, app_name           )
     except Exception as e:
         logger.error(
-            f"[PermissionCache] Erreur lors de l'invalidation du cache "
-            f"pour PermissionOverride: {str(e)}"
+            "[PermissionCache] Erreur lors de l'invalidation du cache pour PermissionOverride: %s", str(e)
         )

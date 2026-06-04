@@ -509,24 +509,24 @@ class UserInviteSerializer(serializers.ModelSerializer):
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[UserInviteSerializer] validate_email appelé avec value: {value}")
-        logger.info(f"[UserInviteSerializer] Type de value: {type(value)}")
+        logger.info("[UserInviteSerializer] validate_email appelé avec value: %s", value)
+        logger.info("[UserInviteSerializer] Type de value: %s", type(value))
         
         from .utils.email_security import EmailValidator
 
         if not EmailValidator.is_valid_email(value):
-            logger.error(f"[UserInviteSerializer] Email invalide: {value}")
+            logger.error("[UserInviteSerializer] Email invalide: %s", value)
             raise serializers.ValidationError("Adresse email invalide.")
 
         email_exists = User.objects.filter(email=value).exists()
-        logger.info(f"[UserInviteSerializer] Email existe dans DB: {email_exists}")
+        logger.info("[UserInviteSerializer] Email existe dans DB: %s", email_exists)
         
         if email_exists:
             existing_user = User.objects.filter(email=value).first()
-            logger.warning(f"[UserInviteSerializer] Email déjà utilisé par: username={existing_user.username}, id={existing_user.id}, is_active={existing_user.is_active}")
+            logger.warning("[UserInviteSerializer] Email déjà utilisé par: username=%s, id=%s, is_active=%s", existing_user.username, existing_user.id, existing_user.is_active)
             raise serializers.ValidationError("Cet email est déjà utilisé.")
         
-        logger.info(f"[UserInviteSerializer] Email validé avec succès: {value}")
+        logger.info("[UserInviteSerializer] Email validé avec succès: %s", value)
         return value
 
     def validate_username(self, value):
@@ -534,26 +534,26 @@ class UserInviteSerializer(serializers.ModelSerializer):
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[UserInviteSerializer] validate_username appelé avec value: {value}")
-        logger.info(f"[UserInviteSerializer] Type de value: {type(value)}")
+        logger.info("[UserInviteSerializer] validate_username appelé avec value: %s", value)
+        logger.info("[UserInviteSerializer] Type de value: %s", type(value))
         
         # Si username est None, vide ou seulement des espaces, retourner None (sera généré automatiquement)
         if not value or not value.strip():
-            logger.info(f"[UserInviteSerializer] Username vide ou None, sera généré automatiquement")
+            logger.info("[UserInviteSerializer] Username vide ou None, sera généré automatiquement")
             return None
         
         username_clean = value.strip()
-        logger.info(f"[UserInviteSerializer] Username fourni: {username_clean}")
+        logger.info("[UserInviteSerializer] Username fourni: %s", username_clean)
         
         # Valider l'unicité si un username est fourni
         username_exists = User.objects.filter(username=username_clean).exists()
-        logger.info(f"[UserInviteSerializer] Username existe dans DB: {username_exists}")
+        logger.info("[UserInviteSerializer] Username existe dans DB: %s", username_exists)
         
         if username_exists:
-            logger.warning(f"[UserInviteSerializer] Username déjà utilisé: {username_clean}")
+            logger.warning("[UserInviteSerializer] Username déjà utilisé: %s", username_clean)
             raise serializers.ValidationError("Ce nom d'utilisateur est déjà utilisé.")
         
-        logger.info(f"[UserInviteSerializer] Username validé avec succès: {username_clean}")
+        logger.info("[UserInviteSerializer] Username validé avec succès: %s", username_clean)
         return username_clean
 
     def create(self, validated_data):
@@ -565,42 +565,42 @@ class UserInviteSerializer(serializers.ModelSerializer):
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"[UserInviteSerializer] create appelé avec validated_data: {validated_data}")
+        logger.info("[UserInviteSerializer] create appelé avec validated_data: %s", validated_data)
         
         email = validated_data['email']
-        logger.info(f"[UserInviteSerializer] Email à utiliser: {email}")
+        logger.info("[UserInviteSerializer] Email à utiliser: %s", email)
         
         # Récupérer le username s'il est fourni, sinon None
         username = validated_data.pop('username', None)
-        logger.info(f"[UserInviteSerializer] Username initial (depuis validated_data): {username}")
+        logger.info("[UserInviteSerializer] Username initial (depuis validated_data): %s", username)
         
         if username:
             username = username.strip()
-            logger.info(f"[UserInviteSerializer] Username après strip: {username}")
+            logger.info("[UserInviteSerializer] Username après strip: %s", username)
         
         # Générer automatiquement le username depuis l'email si non fourni ou vide
         if not username:
             base_username = email.split('@')[0]
             username = base_username
             counter = 1
-            logger.info(f"[UserInviteSerializer] Génération automatique du username depuis email, base: {base_username}")
+            logger.info("[UserInviteSerializer] Génération automatique du username depuis email, base: %s", base_username)
             
             # S'assurer que le nom d'utilisateur est unique
             while User.objects.filter(username=username).exists():
-                logger.info(f"[UserInviteSerializer] Username {username} existe déjà, tentative suivante...")
+                logger.info("[UserInviteSerializer] Username %s existe déjà, tentative suivante...", username)
                 username = f"{base_username}{counter}"
                 counter += 1
             
-            logger.info(f"[UserInviteSerializer] Username final généré: {username}")
+            logger.info("[UserInviteSerializer] Username final généré: %s", username)
         
         # Par défaut, ne pas activer le compte tant que le mot de passe n'est pas défini
         is_active = validated_data.get('is_active', False)
-        logger.info(f"[UserInviteSerializer] is_active: {is_active}")
-        logger.info(f"[UserInviteSerializer] first_name: {validated_data.get('first_name', '')}")
-        logger.info(f"[UserInviteSerializer] last_name: {validated_data.get('last_name', '')}")
+        logger.info("[UserInviteSerializer] is_active: %s", is_active)
+        logger.info("[UserInviteSerializer] first_name: %s", validated_data.get('first_name', ''))
+        logger.info("[UserInviteSerializer] last_name: %s", validated_data.get('last_name', ''))
         
         # Créer l'utilisateur avec le username généré ou fourni
-        logger.info(f"[UserInviteSerializer] Création de l'utilisateur avec username={username}, email={email}")
+        logger.info("[UserInviteSerializer] Création de l'utilisateur avec username=%s, email=%s", username, email)
         user = User(
             username=username,
             email=email,
@@ -611,7 +611,7 @@ class UserInviteSerializer(serializers.ModelSerializer):
         # Mot de passe inutilisable tant que l'utilisateur n'a pas finalisé l'invitation
         user.set_unusable_password()
         user.save()
-        logger.info(f"[UserInviteSerializer] Utilisateur créé avec succès: id={user.id}, username={user.username}, email={user.email}")
+        logger.info("[UserInviteSerializer] Utilisateur créé avec succès: id=%s, username=%s, email=%s", user.id, user.username, user.email)
         return user
 
 

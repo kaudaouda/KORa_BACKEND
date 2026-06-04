@@ -77,7 +77,7 @@ def periodicites_list(request):
                     periodicite_data['indicateur_id'] = str(periodicite_data['indicateur_id'])
                 periodicites_data.append(periodicite_data)
             except (ValueError, TypeError, decimal.InvalidOperation) as e:
-                logger.warning(f"Périodicité {periodicite.uuid} ignorée à cause de données corrompues: {str(e)}")
+                logger.warning("Périodicité %s ignorée à cause de données corrompues: %s", periodicite.uuid, str(e))
                 # Utiliser le serializer même pour les données corrompues pour avoir les preuves
                 try:
                     serializer = PeriodiciteSerializer(periodicite)
@@ -90,7 +90,7 @@ def periodicites_list(request):
                         periodicite_data['indicateur_id'] = str(periodicite_data['indicateur_id'])
                     periodicites_data.append(periodicite_data)
                 except Exception as serializer_error:
-                    logger.error(f"Erreur lors de la sérialisation de la périodicité {periodicite.uuid}: {str(serializer_error)}")
+                    logger.error("Erreur lors de la sérialisation de la périodicité %s: %s", periodicite.uuid, str(serializer_error))
                     # Fallback : créer un dictionnaire minimal avec les champs de preuve
                     periodicite_data = {
                         'uuid': str(periodicite.uuid),
@@ -119,7 +119,7 @@ def periodicites_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des périodicités: {str(e)}")
+        logger.error("Erreur lors de la récupération des périodicités: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des périodicités'
@@ -146,7 +146,7 @@ def periodicites_detail(request, uuid):
             'error': 'Périodicité non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la périodicité {uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération de la périodicité %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération de la périodicité'
@@ -208,7 +208,7 @@ def periodicites_create(request):
             }, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la périodicité: {str(e)}")
+        logger.error("Erreur lors de la création de la périodicité: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de la périodicité'
@@ -269,7 +269,7 @@ def periodicites_update(request, uuid):
             'error': 'Périodicité non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la périodicité {uuid}: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de la périodicité %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de la périodicité'
@@ -300,7 +300,7 @@ def periodicites_delete(request, uuid):
             'error': 'Périodicité non trouvée'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la périodicité {uuid}: {str(e)}")
+        logger.error("Erreur lors de la suppression de la périodicité %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de la périodicité'
@@ -339,7 +339,7 @@ def periodicites_by_indicateur(request, indicateur_uuid):
             'error': 'Indicateur non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des périodicités de l'indicateur {indicateur_uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération des périodicités de l'indicateur %s: %s", indicateur_uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des périodicités de l\'indicateur'

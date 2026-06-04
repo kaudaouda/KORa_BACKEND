@@ -40,10 +40,10 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
         if sender == post_delete:
             try:
                 scheduler.remove_job(job_id)
-                logger.info(f" Job {job_id} supprimé du scheduler")
+                logger.info(" Job %s supprimé du scheduler", job_id)
                 print(f" Job {job_id} supprimé du scheduler")
             except Exception as e:
-                logger.debug(f"Job {job_id} non trouvé dans le scheduler: {str(e)}")
+                logger.debug("Job %s non trouvé dans le scheduler: %s", job_id, str(e))
             return
         
         # Pour une modification, recharger le job
@@ -61,7 +61,7 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
             caller_frames = inspect.getouterframes(frame)
             for frame_info in caller_frames[1:6]:  # Vérifier les 5 premiers frames
                 if 'django_apscheduler' in frame_info.filename:
-                    logger.debug(f"Ignorant le signal pour {job_id} car provient du scheduler lui-même")
+                    logger.debug("Ignorant le signal pour %s car provient du scheduler lui-même", job_id)
                     return
         finally:
             del frame
@@ -70,7 +70,7 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
             # Récupérer la fonction correspondante
             job_func = job_functions.get(job_id)
             if not job_func:
-                logger.debug(f"Fonction non trouvée pour le job {job_id} (peut-être un autre type de job)")
+                logger.debug("Fonction non trouvée pour le job %s (peut-être un autre type de job)", job_id)
                 return
             
             # IMPORTANT: Attendre un peu pour que django-apscheduler mette à jour job_state
@@ -93,7 +93,7 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
                     try:
                         django_job = DjangoJob.objects.get(id=job_id)
                     except DjangoJob.DoesNotExist:
-                        logger.warning(f"Job {job_id} non trouvé dans la base de données")
+                        logger.warning("Job %s non trouvé dans la base de données", job_id)
                         _reloading_jobs.discard(job_id)
                         return
                     
@@ -113,19 +113,19 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
                                 else:
                                     job_state = django_job.job_state
                                 
-                                logger.info(f" DEBUG: job_state type pour {job_id}: {type(job_state)}")
+                                logger.info(" DEBUG: job_state type pour %s: %s", job_id, type(job_state))
                                 
                                 # Extraire le trigger depuis job_state
                                 if isinstance(job_state, dict):
                                     trigger_data = job_state.get('trigger')
-                                    logger.info(f" DEBUG: trigger_data type pour {job_id}: {type(trigger_data)}")
-                                    logger.info(f" DEBUG: trigger_data pour {job_id}: {trigger_data}")
+                                    logger.info(" DEBUG: trigger_data type pour %s: %s", job_id, type(trigger_data))
+                                    logger.info(" DEBUG: trigger_data pour %s: %s", job_id, trigger_data)
                                     
                                     if trigger_data:
                                         # Si c'est déjà un CronTrigger, l'utiliser directement
                                         if isinstance(trigger_data, CronTrigger):
                                             trigger = trigger_data
-                                            logger.info(f" Trigger récupéré directement (CronTrigger) pour {job_id}")
+                                            logger.info(" Trigger récupéré directement (CronTrigger) pour %s", job_id)
                                         elif isinstance(trigger_data, dict):
                                             # Reconstruire depuis le dictionnaire
                                             trigger_kwargs = {}
@@ -134,34 +134,34 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
                                                     trigger_kwargs[key] = trigger_data[key]
                                             if trigger_kwargs:
                                                 trigger = CronTrigger(**trigger_kwargs)
-                                                logger.info(f" Trigger reconstruit depuis job_state pour {job_id}: {trigger_kwargs}")
+                                                logger.info(" Trigger reconstruit depuis job_state pour %s: %s", job_id, trigger_kwargs)
                                                 print(f" DEBUG: Trigger reconstruit - {trigger_kwargs}")
                                         else:
-                                            logger.warning(f" trigger_data n'est ni CronTrigger ni dict pour {job_id}: {type(trigger_data)}")
+                                            logger.warning(" trigger_data n'est ni CronTrigger ni dict pour %s: %s", job_id, type(trigger_data))
                                 elif hasattr(job_state, 'trigger'):
                                     # Si job_state est un objet avec un attribut trigger
                                     trigger = job_state.trigger if isinstance(job_state.trigger, CronTrigger) else None
                                     if trigger:
-                                        logger.info(f" Trigger récupéré depuis attribut pour {job_id}")
+                                        logger.info(" Trigger récupéré depuis attribut pour %s", job_id)
                                 else:
-                                    logger.warning(f" job_state n'est ni dict ni objet avec trigger pour {job_id}: {type(job_state)}")
+                                    logger.warning(" job_state n'est ni dict ni objet avec trigger pour %s: %s", job_id, type(job_state))
                         except Exception as e:
-                            logger.error(f" Erreur lors de la récupération du trigger depuis job_state pour {job_id}: {str(e)}", exc_info=True)
+                            logger.error(" Erreur lors de la récupération du trigger depuis job_state pour %s: %s", job_id, str(e), exc_info=True)
                             print(f" Erreur lors de la récupération du trigger: {str(e)}")
                         
                         # Si on n'a pas pu récupérer le trigger depuis job_state, utiliser next_run_time comme fallback
                         if trigger is None:
-                            logger.warning(f" Trigger non récupéré depuis job_state pour {job_id}, utilisation de next_run_time comme fallback")
+                            logger.warning(" Trigger non récupéré depuis job_state pour %s, utilisation de next_run_time comme fallback", job_id)
                             if django_job.next_run_time:
                                 next_run = django_job.next_run_time
                                 # Extraire l'heure et la minute depuis next_run_time
                                 trigger = CronTrigger(hour=next_run.hour, minute=next_run.minute)
-                                logger.info(f" Trigger reconstruit depuis next_run_time pour {job_id}: {next_run.hour}:{next_run.minute}")
+                                logger.info(" Trigger reconstruit depuis next_run_time pour %s: %s:%s", job_id, next_run.hour, next_run.minute)
                                 print(f" ATTENTION: Utilisation de next_run_time comme fallback - {next_run.hour}:{next_run.minute}")
                             else:
                                 # Valeurs par défaut si next_run_time n'est pas disponible
                                 trigger = CronTrigger(hour=8, minute=0)
-                                logger.warning(f" next_run_time non disponible pour {job_id}, utilisation des valeurs par défaut: 8h00")
+                                logger.warning(" next_run_time non disponible pour %s, utilisation des valeurs par défaut: 8h00", job_id)
                                 print(f" ATTENTION: Utilisation des valeurs par défaut - 8h00")
                         
                         # Désactiver temporairement le signal pour éviter la boucle infinie
@@ -176,7 +176,7 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
                             if existing_job:
                                 # Si le job existe, utiliser reschedule_job pour modifier le trigger
                                 scheduler.reschedule_job(job_id, trigger=trigger)
-                                logger.info(f" Job {job_id} rechargé dans le scheduler (trigger modifié)")
+                                logger.info(" Job %s rechargé dans le scheduler (trigger modifié)", job_id)
                                 print(f" Job {job_id} rechargé dans le scheduler (prochaine exécution: {django_job.next_run_time})")
                             else:
                                 # Si le job n'existe pas, le créer
@@ -190,7 +190,7 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
                                     coalesce=True,
                                     misfire_grace_time=3600
                                 )
-                                logger.info(f" Job {job_id} créé dans le scheduler")
+                                logger.info(" Job %s créé dans le scheduler", job_id)
                                 print(f" Job {job_id} créé dans le scheduler (prochaine exécution: {django_job.next_run_time})")
                         finally:
                             # Réactiver le signal avec le même dispatch_uid
@@ -202,7 +202,7 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
                         
                 except Exception as e:
                     _reloading_jobs.discard(job_id)
-                    logger.error(f"Erreur lors du rechargement du job {job_id}: {str(e)}", exc_info=True)
+                    logger.error("Erreur lors du rechargement du job %s: %s", job_id, str(e), exc_info=True)
                     print(f" Erreur lors du rechargement du job {job_id}: {str(e)}")
             
             # Lancer le rechargement dans un thread séparé avec un délai
@@ -212,11 +212,11 @@ def reload_job_in_scheduler(sender, instance, **kwargs):
                 
         except Exception as e:
             _reloading_jobs.discard(job_id)
-            logger.error(f"Erreur lors du rechargement du job dans le scheduler: {str(e)}", exc_info=True)
+            logger.error("Erreur lors du rechargement du job dans le scheduler: %s", str(e), exc_info=True)
             
     except Exception as e:
         _reloading_jobs.discard(job_id)
-        logger.error(f"Erreur lors du rechargement du job dans le scheduler: {str(e)}", exc_info=True)
+        logger.error("Erreur lors du rechargement du job dans le scheduler: %s", str(e), exc_info=True)
 
 
 class ParametreConfig(AppConfig):
@@ -262,7 +262,7 @@ class ParametreConfig(AppConfig):
         except ImportError:
             logger.warning("django_apscheduler non disponible, les signals ne seront pas enregistrés")
         except Exception as e:
-            logger.error(f"Erreur lors de l'enregistrement des signals: {str(e)}", exc_info=True)
+            logger.error("Erreur lors de l'enregistrement des signals: %s", str(e), exc_info=True)
         
         # Démarrer le scheduler après que Django soit complètement prêt
         # Utiliser un thread pour différer le démarrage et éviter le warning DB

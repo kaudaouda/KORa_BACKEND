@@ -208,7 +208,7 @@ class Command(BaseCommand):
             try:
                 self.send_admin_alert_global(all_notifications_for_admin, email_settings, dry_run)
             except Exception as e:
-                logger.error(f"Erreur lors de l'envoi de l'alerte admin globale: {str(e)}")
+                logger.error("Erreur lors de l'envoi de l'alerte admin globale: %s", str(e))
                 # Ne pas bloquer le processus si l'alerte admin échoue
 
         # ===== ÉTAPE 6 : Rapport final =====
@@ -337,7 +337,7 @@ class Command(BaseCommand):
                         user=user
                     )
             except Exception as log_error:
-                logger.error(f"Erreur lors de la création du log: {str(log_error)}")
+                logger.error("Erreur lors de la création du log: %s", str(log_error))
 
             SecureEmailLogger.log_email_sent(user.email, subject, False)
             self.stderr.write(self.style.ERROR(
@@ -404,9 +404,9 @@ class Command(BaseCommand):
                     nature_label = n.get('nature_label')
                     
                 except TraitementPac.DoesNotExist:
-                    logger.warning(f"Traitement {entity_id} non trouvé pour email utilisateur")
+                    logger.warning("Traitement %s non trouvé pour email utilisateur", entity_id)
                 except Exception as e:
-                    logger.error(f"Erreur lors de l'enrichissement {entity_id}: {str(e)}")
+                    logger.error("Erreur lors de l'enrichissement %s: %s", entity_id, str(e))
 
             sanitized_notifications.append({
                 'title': title,
@@ -473,9 +473,9 @@ class Command(BaseCommand):
                     nature_label = n.get('nature_label')
                     
                 except TraitementPac.DoesNotExist:
-                    logger.warning(f"Traitement {entity_id} non trouvé pour email utilisateur")
+                    logger.warning("Traitement %s non trouvé pour email utilisateur", entity_id)
                 except Exception as e:
-                    logger.error(f"Erreur lors de l'enrichissement {entity_id}: {str(e)}")
+                    logger.error("Erreur lors de l'enrichissement %s: %s", entity_id, str(e))
 
             # Formater la date
             try:
@@ -538,7 +538,7 @@ class Command(BaseCommand):
                 return None
                 
         except Exception as e:
-            logger.error(f"Erreur lors de la récupération des admins: {str(e)}")
+            logger.error("Erreur lors de la récupération des admins: %s", str(e))
             return False
         
         # Préparer les données enrichies pour TOUTES les notifications de TOUS les utilisateurs
@@ -602,10 +602,10 @@ class Command(BaseCommand):
                         'priority_color': priority_color,
                     }
                 except TraitementPac.DoesNotExist:
-                    logger.warning(f"Traitement {entity_id} non trouvé pour alerte admin")
+                    logger.warning("Traitement %s non trouvé pour alerte admin", entity_id)
                     continue
                 except Exception as e:
-                    logger.error(f"Erreur lors du traitement {entity_id}: {str(e)}")
+                    logger.error("Erreur lors du traitement %s: %s", entity_id, str(e))
                     continue
         
         # Convertir le dictionnaire en liste (valeurs uniquement)
@@ -641,7 +641,7 @@ class Command(BaseCommand):
             html_body = render_to_string('emails/admin_alert_email.html', context)
             text_body = render_to_string('emails/admin_alert_email.txt', context)
         except Exception as e:
-            logger.error(f"Erreur lors du rendu des templates admin: {str(e)}")
+            logger.error("Erreur lors du rendu des templates admin: %s", str(e))
             return False
         
         # Sujet de l'email
@@ -651,7 +651,7 @@ class Command(BaseCommand):
         sent_count = 0
         for admin in admin_users:
             if not EmailValidator.is_valid_email(admin.email):
-                logger.warning(f"Email admin invalide: {admin.email}")
+                logger.warning("Email admin invalide: %s", admin.email)
                 continue
             
             if dry_run:
@@ -680,7 +680,7 @@ class Command(BaseCommand):
                 
             except Exception as e:
                 error_message = str(e)[:500]
-                logger.error(f"Erreur lors de l'envoi alerte admin à {admin.email}: {error_message}")
+                logger.error("Erreur lors de l'envoi alerte admin à %s: %s", admin.email, error_message)
                 SecureEmailLogger.log_email_sent(admin.email, subject, False)
                 self.stderr.write(self.style.ERROR(
                     f"Échec alerte admin pour {SecureEmailLogger.mask_email(admin.email)}"

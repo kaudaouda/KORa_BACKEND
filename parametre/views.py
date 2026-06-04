@@ -122,10 +122,10 @@ def log_activity(user, action, entity_type, entity_id=None, entity_name=None, de
             browser=browser,
             os_name=os_name,
         )
-        logger.info(f"Activité enregistrée: {activity_log}")
+        logger.info("Activité enregistrée: %s", activity_log)
         return activity_log
     except Exception as e:
-        logger.error(f"Erreur lors de l'enregistrement de l'activité: {e}")
+        logger.error("Erreur lors de l'enregistrement de l'activité: %s", e)
         return None
 
 
@@ -196,7 +196,7 @@ def get_model_list_data(model_class, order_by='nom', include_inactive=False):
         
         return data
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des données {model_class.__name__}: {e}")
+        logger.error("Erreur lors de la récupération des données %s: %s", model_class.__name__, e)
         raise e
 
 
@@ -233,7 +233,7 @@ def notification_settings_get(request):
         serializer = NotificationSettingsSerializer(settings_instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des paramètres de notification: {str(e)}")
+        logger.error("Erreur lors de la récupération des paramètres de notification: %s", str(e))
         return Response({'error': 'Impossible de récupérer les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -255,7 +255,7 @@ def notification_settings_update(request):
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour des paramètres de notification: {str(e)}")
+        logger.error("Erreur lors de la mise à jour des paramètres de notification: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -300,7 +300,7 @@ def notification_settings_effective(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la résolution des paramètres effectifs: {str(e)}")
+        logger.error("Erreur lors de la résolution des paramètres effectifs: %s", str(e))
         return Response({'error': 'Impossible de résoudre les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -316,7 +316,7 @@ def dashboard_notification_settings_get(request):
         serializer = DashboardNotificationSettingsSerializer(settings_instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des paramètres dashboard: {str(e)}")
+        logger.error("Erreur lors de la récupération des paramètres dashboard: %s", str(e))
         return Response({'error': 'Impossible de récupérer les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -338,7 +338,7 @@ def dashboard_notification_settings_update(request):
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour des paramètres dashboard: {str(e)}")
+        logger.error("Erreur lors de la mise à jour des paramètres dashboard: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour les paramètres'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -787,7 +787,7 @@ def recent_activities(request):
         }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des activités: {e}")
+        logger.error("Erreur lors de la récupération des activités: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des activités',
@@ -836,7 +836,7 @@ def user_activities(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des activités utilisateur: {e}")
+        logger.error("Erreur lors de la récupération des activités utilisateur: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des activités',
@@ -906,7 +906,7 @@ def admin_notifications_list(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des notifications admin: {e}")
+        logger.error("Erreur lors de la récupération des notifications admin: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des notifications',
@@ -961,7 +961,7 @@ def admin_email_logs(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des logs email: {e}")
+        logger.error("Erreur lors de la récupération des logs email: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des logs email',
@@ -994,7 +994,7 @@ def natures_list(request):
         }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des natures: {e}")
+        logger.error("Erreur lors de la récupération des natures: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des natures',
@@ -1026,7 +1026,7 @@ def categories_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des catégories: {e}")
+        logger.error("Erreur lors de la récupération des catégories: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des catégories',
@@ -1058,7 +1058,7 @@ def sources_list(request):
         }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des sources: {e}")
+        logger.error("Erreur lors de la récupération des sources: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des sources',
@@ -1090,7 +1090,7 @@ def action_types_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des types d'action: {e}")
+        logger.error("Erreur lors de la récupération des types d'action: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des types d\'action',
@@ -1122,7 +1122,7 @@ def statuts_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statuts: {e}")
+        logger.error("Erreur lors de la récupération des statuts: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des statuts',
@@ -1154,7 +1154,7 @@ def etats_mise_en_oeuvre_list(request):
         }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des états de mise en œuvre: {e}")
+        logger.error("Erreur lors de la récupération des états de mise en œuvre: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des états de mise en œuvre',
@@ -1186,7 +1186,7 @@ def appreciations_list(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des appréciations: {e}")
+        logger.error("Erreur lors de la récupération des appréciations: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des appréciations',
@@ -1218,7 +1218,7 @@ def statuts_action_cdr_list(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des statuts d'action: {e}")
+        logger.error("Erreur lors de la récupération des statuts d'action: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des statuts d\'action',
@@ -1250,7 +1250,7 @@ def directions_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des directions: {e}")
+        logger.error("Erreur lors de la récupération des directions: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des directions',
@@ -1293,7 +1293,7 @@ def sous_directions_list(request):
         }, status=status.HTTP_200_OK)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des sous-directions: {e}")
+        logger.error("Erreur lors de la récupération des sous-directions: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des sous-directions',
@@ -1340,7 +1340,7 @@ def services_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des services: {e}")
+        logger.error("Erreur lors de la récupération des services: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des services',
@@ -1379,7 +1379,7 @@ def processus_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des processus: {e}")
+        logger.error("Erreur lors de la récupération des processus: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des processus',
@@ -1417,7 +1417,7 @@ def dysfonctionnements_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des dysfonctionnements: {e}")
+        logger.error("Erreur lors de la récupération des dysfonctionnements: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des dysfonctionnements',
@@ -1438,7 +1438,7 @@ def dysfonctionnements_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de tous les dysfonctionnements: {e}")
+        logger.error("Erreur lors de la récupération de tous les dysfonctionnements: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les dysfonctionnements',
@@ -1462,7 +1462,7 @@ def appreciation_create(request):
             return Response(AppreciationSerializer(appreciation).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'appréciation: {str(e)}")
+        logger.error("Erreur lors de la création de l'appréciation: %s", str(e))
         return Response({'error': 'Impossible de créer l\'appréciation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1482,7 +1482,7 @@ def appreciation_update(request, uuid):
     except Appreciation.DoesNotExist:
         return Response({'error': 'Appréciation non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'appréciation: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de l'appréciation: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour l\'appréciation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1499,7 +1499,7 @@ def appreciation_delete(request, uuid):
     except Appreciation.DoesNotExist:
         return Response({'error': 'Appréciation non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'appréciation: {str(e)}")
+        logger.error("Erreur lors de la suppression de l'appréciation: %s", str(e))
         return Response({'error': 'Impossible de supprimer l\'appréciation'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1517,7 +1517,7 @@ def categorie_create(request):
             return Response(CategorieSerializer(categorie).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la catégorie: {str(e)}")
+        logger.error("Erreur lors de la création de la catégorie: %s", str(e))
         return Response({'error': 'Impossible de créer la catégorie'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1537,7 +1537,7 @@ def categorie_update(request, uuid):
     except Categorie.DoesNotExist:
         return Response({'error': 'Catégorie non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la catégorie: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de la catégorie: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour la catégorie'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1554,7 +1554,7 @@ def categorie_delete(request, uuid):
     except Categorie.DoesNotExist:
         return Response({'error': 'Catégorie non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la catégorie: {str(e)}")
+        logger.error("Erreur lors de la suppression de la catégorie: %s", str(e))
         return Response({'error': 'Impossible de supprimer la catégorie'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1572,7 +1572,7 @@ def direction_create(request):
             return Response(DirectionSerializer(direction).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la direction: {str(e)}")
+        logger.error("Erreur lors de la création de la direction: %s", str(e))
         return Response({'error': 'Impossible de créer la direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1592,7 +1592,7 @@ def direction_update(request, uuid):
     except Direction.DoesNotExist:
         return Response({'error': 'Direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la direction: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de la direction: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour la direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1609,7 +1609,7 @@ def direction_delete(request, uuid):
     except Direction.DoesNotExist:
         return Response({'error': 'Direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la direction: {str(e)}")
+        logger.error("Erreur lors de la suppression de la direction: %s", str(e))
         return Response({'error': 'Impossible de supprimer la direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1627,7 +1627,7 @@ def sous_direction_create(request):
             return Response(SousDirectionSerializer(sous_direction).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la sous-direction: {str(e)}")
+        logger.error("Erreur lors de la création de la sous-direction: %s", str(e))
         return Response({'error': 'Impossible de créer la sous-direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1647,7 +1647,7 @@ def sous_direction_update(request, uuid):
     except SousDirection.DoesNotExist:
         return Response({'error': 'Sous-direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la sous-direction: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de la sous-direction: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour la sous-direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1664,7 +1664,7 @@ def sous_direction_delete(request, uuid):
     except SousDirection.DoesNotExist:
         return Response({'error': 'Sous-direction non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la sous-direction: {str(e)}")
+        logger.error("Erreur lors de la suppression de la sous-direction: %s", str(e))
         return Response({'error': 'Impossible de supprimer la sous-direction'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1682,7 +1682,7 @@ def action_type_create(request):
             return Response(ActionTypeSerializer(action_type).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du type d'action: {str(e)}")
+        logger.error("Erreur lors de la création du type d'action: %s", str(e))
         return Response({'error': 'Impossible de créer le type d\'action'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1702,7 +1702,7 @@ def action_type_update(request, uuid):
     except ActionType.DoesNotExist:
         return Response({'error': 'Type d\'action non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du type d'action: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du type d'action: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour le type d\'action'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1719,7 +1719,7 @@ def action_type_delete(request, uuid):
     except ActionType.DoesNotExist:
         return Response({'error': 'Type d\'action non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du type d'action: {str(e)}")
+        logger.error("Erreur lors de la suppression du type d'action: %s", str(e))
         return Response({'error': 'Impossible de supprimer le type d\'action'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1736,7 +1736,7 @@ def upcoming_notifications(request):
         data = get_pac_notifications(request.user)
         return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des échéances: {str(e)}")
+        logger.error("Erreur lors de la récupération des échéances: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': 'Impossible de récupérer les échéances'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1830,7 +1830,7 @@ def notifications_list(request):
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la liste des notifications: {e}")
+        logger.error("Erreur lors de la récupération de la liste des notifications: %s", e)
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': 'Impossible de récupérer les notifications'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1858,7 +1858,7 @@ def notification_mark_read(request, uuid):
             'read_at': notif.read_at.isoformat(),
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors du marquage lu de la notification {uuid}: {e}")
+        logger.error("Erreur lors du marquage lu de la notification %s: %s", uuid, e)
         return Response(
             {'error': 'Impossible de marquer la notification comme lue'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -1880,7 +1880,7 @@ def email_settings_detail(request):
         serializer = EmailSettingsSerializer(settings)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des paramètres email: {str(e)}")
+        logger.error("Erreur lors de la récupération des paramètres email: %s", str(e))
         return Response({'error': 'Impossible de récupérer les paramètres email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1919,7 +1919,7 @@ def email_settings_update(request):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour des paramètres email: {str(e)}")
+        logger.error("Erreur lors de la mise à jour des paramètres email: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour les paramètres email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2035,7 +2035,7 @@ def test_email_configuration(request):
                 setattr(settings, key, value)
         
     except Exception as e:
-        logger.error(f"Erreur lors du test email: {str(e)}")
+        logger.error("Erreur lors du test email: %s", str(e))
         return Response({
             'error': 'Erreur interne lors du test',
             'status': 'error'
@@ -2057,7 +2057,7 @@ def natures_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de toutes les natures: {e}")
+        logger.error("Erreur lors de la récupération de toutes les natures: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les natures',
@@ -2078,7 +2078,7 @@ def categories_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de toutes les catégories: {e}")
+        logger.error("Erreur lors de la récupération de toutes les catégories: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les catégories',
@@ -2099,7 +2099,7 @@ def sources_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de toutes les sources: {e}")
+        logger.error("Erreur lors de la récupération de toutes les sources: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les sources',
@@ -2120,7 +2120,7 @@ def action_types_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de tous les types d'action: {e}")
+        logger.error("Erreur lors de la récupération de tous les types d'action: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les types d\'action',
@@ -2141,7 +2141,7 @@ def statuts_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de tous les statuts: {e}")
+        logger.error("Erreur lors de la récupération de tous les statuts: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les statuts',
@@ -2162,7 +2162,7 @@ def etats_mise_en_oeuvre_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de tous les états de mise en œuvre: {e}")
+        logger.error("Erreur lors de la récupération de tous les états de mise en œuvre: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les états de mise en œuvre',
@@ -2183,7 +2183,7 @@ def appreciations_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de toutes les appréciations: {e}")
+        logger.error("Erreur lors de la récupération de toutes les appréciations: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les appréciations',
@@ -2204,7 +2204,7 @@ def directions_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de toutes les directions: {e}")
+        logger.error("Erreur lors de la récupération de toutes les directions: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les directions',
@@ -2247,7 +2247,7 @@ def sous_directions_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de toutes les sous-directions: {e}")
+        logger.error("Erreur lors de la récupération de toutes les sous-directions: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les sous-directions',
@@ -2294,7 +2294,7 @@ def services_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de tous les services: {e}")
+        logger.error("Erreur lors de la récupération de tous les services: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les services',
@@ -2315,7 +2315,7 @@ def processus_all_list(request):
             'data': data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de tous les processus: {e}")
+        logger.error("Erreur lors de la récupération de tous les processus: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les processus',
@@ -2358,7 +2358,7 @@ def media_create(request):
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
-        logger.error(f"Erreur lors de la création du média: {str(e)}")
+        logger.error("Erreur lors de la création du média: %s", str(e))
         return Response({
             'error': f'Impossible de créer le média: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2390,7 +2390,7 @@ def media_update_description(request, uuid):
             }
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la description: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de la description: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour la description'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2411,7 +2411,7 @@ def media_list(request):
             })
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des médias: {str(e)}")
+        logger.error("Erreur lors de la liste des médias: %s", str(e))
         return Response({'error': 'Impossible de lister les médias'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2435,7 +2435,7 @@ def preuve_create_with_medias(request):
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_201_CREATED)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la preuve: {str(e)}")
+        logger.error("Erreur lors de la création de la preuve: %s", str(e))
         return Response({'error': 'Impossible de créer la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2471,7 +2471,7 @@ def preuve_add_medias(request, uuid):
             'created_at': preuve.created_at.isoformat()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"[PREUVE_ADD_MEDIAS] Erreur lors de l'ajout de médias à la preuve: {str(e)}")
+        logger.error("[PREUVE_ADD_MEDIAS] Erreur lors de l'ajout de médias à la preuve: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         return Response({'error': 'Impossible d\'ajouter les médias à la preuve'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2513,7 +2513,7 @@ def preuve_remove_media(request, uuid, media_uuid):
             }
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du média: {str(e)}")
+        logger.error("Erreur lors de la suppression du média: %s", str(e))
         return Response({'error': 'Impossible de supprimer le média'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2541,7 +2541,7 @@ def preuves_list(request):
             })
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des preuves: {str(e)}")
+        logger.error("Erreur lors de la liste des preuves: %s", str(e))
         return Response({'error': 'Impossible de lister les preuves'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2558,7 +2558,7 @@ def frequences_list(request):
         serializer = FrequenceSerializer(frequences, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des fréquences: {str(e)}")
+        logger.error("Erreur lors de la liste des fréquences: %s", str(e))
         return Response({'error': 'Impossible de lister les fréquences'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2579,7 +2579,7 @@ def mois_list(request):
         } for m in mois]
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des mois: {str(e)}")
+        logger.error("Erreur lors de la liste des mois: %s", str(e))
         return Response({'error': 'Impossible de lister les mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2609,7 +2609,7 @@ def periodicites_list(request):
         
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des périodicités: {str(e)}")
+        logger.error("Erreur lors de la liste des périodicités: %s", str(e))
         return Response({'error': 'Impossible de lister les périodicités'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2633,7 +2633,7 @@ def annees_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des années: {str(e)}")
+        logger.error("Erreur lors de la liste des années: %s", str(e))
         return Response({'error': 'Impossible de lister les années'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2655,7 +2655,7 @@ def annees_all_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des années: {str(e)}")
+        logger.error("Erreur lors de la liste des années: %s", str(e))
         return Response({'error': 'Impossible de lister les années'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2675,7 +2675,7 @@ def annee_create(request):
             return Response(AnneeSerializer(annee).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur annee_create: {e}")
+        logger.error("Erreur annee_create: %s", e)
         return Response({'error': "Impossible de créer l'année"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2697,7 +2697,7 @@ def annee_update(request, uuid):
     except Annee.DoesNotExist:
         return Response({'error': 'Année non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur annee_update: {e}")
+        logger.error("Erreur annee_update: %s", e)
         return Response({'error': "Impossible de mettre à jour l'année"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2715,7 +2715,7 @@ def annee_delete(request, uuid):
     except Annee.DoesNotExist:
         return Response({'error': 'Année non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur annee_delete: {e}")
+        logger.error("Erreur annee_delete: %s", e)
         return Response({'error': "Impossible de supprimer l'année"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2741,7 +2741,7 @@ def frequences_risque_list(request):
         } for f in frequences]
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des fréquences de risque: {str(e)}")
+        logger.error("Erreur lors de la liste des fréquences de risque: %s", str(e))
         return Response({'error': 'Impossible de lister les fréquences de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2759,7 +2759,7 @@ def gravites_risque_list(request):
         } for g in gravites]
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des gravités de risque: {str(e)}")
+        logger.error("Erreur lors de la liste des gravités de risque: %s", str(e))
         return Response({'error': 'Impossible de lister les gravités de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2776,7 +2776,7 @@ def criticités_risque_list(request):
         } for c in criticités]
         return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des criticités de risque: {str(e)}")
+        logger.error("Erreur lors de la liste des criticités de risque: %s", str(e))
         return Response({'error': 'Impossible de lister les criticités de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2789,7 +2789,7 @@ def criticites_all_list(request):
         serializer = CriticiteRisqueSerializer(criticites, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste de toutes les criticités: {str(e)}")
+        logger.error("Erreur lors de la liste de toutes les criticités: %s", str(e))
         return Response({'error': 'Impossible de lister les criticités'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2806,7 +2806,7 @@ def criticite_create(request):
             return Response(CriticiteRisqueSerializer(criticite).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la criticité: {str(e)}")
+        logger.error("Erreur lors de la création de la criticité: %s", str(e))
         return Response({'error': 'Impossible de créer la criticité'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2826,7 +2826,7 @@ def criticite_update(request, uuid):
     except CriticiteRisque.DoesNotExist:
         return Response({'error': 'Criticité non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la criticité: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de la criticité: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour la criticité'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2843,7 +2843,7 @@ def criticite_delete(request, uuid):
     except CriticiteRisque.DoesNotExist:
         return Response({'error': 'Criticité non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la criticité: {str(e)}")
+        logger.error("Erreur lors de la suppression de la criticité: %s", str(e))
         return Response({'error': 'Impossible de supprimer la criticité'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2862,7 +2862,7 @@ def dysfonctionnement_create(request):
             return Response(DysfonctionnementRecommandationSerializer(dysfn).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du dysfonctionnement: {str(e)}")
+        logger.error("Erreur lors de la création du dysfonctionnement: %s", str(e))
         return Response({'error': 'Impossible de créer le dysfonctionnement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2882,7 +2882,7 @@ def dysfonctionnement_update(request, uuid):
     except DysfonctionnementRecommandation.DoesNotExist:
         return Response({'error': 'Dysfonctionnement non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du dysfonctionnement: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du dysfonctionnement: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour le dysfonctionnement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2899,7 +2899,7 @@ def dysfonctionnement_delete(request, uuid):
     except DysfonctionnementRecommandation.DoesNotExist:
         return Response({'error': 'Dysfonctionnement non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du dysfonctionnement: {str(e)}")
+        logger.error("Erreur lors de la suppression du dysfonctionnement: %s", str(e))
         return Response({'error': 'Impossible de supprimer le dysfonctionnement'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2912,7 +2912,7 @@ def risques_list(request):
         serializer = RisqueSerializer(risques, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des risques: {str(e)}")
+        logger.error("Erreur lors de la liste des risques: %s", str(e))
         return Response({'error': 'Impossible de lister les risques'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2925,7 +2925,7 @@ def risques_all_list(request):
         serializer = RisqueSerializer(risques, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la liste des risques: {str(e)}")
+        logger.error("Erreur lors de la liste des risques: %s", str(e))
         return Response({'error': 'Impossible de lister les risques'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2942,7 +2942,7 @@ def risque_create(request):
             return Response(RisqueSerializer(risque).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du risque: {str(e)}")
+        logger.error("Erreur lors de la création du risque: %s", str(e))
         return Response({'error': 'Impossible de créer le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2962,7 +2962,7 @@ def risque_update(request, uuid):
     except Risque.DoesNotExist:
         return Response({'error': 'Risque non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du risque: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du risque: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2979,7 +2979,7 @@ def risque_delete(request, uuid):
     except Risque.DoesNotExist:
         return Response({'error': 'Risque non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du risque: {str(e)}")
+        logger.error("Erreur lors de la suppression du risque: %s", str(e))
         return Response({'error': 'Impossible de supprimer le risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -2998,7 +2998,7 @@ def nature_create(request):
             return Response(NatureSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur nature_create: {e}")
+        logger.error("Erreur nature_create: %s", e)
         return Response({'error': 'Impossible de créer la nature'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3018,7 +3018,7 @@ def nature_update(request, uuid):
     except Nature.DoesNotExist:
         return Response({'error': 'Nature non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur nature_update: {e}")
+        logger.error("Erreur nature_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour la nature'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3035,7 +3035,7 @@ def nature_delete(request, uuid):
     except Nature.DoesNotExist:
         return Response({'error': 'Nature non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur nature_delete: {e}")
+        logger.error("Erreur nature_delete: %s", e)
         return Response({'error': 'Impossible de supprimer la nature'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3054,7 +3054,7 @@ def service_create(request):
             return Response(ServiceSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur service_create: {e}")
+        logger.error("Erreur service_create: %s", e)
         return Response({'error': 'Impossible de créer le service'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3074,7 +3074,7 @@ def service_update(request, uuid):
     except Service.DoesNotExist:
         return Response({'error': 'Service non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur service_update: {e}")
+        logger.error("Erreur service_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour le service'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3091,7 +3091,7 @@ def service_delete(request, uuid):
     except Service.DoesNotExist:
         return Response({'error': 'Service non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur service_delete: {e}")
+        logger.error("Erreur service_delete: %s", e)
         return Response({'error': 'Impossible de supprimer le service'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3110,7 +3110,7 @@ def processus_create(request):
             return Response(ProcessusSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur processus_create: {e}")
+        logger.error("Erreur processus_create: %s", e)
         return Response({'error': 'Impossible de créer le processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3130,7 +3130,7 @@ def processus_update(request, uuid):
     except Processus.DoesNotExist:
         return Response({'error': 'Processus non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur processus_update: {e}")
+        logger.error("Erreur processus_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour le processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3147,7 +3147,7 @@ def processus_delete(request, uuid):
     except Processus.DoesNotExist:
         return Response({'error': 'Processus non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur processus_delete: {e}")
+        logger.error("Erreur processus_delete: %s", e)
         return Response({'error': 'Impossible de supprimer le processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3166,7 +3166,7 @@ def mois_create(request):
             return Response(MoisSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur mois_create: {e}")
+        logger.error("Erreur mois_create: %s", e)
         return Response({'error': 'Impossible de créer le mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3186,7 +3186,7 @@ def mois_update(request, uuid):
     except Mois.DoesNotExist:
         return Response({'error': 'Mois non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur mois_update: {e}")
+        logger.error("Erreur mois_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour le mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3203,7 +3203,7 @@ def mois_delete(request, uuid):
     except Mois.DoesNotExist:
         return Response({'error': 'Mois non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur mois_delete: {e}")
+        logger.error("Erreur mois_delete: %s", e)
         return Response({'error': 'Impossible de supprimer le mois'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3218,7 +3218,7 @@ def frequences_all_list(request):
         serializer = FrequenceSerializer(objs, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur frequences_all_list: {e}")
+        logger.error("Erreur frequences_all_list: %s", e)
         return Response({'error': 'Impossible de lister les fréquences'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3235,7 +3235,7 @@ def frequence_create(request):
             return Response(FrequenceSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur frequence_create: {e}")
+        logger.error("Erreur frequence_create: %s", e)
         return Response({'error': 'Impossible de créer la fréquence'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3255,7 +3255,7 @@ def frequence_update(request, uuid):
     except Frequence.DoesNotExist:
         return Response({'error': 'Fréquence non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur frequence_update: {e}")
+        logger.error("Erreur frequence_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour la fréquence'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3272,7 +3272,7 @@ def frequence_delete(request, uuid):
     except Frequence.DoesNotExist:
         return Response({'error': 'Fréquence non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur frequence_delete: {e}")
+        logger.error("Erreur frequence_delete: %s", e)
         return Response({'error': 'Impossible de supprimer la fréquence'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3287,7 +3287,7 @@ def frequences_risque_all_list(request):
         serializer = FrequenceRisqueSerializer(objs, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur frequences_risque_all_list: {e}")
+        logger.error("Erreur frequences_risque_all_list: %s", e)
         return Response({'error': 'Impossible de lister les fréquences de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3304,7 +3304,7 @@ def frequence_risque_create(request):
             return Response(FrequenceRisqueSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur frequence_risque_create: {e}")
+        logger.error("Erreur frequence_risque_create: %s", e)
         return Response({'error': 'Impossible de créer la fréquence de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3324,7 +3324,7 @@ def frequence_risque_update(request, uuid):
     except FrequenceRisque.DoesNotExist:
         return Response({'error': 'Fréquence de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur frequence_risque_update: {e}")
+        logger.error("Erreur frequence_risque_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour la fréquence de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3341,7 +3341,7 @@ def frequence_risque_delete(request, uuid):
     except FrequenceRisque.DoesNotExist:
         return Response({'error': 'Fréquence de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur frequence_risque_delete: {e}")
+        logger.error("Erreur frequence_risque_delete: %s", e)
         return Response({'error': 'Impossible de supprimer la fréquence de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3356,7 +3356,7 @@ def gravites_risque_all_list(request):
         serializer = GraviteRisqueSerializer(objs, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur gravites_risque_all_list: {e}")
+        logger.error("Erreur gravites_risque_all_list: %s", e)
         return Response({'error': 'Impossible de lister les gravités de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3373,7 +3373,7 @@ def gravite_risque_create(request):
             return Response(GraviteRisqueSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur gravite_risque_create: {e}")
+        logger.error("Erreur gravite_risque_create: %s", e)
         return Response({'error': 'Impossible de créer la gravité de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3393,7 +3393,7 @@ def gravite_risque_update(request, uuid):
     except GraviteRisque.DoesNotExist:
         return Response({'error': 'Gravité de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur gravite_risque_update: {e}")
+        logger.error("Erreur gravite_risque_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour la gravité de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3410,7 +3410,7 @@ def gravite_risque_delete(request, uuid):
     except GraviteRisque.DoesNotExist:
         return Response({'error': 'Gravité de risque non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur gravite_risque_delete: {e}")
+        logger.error("Erreur gravite_risque_delete: %s", e)
         return Response({'error': 'Impossible de supprimer la gravité de risque'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3425,7 +3425,7 @@ def statuts_action_cdr_all_list(request):
         serializer = StatutActionCDRSerializer(objs, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur statuts_action_cdr_all_list: {e}")
+        logger.error("Erreur statuts_action_cdr_all_list: %s", e)
         return Response({'error': 'Impossible de lister les statuts'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3442,7 +3442,7 @@ def statut_action_cdr_create(request):
             return Response(StatutActionCDRSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur statut_action_cdr_create: {e}")
+        logger.error("Erreur statut_action_cdr_create: %s", e)
         return Response({'error': 'Impossible de créer le statut'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3462,7 +3462,7 @@ def statut_action_cdr_update(request, uuid):
     except StatutActionCDR.DoesNotExist:
         return Response({'error': 'Statut non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur statut_action_cdr_update: {e}")
+        logger.error("Erreur statut_action_cdr_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour le statut'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3479,7 +3479,7 @@ def statut_action_cdr_delete(request, uuid):
     except StatutActionCDR.DoesNotExist:
         return Response({'error': 'Statut non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur statut_action_cdr_delete: {e}")
+        logger.error("Erreur statut_action_cdr_delete: %s", e)
         return Response({'error': 'Impossible de supprimer le statut'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3494,7 +3494,7 @@ def types_document_list(request):
         serializer = TypeDocumentSerializer(objs, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur types_document_list: {e}")
+        logger.error("Erreur types_document_list: %s", e)
         return Response({'error': 'Impossible de lister les types de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3507,7 +3507,7 @@ def types_document_all_list(request):
         serializer = TypeDocumentSerializer(objs, many=True)
         return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur types_document_all_list: {e}")
+        logger.error("Erreur types_document_all_list: %s", e)
         return Response({'error': 'Impossible de lister les types de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3524,7 +3524,7 @@ def type_document_create(request):
             return Response(TypeDocumentSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur type_document_create: {e}")
+        logger.error("Erreur type_document_create: %s", e)
         return Response({'error': 'Impossible de créer le type de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3544,7 +3544,7 @@ def type_document_update(request, uuid):
     except TypeDocument.DoesNotExist:
         return Response({'error': 'Type de document non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur type_document_update: {e}")
+        logger.error("Erreur type_document_update: %s", e)
         return Response({'error': 'Impossible de mettre à jour le type de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3561,7 +3561,7 @@ def type_document_delete(request, uuid):
     except TypeDocument.DoesNotExist:
         return Response({'error': 'Type de document non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur type_document_delete: {e}")
+        logger.error("Erreur type_document_delete: %s", e)
         return Response({'error': 'Impossible de supprimer le type de document'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3580,7 +3580,7 @@ def roles_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des rôles: {e}")
+        logger.error("Erreur lors de la récupération des rôles: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des rôles',
@@ -3611,7 +3611,7 @@ def roles_all_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de tous les rôles: {e}")
+        logger.error("Erreur lors de la récupération de tous les rôles: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les rôles',
@@ -3651,7 +3651,7 @@ def role_create(request):
             return Response(RoleSerializer(role).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création du rôle: {str(e)}")
+        logger.error("Erreur lors de la création du rôle: %s", str(e))
         return Response({'error': 'Impossible de créer le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3690,7 +3690,7 @@ def role_update(request, uuid):
     except Role.DoesNotExist:
         return Response({'error': 'Rôle non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour du rôle: {str(e)}")
+        logger.error("Erreur lors de la mise à jour du rôle: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3752,9 +3752,9 @@ def role_delete(request, uuid):
                 try:
                     PermissionService.invalidate_user_cache(user_id, processus_uuid=processus_uuid)
                 except Exception as e:
-                    logger.warning(f"Erreur lors de l'invalidation du cache pour user_id={user_id}, processus={processus_uuid}: {e}")
+                    logger.warning("Erreur lors de l'invalidation du cache pour user_id=%s, processus=%s: %s", user_id, processus_uuid, e)
             
-            logger.info(f"Suppression de {permission_mappings_count} mapping(s) de permissions pour le rôle {role_nom}")
+            logger.info("Suppression de %s mapping(s) de permissions pour le rôle %s", permission_mappings_count, role_nom)
         
         # Supprimer le rôle (Django supprimera automatiquement les mappings restants via CASCADE)
         role.delete()
@@ -3788,7 +3788,7 @@ def role_delete(request, uuid):
     except Role.DoesNotExist:
         return Response({'error': 'Rôle non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression du rôle: {str(e)}")
+        logger.error("Erreur lors de la suppression du rôle: %s", str(e))
         return Response({'error': 'Impossible de supprimer le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3830,7 +3830,7 @@ def user_processus_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des attributions processus: {e}")
+        logger.error("Erreur lors de la récupération des attributions processus: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des attributions processus',
@@ -3875,7 +3875,7 @@ def user_processus_create(request):
             return Response(UserProcessusSerializer(user_processus).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'attribution processus: {str(e)}")
+        logger.error("Erreur lors de la création de l'attribution processus: %s", str(e))
         return Response({'error': 'Impossible de créer l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3916,7 +3916,7 @@ def user_processus_update(request, uuid):
     except UserProcessus.DoesNotExist:
         return Response({'error': 'Attribution processus non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'attribution processus: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de l'attribution processus: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3954,7 +3954,7 @@ def user_processus_delete(request, uuid):
     except UserProcessus.DoesNotExist:
         return Response({'error': 'Attribution processus non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'attribution processus: {str(e)}")
+        logger.error("Erreur lors de la suppression de l'attribution processus: %s", str(e))
         return Response({'error': 'Impossible de supprimer l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -4002,7 +4002,7 @@ def user_processus_role_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des rôles utilisateur-processus: {e}")
+        logger.error("Erreur lors de la récupération des rôles utilisateur-processus: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des rôles utilisateur-processus',
@@ -4096,7 +4096,7 @@ def user_processus_role_create(request):
             return Response(UserProcessusRoleSerializer(user_processus_role).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'attribution de rôle: {str(e)}")
+        logger.error("Erreur lors de la création de l'attribution de rôle: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         
@@ -4159,7 +4159,7 @@ def user_processus_role_update(request, uuid):
     except UserProcessusRole.DoesNotExist:
         return Response({'error': 'Attribution de rôle non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de l'attribution de rôle: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de l'attribution de rôle: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -4208,7 +4208,7 @@ def user_processus_role_delete(request, uuid):
     except UserProcessusRole.DoesNotExist:
         return Response({'error': 'Attribution de rôle non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'attribution de rôle: {str(e)}")
+        logger.error("Erreur lors de la suppression de l'attribution de rôle: %s", str(e))
         return Response({'error': 'Impossible de supprimer l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -4277,7 +4277,7 @@ def users_list(request):
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des utilisateurs: {str(e)}")
+        logger.error("Erreur lors de la récupération des utilisateurs: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des utilisateurs'
@@ -4566,7 +4566,7 @@ def users_create(request):
             'details': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error(f"Erreur lors de la création de l'utilisateur: {str(e)}")
+        logger.error("Erreur lors de la création de l'utilisateur: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de l\'utilisateur'
@@ -4586,16 +4586,16 @@ def users_invite(request):
     try:
         logger.info("=" * 60)
         logger.info("DEBUT users_invite")
-        logger.info(f"Utilisateur qui invite: {request.user.username} (is_staff={request.user.is_staff}, is_superuser={request.user.is_superuser})")
-        logger.info(f"IP: {get_client_ip(request)}")
+        logger.info("Utilisateur qui invite: %s (is_staff=%s, is_superuser=%s)", request.user.username, request.user.is_staff, request.user.is_superuser)
+        logger.info("IP: %s", get_client_ip(request))
         
         # ========== VÉRIFICATION DE SÉCURITÉ ==========
         from parametre.permissions import can_manage_users
         can_manage = can_manage_users(request.user)
-        logger.info(f"can_manage_users: {can_manage}")
+        logger.info("can_manage_users: %s", can_manage)
         
         if not can_manage:
-            logger.warning(f"Accès refusé pour {request.user.username}")
+            logger.warning("Accès refusé pour %s", request.user.username)
             return Response({
                 'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent inviter des utilisateurs.',
                 'code': 'PERMISSION_DENIED'
@@ -4605,7 +4605,7 @@ def users_invite(request):
         # Rate limiting basique pour éviter le spam d'invitations
         user_limit_ok = EmailRateLimiter.check_user_limit(request.user.id)
         global_limit_ok = EmailRateLimiter.check_global_limit()
-        logger.info(f"Rate limiting - user_limit: {user_limit_ok}, global_limit: {global_limit_ok}")
+        logger.info("Rate limiting - user_limit: %s, global_limit: %s", user_limit_ok, global_limit_ok)
         
         if not user_limit_ok or not global_limit_ok:
             SecureEmailLogger.log_security_event('invite_rate_limit_exceeded', {
@@ -4613,36 +4613,36 @@ def users_invite(request):
                 'ip': get_client_ip(request),
                 'type': 'user_invite'
             })
-            logger.warning(f"Rate limit dépassé pour {request.user.username}")
+            logger.warning("Rate limit dépassé pour %s", request.user.username)
             return Response({
                 'success': False,
                 'error': "Trop de tentatives d'invitation, veuillez réessayer plus tard."
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
         # Logger les données reçues pour le débogage
-        logger.info(f"Données brutes reçues (request.data): {request.data}")
-        logger.info(f"Type de request.data: {type(request.data)}")
-        logger.info(f"Clés présentes: {list(request.data.keys()) if isinstance(request.data, dict) else 'N/A'}")
+        logger.info("Données brutes reçues (request.data): %s", request.data)
+        logger.info("Type de request.data: %s", type(request.data))
+        logger.info("Clés présentes: %s", list(request.data.keys()) if isinstance(request.data, dict) else 'N/A')
         
         # Vérifier si l'email existe déjà AVANT la validation du serializer
         email_received = request.data.get('email', '')
-        logger.info(f"Email reçu: {email_received}")
+        logger.info("Email reçu: %s", email_received)
         
         if email_received:
             from django.contrib.auth.models import User
             email_exists = User.objects.filter(email=email_received).exists()
-            logger.info(f"Email existe déjà dans la DB: {email_exists}")
+            logger.info("Email existe déjà dans la DB: %s", email_exists)
             if email_exists:
                 existing_user = User.objects.filter(email=email_received).first()
-                logger.info(f"Utilisateur existant trouvé: username={existing_user.username}, id={existing_user.id}, is_active={existing_user.is_active}")
+                logger.info("Utilisateur existant trouvé: username=%s, id=%s, is_active=%s", existing_user.username, existing_user.id, existing_user.is_active)
         
         serializer = UserInviteSerializer(data=request.data)
-        logger.info(f"Serializer créé, validation en cours...")
+        logger.info("Serializer créé, validation en cours...")
         
         if not serializer.is_valid():
-            logger.error(f"ERREUR: Serializer invalide")
-            logger.error(f"Erreurs de validation détaillées: {serializer.errors}")
-            logger.error(f"Données qui ont causé l'erreur: {request.data}")
+            logger.error("ERREUR: Serializer invalide")
+            logger.error("Erreurs de validation détaillées: %s", serializer.errors)
+            logger.error("Données qui ont causé l'erreur: %s", request.data)
             return Response({
                 'success': False,
                 'error': 'Données invalides',
@@ -4652,12 +4652,12 @@ def users_invite(request):
         logger.info("Serializer valide, création de l'utilisateur...")
 
         user = serializer.save()
-        logger.info(f"Utilisateur créé avec succès: username={user.username}, email={user.email}, id={user.id}, is_active={user.is_active}")
+        logger.info("Utilisateur créé avec succès: username=%s, email=%s, id=%s, is_active=%s", user.username, user.email, user.id, user.is_active)
 
         # Générer un token d'invitation basé sur le système de reset password
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        logger.info(f"Token d'invitation généré: uid={uid}, token={token[:20]}...")
+        logger.info("Token d'invitation généré: uid=%s, token=%s...", uid, token[:20])
 
         frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
         raw_invite_url = f"{frontend_base}/set-password?uid={uid}&token={token}"
@@ -4697,8 +4697,8 @@ def users_invite(request):
             logger.warning("Configuration EmailSettings incomplète, utilisation de la configuration actuelle des settings.")
 
         # Envoyer l'email via la configuration courante
-        logger.info(f"Envoi de l'email d'invitation à {user.email}...")
-        logger.info(f"URL d'invitation: {invite_url}")
+        logger.info("Envoi de l'email d'invitation à %s...", user.email)
+        logger.info("URL d'invitation: %s", invite_url)
         
         try:
             send_mail(
@@ -4709,9 +4709,9 @@ def users_invite(request):
                 recipient_list=[user.email],
                 fail_silently=False,
             )
-            logger.info(f"Email envoyé avec succès à {user.email}")
+            logger.info("Email envoyé avec succès à %s", user.email)
         except Exception as email_error:
-            logger.error(f"ERREUR lors de l'envoi de l'email: {str(email_error)}")
+            logger.error("ERREUR lors de l'envoi de l'email: %s", str(email_error))
             # Ne pas échouer complètement si l'email échoue, mais logger l'erreur
             SecureEmailLogger.log_email_sent(user.email, subject, False)
 
@@ -4729,7 +4729,7 @@ def users_invite(request):
             user_agent=request.META.get('HTTP_USER_AGENT', '')
         )
 
-        logger.info(f"Invitation terminée avec succès pour {user.email}")
+        logger.info("Invitation terminée avec succès pour %s", user.email)
         logger.info("=" * 60)
         
         return Response({
@@ -4739,10 +4739,10 @@ def users_invite(request):
 
     except Exception as e:
         logger.error("=" * 60)
-        logger.error(f"ERREUR EXCEPTION dans users_invite: {str(e)}")
-        logger.error(f"Type d'erreur: {type(e).__name__}")
+        logger.error("ERREUR EXCEPTION dans users_invite: %s", str(e))
+        logger.error("Type d'erreur: %s", type(e).__name__)
         import traceback
-        logger.error(f"Traceback complet:\n{traceback.format_exc()}")
+        logger.error("Traceback complet:\n%s", traceback.format_exc())
         logger.error("=" * 60)
         SecureEmailLogger.log_email_sent(getattr(request, 'user', None) and getattr(request.user, 'email', ''), "KORA – Invitation utilisateur", False)
         return Response({
@@ -4781,7 +4781,7 @@ def admin_get_user_processus(request):
     except User.DoesNotExist:
         return JsonResponse({'processus': []}, safe=False)
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des processus utilisateur: {e}")
+        logger.error("Erreur lors de la récupération des processus utilisateur: %s", e)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -4809,7 +4809,7 @@ def application_config_list(request):
         ]
         return JsonResponse(data, safe=False)
     except Exception as e:
-        logger.error(f"Erreur application_config_list: {e}")
+        logger.error("Erreur application_config_list: %s", e)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -4833,7 +4833,7 @@ def application_config_toggle(request, app_name):
     except ApplicationConfig.DoesNotExist:
         return JsonResponse({'error': 'Application non trouvée'}, status=404)
     except Exception as e:
-        logger.error(f"Erreur application_config_toggle: {e}")
+        logger.error("Erreur application_config_toggle: %s", e)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -4892,7 +4892,7 @@ def app_status_stream(request):
             data, last_hash = _snapshot()
             yield _event('status', data)
         except Exception as e:
-            logger.error(f"[SSE] Erreur initialisation ({username}): {e}")
+            logger.error("[SSE] Erreur initialisation (%s): %s", username, e)
             return
 
         while True:
@@ -4912,10 +4912,10 @@ def app_status_stream(request):
                         heartbeat_ticks = 0
 
             except GeneratorExit:
-                logger.info(f"[SSE] Client déconnecté : {username}")
+                logger.info("[SSE] Client déconnecté : %s", username)
                 break
             except Exception as e:
-                logger.error(f"[SSE] Erreur stream ({username}): {e}")
+                logger.error("[SSE] Erreur stream (%s): %s", username, e)
                 break
 
     response = StreamingHttpResponse(
@@ -4958,7 +4958,7 @@ def app_status(request):
             }
         return JsonResponse(data)
     except Exception as e:
-        logger.error(f"Erreur app_status: {e}")
+        logger.error("Erreur app_status: %s", e)
         return JsonResponse({}, status=200)
 
 
@@ -5111,7 +5111,7 @@ def admin_security_unblock(request, block_id):
         block = LoginBlock.objects.get(pk=block_id)
         value = block.value
         block.delete()
-        logger.info(f"[SECURITY] Déblocage manuel de '{value}' par {request.user.username}")
+        logger.info("[SECURITY] Déblocage manuel de '%s' par %s", value, request.user.username)
         return Response({'success': True})
     except LoginBlock.DoesNotExist:
         return Response({'error': 'Blocage introuvable.'}, status=status.HTTP_404_NOT_FOUND)
@@ -5161,7 +5161,7 @@ def admin_security_config(request):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     config.save()
-    logger.info(f"[SECURITY] Config mise à jour par {request.user.username}")
+    logger.info("[SECURITY] Config mise à jour par %s", request.user.username)
     return Response(_serialize_config(config))
 
 
@@ -5216,7 +5216,7 @@ def admin_throttle_config(request):
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
     config.save()  # invalide le cache throttle_config
-    logger.info(f"[THROTTLE] Config mise à jour par {request.user.username}")
+    logger.info("[THROTTLE] Config mise à jour par %s", request.user.username)
     return Response(_serialize_throttle_config(config))
 
 

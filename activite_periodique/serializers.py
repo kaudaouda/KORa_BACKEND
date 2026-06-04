@@ -243,7 +243,7 @@ class DetailsAPCreateSerializer(serializers.ModelSerializer):
             existing_count = DetailsAP.objects.filter(activite_periodique=activite_periodique).count()
             numero_ap = f"AP-{existing_count + 1}"
             validated_data['numero_ap'] = numero_ap
-            logger.info(f"[DetailsAPCreateSerializer] Numéro AP généré automatiquement: {numero_ap}")
+            logger.info("[DetailsAPCreateSerializer] Numéro AP généré automatiquement: %s", numero_ap)
 
         # Extraire les relations many-to-many avant la création
         responsables_directions = validated_data.pop('responsables_directions', [])
@@ -256,15 +256,15 @@ class DetailsAPCreateSerializer(serializers.ModelSerializer):
         # Assigner les relations many-to-many après la création
         if responsables_directions:
             detail.responsables_directions.set(responsables_directions)
-            logger.info(f"[DetailsAPCreateSerializer] {len(responsables_directions)} direction(s) assignée(s)")
+            logger.info("[DetailsAPCreateSerializer] %s direction(s) assignée(s)", len(responsables_directions))
         
         if responsables_sous_directions:
             detail.responsables_sous_directions.set(responsables_sous_directions)
-            logger.info(f"[DetailsAPCreateSerializer] {len(responsables_sous_directions)} sous-direction(s) assignée(s)")
+            logger.info("[DetailsAPCreateSerializer] %s sous-direction(s) assignée(s)", len(responsables_sous_directions))
         
         if responsables_services:
             detail.responsables_services.set(responsables_services)
-            logger.info(f"[DetailsAPCreateSerializer] {len(responsables_services)} service(s) assigné(s)")
+            logger.info("[DetailsAPCreateSerializer] %s service(s) assigné(s)", len(responsables_services))
 
         return detail
 
@@ -310,7 +310,7 @@ class SuivisAPSerializer(serializers.ModelSerializer):
                 # La table n'existe probablement pas encore (migration non appliquée)
                 return []
         except Exception as e:
-            logger.warning(f'Erreur lors de la récupération des MediaLivrable pour suivi {obj.uuid}: {str(e)}')
+            logger.warning("Erreur lors de la récupération des MediaLivrable pour suivi %s: %s", obj.uuid, str(e))
             return []
     
     def get_media_livrables_count(self, obj):
@@ -323,7 +323,7 @@ class SuivisAPSerializer(serializers.ModelSerializer):
                 return 0
             return obj.media_livrables.count()
         except Exception as e:
-            logger.warning(f'Erreur lors du comptage des MediaLivrable pour suivi {obj.uuid}: {str(e)}')
+            logger.warning("Erreur lors du comptage des MediaLivrable pour suivi %s: %s", obj.uuid, str(e))
             return 0
 
     def validate_mois(self, value):

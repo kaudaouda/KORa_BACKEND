@@ -16,7 +16,7 @@ def load_email_settings_into_django() -> bool:
     try:
         email_settings = EmailSettings.get_solo()
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de EmailSettings: {e}")
+        logger.error("Erreur lors de la récupération de EmailSettings: %s", e)
         return False
 
     config = email_settings.get_email_config()
@@ -35,8 +35,7 @@ def load_email_settings_into_django() -> bool:
         setattr(settings, key, value)
 
     logger.info(
-        f"Configuration email chargée depuis EmailSettings pour l'utilisateur SMTP "
-        f"{SecureEmailLogger.mask_email(config.get('EMAIL_HOST_USER', ''))}"
+        "Configuration email chargée depuis EmailSettings pour l'utilisateur SMTP %s", SecureEmailLogger.mask_email(config.get('EMAIL_HOST_USER', ''))
     )
     return True
 

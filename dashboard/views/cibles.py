@@ -85,7 +85,7 @@ def cibles_list(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des cibles: {str(e)}")
+        logger.error("Erreur lors de la récupération des cibles: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des cibles'
@@ -113,7 +113,7 @@ def cibles_detail(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de la cible {uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération de la cible %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération de la cible'
@@ -164,7 +164,7 @@ def cibles_create(request):
             cible = serializer.save()
             response_serializer = CibleSerializer(cible)
             
-            logger.info(f"Cible créée/mise à jour: {cible} par {request.user.username}")
+            logger.info("Cible créée/mise à jour: %s par %s", cible, request.user.username)
             
             return Response({
                 'success': True,
@@ -179,7 +179,7 @@ def cibles_create(request):
             }, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la cible: {str(e)}")
+        logger.error("Erreur lors de la création de la cible: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de la cible'
@@ -224,7 +224,7 @@ def cibles_update(request, uuid):
             updated_cible = serializer.save()
             response_serializer = CibleSerializer(updated_cible)
             
-            logger.info(f"Cible mise à jour: {cible} par {request.user.username}")
+            logger.info("Cible mise à jour: %s par %s", cible, request.user.username)
             
             return Response({
                 'success': True,
@@ -245,7 +245,7 @@ def cibles_update(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de la cible {uuid}: {str(e)}")
+        logger.error("Erreur lors de la mise à jour de la cible %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la mise à jour de la cible'
@@ -265,7 +265,7 @@ def cibles_delete(request, uuid):
         
         cible.delete()
         
-        logger.info(f"Cible supprimée: {cible} par {request.user.username}")
+        logger.info("Cible supprimée: %s par %s", cible, request.user.username)
         
         return Response({
             'success': True,
@@ -279,7 +279,7 @@ def cibles_delete(request, uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la cible {uuid}: {str(e)}")
+        logger.error("Erreur lors de la suppression de la cible %s: %s", uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la suppression de la cible'
@@ -322,7 +322,7 @@ def cibles_by_indicateur(request, indicateur_uuid):
         }, status=status.HTTP_404_NOT_FOUND)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des cibles de l'indicateur {indicateur_uuid}: {str(e)}")
+        logger.error("Erreur lors de la récupération des cibles de l'indicateur %s: %s", indicateur_uuid, str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des cibles de l\'indicateur'
