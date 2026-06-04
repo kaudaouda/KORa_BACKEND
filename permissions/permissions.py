@@ -123,7 +123,7 @@ class AppActionPermission(BasePermission):
                 return True
 
             # Superviseur SMI : rôle global transverse — accès complet à toutes les apps
-            from parametre.permissions import is_supervisor_smi
+            from shared.permissions import is_supervisor_smi
             if is_supervisor_smi(request.user):
                 logger.info(
                     f"[AppActionPermission.has_permission] ✅ Superviseur SMI bypass: "
@@ -230,7 +230,7 @@ class AppActionPermission(BasePermission):
             return True
 
         # Superviseur SMI : rôle global transverse — accès complet
-        from parametre.permissions import is_supervisor_smi
+        from shared.permissions import is_supervisor_smi
         if is_supervisor_smi(request.user):
             logger.info(
                 f"[AppActionPermission.has_object_permission] ✅ Superviseur SMI bypass: "
@@ -1660,7 +1660,7 @@ class PacDetailPermission(BasePermission):
         # mais on le fait dans la permission pour garantir que la vérification se fait avant
         try:
             from pac.models import Pac
-            from parametre.permissions import user_has_access_to_processus
+            from shared.permissions import user_has_access_to_processus
             pac = Pac.objects.select_related('processus').get(uuid=pac_uuid)
             logger.info(
                 f"[PacDetailPermission] ✅ PAC trouvé: uuid={pac.uuid}, processus_uuid={pac.processus.uuid if pac.processus else None}"
@@ -2283,7 +2283,7 @@ class ActivitePeriodiqueDetailPermission(BasePermission):
         # Security by Design : On doit récupérer l'objet pour vérifier les permissions
         try:
             from activite_periodique.models import ActivitePeriodique
-            from parametre.permissions import user_has_access_to_processus
+            from shared.permissions import user_has_access_to_processus
             ap = ActivitePeriodique.objects.select_related('processus').get(uuid=ap_uuid)
             logger.info(
                 f"[ActivitePeriodiqueDetailPermission] ✅ AP trouvé: uuid={ap.uuid}, processus_uuid={ap.processus.uuid if ap.processus else None}"
@@ -2388,7 +2388,7 @@ class ActivitePeriodiqueListPermission(BasePermission):
             return False
         
         # ========== SUPER ADMIN / SUPERVISEUR SMI : Accès complet ==========
-        from parametre.permissions import can_manage_users, is_supervisor_smi
+        from shared.permissions import can_manage_users, is_supervisor_smi
         if can_manage_users(request.user) or is_supervisor_smi(request.user):
             logger.info(
                 f"[ActivitePeriodiqueListPermission] ✅ Bypass autorisé: {request.user.username}"
@@ -2397,7 +2397,7 @@ class ActivitePeriodiqueListPermission(BasePermission):
         # ========== FIN BYPASS ==========
         
         # Récupérer la liste des processus de l'utilisateur
-        from parametre.permissions import get_user_processus_list
+        from shared.permissions import get_user_processus_list
         user_processus_uuids = get_user_processus_list(request.user)
         
         # Si user_processus_uuids est None, l'utilisateur est super admin (déjà géré ci-dessus)
@@ -2844,7 +2844,7 @@ class DashboardMediaUpdatePermission(BasePermission):
             return False
         if PermissionService._is_super_admin(request.user):
             return True
-        from parametre.permissions import is_supervisor_smi
+        from shared.permissions import is_supervisor_smi
         if is_supervisor_smi(request.user):
             return True
         try:
@@ -2887,7 +2887,7 @@ class DashboardMediaCreatePermission(BasePermission):
             return False
         if PermissionService._is_super_admin(request.user):
             return True
-        from parametre.permissions import is_supervisor_smi
+        from shared.permissions import is_supervisor_smi
         if is_supervisor_smi(request.user):
             return True
         try:
