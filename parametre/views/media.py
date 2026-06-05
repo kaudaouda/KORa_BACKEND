@@ -66,6 +66,8 @@ from .utils import (
 
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, DashboardMediaCreatePermission])
 def media_create(request):
     """
     Créer un nouveau média (upload de fichier)
