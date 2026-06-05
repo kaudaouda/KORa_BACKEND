@@ -54,6 +54,9 @@ from ..serializers import (
 
 logger = logging.getLogger(__name__)
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def periodicites_list(request):
     """Liste toutes les périodicités"""
     try:
@@ -63,9 +66,6 @@ def periodicites_list(request):
         # Récupérer les périodicités avec gestion d'erreur pour les données corrompues
         periodicites_data = []
         periodicites = Periodicite.objects.all().select_related('preuve').prefetch_related('preuve__medias').order_by('indicateur_id', 'periode')
-        
-        # Utiliser le serializer pour inclure toutes les données de preuve
-        from .serializers import PeriodiciteSerializer
         
         for periodicite in periodicites:
             try:

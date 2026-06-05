@@ -97,17 +97,17 @@ def _get_next_num_amendement_for_pac(user, annee_uuid, processus_uuid):
     """
     try:
         from django.db.models import Max
-        logger.info("[_get_next_num_amendement_for_pac] annee_uuid=%s, processus_uuid=%s", {annee_uuid}, {processus_uuid})
+        logger.info("[_get_next_num_amendement_for_pac] annee_uuid=%s, processus_uuid=%s", annee_uuid, processus_uuid)
         result = Pac.objects.filter(
             annee_id=annee_uuid,
             processus_id=processus_uuid
         ).aggregate(max_num=Max('num_amendement'))
         max_num = result['max_num']
         next_num = 0 if max_num is None else max_num + 1
-        logger.info("[_get_next_num_amendement_for_pac] next_num=%s", {next_num})
+        logger.info("[_get_next_num_amendement_for_pac] next_num=%s", next_num)
         return next_num
     except Exception as e:
-        logger.error("[_get_next_num_amendement_for_pac] Erreur: %s", {e})
+        logger.error("[_get_next_num_amendement_for_pac] Erreur: %s", e)
         import traceback
         logger.error(traceback.format_exc())
         raise

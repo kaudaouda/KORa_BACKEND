@@ -76,7 +76,7 @@ def roles_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des rôles: %s", {e})
+        logger.error("Erreur lors de la récupération des rôles: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des rôles',
@@ -107,7 +107,7 @@ def roles_all_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération de tous les rôles: %s", {e})
+        logger.error("Erreur lors de la récupération de tous les rôles: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les rôles',
@@ -147,7 +147,7 @@ def role_create(request):
             return Response(RoleSerializer(role).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création du rôle: %s", {str(e)})
+        logger.error("Erreur lors de la création du rôle: %s", str(e))
         return Response({'error': 'Impossible de créer le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -186,7 +186,7 @@ def role_update(request, uuid):
     except Role.DoesNotExist:
         return Response({'error': 'Rôle non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour du rôle: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour du rôle: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -248,9 +248,9 @@ def role_delete(request, uuid):
                 try:
                     PermissionService.invalidate_user_cache(user_id, processus_uuid=processus_uuid)
                 except Exception as e:
-                    logger.warning("Erreur lors de l'invalidation du cache pour user_id=%s, processus=%s: %s", {user_id}, {processus_uuid}, {e})
+                    logger.warning("Erreur lors de l'invalidation du cache pour user_id=%s, processus=%s: %s", user_id, processus_uuid, e)
             
-            logger.info("Suppression de %s mapping(s) de permissions pour le rôle %s", {permission_mappings_count}, {role_nom})
+            logger.info("Suppression de %s mapping(s) de permissions pour le rôle %s", permission_mappings_count, role_nom)
         
         # Supprimer le rôle (Django supprimera automatiquement les mappings restants via CASCADE)
         role.delete()
@@ -284,7 +284,7 @@ def role_delete(request, uuid):
     except Role.DoesNotExist:
         return Response({'error': 'Rôle non trouvé'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la suppression du rôle: %s", {str(e)})
+        logger.error("Erreur lors de la suppression du rôle: %s", str(e))
         return Response({'error': 'Impossible de supprimer le rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -326,7 +326,7 @@ def user_processus_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des attributions processus: %s", {e})
+        logger.error("Erreur lors de la récupération des attributions processus: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des attributions processus',
@@ -371,7 +371,7 @@ def user_processus_create(request):
             return Response(UserProcessusSerializer(user_processus).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création de l'attribution processus: %s", {str(e)})
+        logger.error("Erreur lors de la création de l'attribution processus: %s", str(e))
         return Response({'error': 'Impossible de créer l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -412,7 +412,7 @@ def user_processus_update(request, uuid):
     except UserProcessus.DoesNotExist:
         return Response({'error': 'Attribution processus non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour de l'attribution processus: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour de l'attribution processus: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -450,7 +450,7 @@ def user_processus_delete(request, uuid):
     except UserProcessus.DoesNotExist:
         return Response({'error': 'Attribution processus non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la suppression de l'attribution processus: %s", {str(e)})
+        logger.error("Erreur lors de la suppression de l'attribution processus: %s", str(e))
         return Response({'error': 'Impossible de supprimer l\'attribution processus'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -498,7 +498,7 @@ def user_processus_role_list(request):
             'data': serializer.data
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des rôles utilisateur-processus: %s", {e})
+        logger.error("Erreur lors de la récupération des rôles utilisateur-processus: %s", e)
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des rôles utilisateur-processus',
@@ -592,7 +592,7 @@ def user_processus_role_create(request):
             return Response(UserProcessusRoleSerializer(user_processus_role).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création de l'attribution de rôle: %s", {str(e)})
+        logger.error("Erreur lors de la création de l'attribution de rôle: %s", str(e))
         import traceback
         logger.error(traceback.format_exc())
         
@@ -655,7 +655,7 @@ def user_processus_role_update(request, uuid):
     except UserProcessusRole.DoesNotExist:
         return Response({'error': 'Attribution de rôle non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la mise à jour de l'attribution de rôle: %s", {str(e)})
+        logger.error("Erreur lors de la mise à jour de l'attribution de rôle: %s", str(e))
         return Response({'error': 'Impossible de mettre à jour l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -704,7 +704,7 @@ def user_processus_role_delete(request, uuid):
     except UserProcessusRole.DoesNotExist:
         return Response({'error': 'Attribution de rôle non trouvée'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la suppression de l'attribution de rôle: %s", {str(e)})
+        logger.error("Erreur lors de la suppression de l'attribution de rôle: %s", str(e))
         return Response({'error': 'Impossible de supprimer l\'attribution de rôle'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -773,7 +773,7 @@ def users_list(request):
             'count': queryset.count()
         }, status=status.HTTP_200_OK)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des utilisateurs: %s", {str(e)})
+        logger.error("Erreur lors de la récupération des utilisateurs: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des utilisateurs'
@@ -1062,7 +1062,7 @@ def users_create(request):
             'details': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("Erreur lors de la création de l'utilisateur: %s", {str(e)})
+        logger.error("Erreur lors de la création de l'utilisateur: %s", str(e))
         return Response({
             'success': False,
             'error': 'Erreur lors de la création de l\'utilisateur'
@@ -1082,16 +1082,16 @@ def users_invite(request):
     try:
         logger.info("=" * 60)
         logger.info("DEBUT users_invite")
-        logger.info("Utilisateur qui invite: %s (is_staff=%s, is_superuser=%s)", {request.user.username}, {request.user.is_staff}, {request.user.is_superuser})
-        logger.info("IP: %s", {get_client_ip(request)})
+        logger.info("Utilisateur qui invite: %s (is_staff=%s, is_superuser=%s)", request.user.username, request.user.is_staff, request.user.is_superuser)
+        logger.info("IP: %s", get_client_ip(request))
         
         # ========== VÉRIFICATION DE SÉCURITÉ ==========
         from parametre.permissions import can_manage_users
         can_manage = can_manage_users(request.user)
-        logger.info("can_manage_users: %s", {can_manage})
+        logger.info("can_manage_users: %s", can_manage)
         
         if not can_manage:
-            logger.warning("Accès refusé pour %s", {request.user.username})
+            logger.warning("Accès refusé pour %s", request.user.username)
             return Response({
                 'error': 'Accès refusé. Seuls les utilisateurs avec "Staff status" et "Superuser status" peuvent inviter des utilisateurs.',
                 'code': 'PERMISSION_DENIED'
@@ -1101,7 +1101,7 @@ def users_invite(request):
         # Rate limiting basique pour éviter le spam d'invitations
         user_limit_ok = EmailRateLimiter.check_user_limit(request.user.id)
         global_limit_ok = EmailRateLimiter.check_global_limit()
-        logger.info("Rate limiting - user_limit: %s, global_limit: %s", {user_limit_ok}, {global_limit_ok})
+        logger.info("Rate limiting - user_limit: %s, global_limit: %s", user_limit_ok, global_limit_ok)
         
         if not user_limit_ok or not global_limit_ok:
             SecureEmailLogger.log_security_event('invite_rate_limit_exceeded', {
@@ -1109,36 +1109,36 @@ def users_invite(request):
                 'ip': get_client_ip(request),
                 'type': 'user_invite'
             })
-            logger.warning("Rate limit dépassé pour %s", {request.user.username})
+            logger.warning("Rate limit dépassé pour %s", request.user.username)
             return Response({
                 'success': False,
                 'error': "Trop de tentatives d'invitation, veuillez réessayer plus tard."
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
         # Logger les données reçues pour le débogage
-        logger.info("Données brutes reçues (request.data): %s", {request.data})
-        logger.info("Type de request.data: %s", {type(request.data)})
-        logger.info("Clés présentes: %s", {(list(request.data.keys()) if isinstance(request.data, dict) else 'N/A')})
+        logger.info("Données brutes reçues (request.data): %s", request.data)
+        logger.info("Type de request.data: %s", type(request.data))
+        logger.info("Clés présentes: %s", (list(request.data.keys()) if isinstance(request.data, dict) else 'N/A'))
         
         # Vérifier si l'email existe déjà AVANT la validation du serializer
         email_received = request.data.get('email', '')
-        logger.info("Email reçu: %s", {email_received})
+        logger.info("Email reçu: %s", email_received)
         
         if email_received:
             from django.contrib.auth.models import User
             email_exists = User.objects.filter(email=email_received).exists()
-            logger.info("Email existe déjà dans la DB: %s", {email_exists})
+            logger.info("Email existe déjà dans la DB: %s", email_exists)
             if email_exists:
                 existing_user = User.objects.filter(email=email_received).first()
-                logger.info("Utilisateur existant trouvé: username=%s, id=%s, is_active=%s", {existing_user.username}, {existing_user.id}, {existing_user.is_active})
+                logger.info("Utilisateur existant trouvé: username=%s, id=%s, is_active=%s", existing_user.username, existing_user.id, existing_user.is_active)
         
         serializer = UserInviteSerializer(data=request.data)
         logger.info("Serializer créé, validation en cours...")
         
         if not serializer.is_valid():
             logger.error("ERREUR: Serializer invalide")
-            logger.error("Erreurs de validation détaillées: %s", {serializer.errors})
-            logger.error("Données qui ont causé l'erreur: %s", {request.data})
+            logger.error("Erreurs de validation détaillées: %s", serializer.errors)
+            logger.error("Données qui ont causé l'erreur: %s", request.data)
             return Response({
                 'success': False,
                 'error': 'Données invalides',
@@ -1148,12 +1148,12 @@ def users_invite(request):
         logger.info("Serializer valide, création de l'utilisateur...")
 
         user = serializer.save()
-        logger.info("Utilisateur créé avec succès: username=%s, email=%s, id=%s, is_active=%s", {user.username}, {user.email}, {user.id}, {user.is_active})
+        logger.info("Utilisateur créé avec succès: username=%s, email=%s, id=%s, is_active=%s", user.username, user.email, user.id, user.is_active)
 
         # Générer un token d'invitation basé sur le système de reset password
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        logger.info("Token d'invitation généré: uid=%s, token=%s...", {uid}, {token[:20]})
+        logger.info("Token d'invitation généré: uid=%s, token=%s...", uid, token[:20])
 
         frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
         raw_invite_url = f"{frontend_base}/set-password?uid={uid}&token={token}"
@@ -1193,8 +1193,8 @@ def users_invite(request):
             logger.warning("Configuration EmailSettings incomplète, utilisation de la configuration actuelle des settings.")
 
         # Envoyer l'email via la configuration courante
-        logger.info("Envoi de l'email d'invitation à %s...", {user.email})
-        logger.info("URL d'invitation: %s", {invite_url})
+        logger.info("Envoi de l'email d'invitation à %s...", user.email)
+        logger.info("URL d'invitation: %s", invite_url)
         
         try:
             send_mail(
@@ -1205,9 +1205,9 @@ def users_invite(request):
                 recipient_list=[user.email],
                 fail_silently=False,
             )
-            logger.info("Email envoyé avec succès à %s", {user.email})
+            logger.info("Email envoyé avec succès à %s", user.email)
         except Exception as email_error:
-            logger.error("ERREUR lors de l'envoi de l'email: %s", {str(email_error)})
+            logger.error("ERREUR lors de l'envoi de l'email: %s", str(email_error))
             # Ne pas échouer complètement si l'email échoue, mais logger l'erreur
             SecureEmailLogger.log_email_sent(user.email, subject, False)
 
@@ -1225,7 +1225,7 @@ def users_invite(request):
             user_agent=request.META.get('HTTP_USER_AGENT', '')
         )
 
-        logger.info("Invitation terminée avec succès pour %s", {user.email})
+        logger.info("Invitation terminée avec succès pour %s", user.email)
         logger.info("=" * 60)
         
         return Response({
@@ -1235,10 +1235,10 @@ def users_invite(request):
 
     except Exception as e:
         logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans users_invite: %s", {str(e)})
-        logger.error("Type d'erreur: %s", {type(e).__name__})
+        logger.error("ERREUR EXCEPTION dans users_invite: %s", str(e))
+        logger.error("Type d'erreur: %s", type(e).__name__)
         import traceback
-        logger.error("Traceback complet:\n%s", {traceback.format_exc()})
+        logger.error("Traceback complet:\n%s", traceback.format_exc())
         logger.error("=" * 60)
         SecureEmailLogger.log_email_sent(getattr(request, 'user', None) and getattr(request.user, 'email', ''), "KORA – Invitation utilisateur", False)
         return Response({
@@ -1277,6 +1277,6 @@ def admin_get_user_processus(request):
     except User.DoesNotExist:
         return JsonResponse({'processus': []}, safe=False)
     except Exception as e:
-        logger.error("Erreur lors de la récupération des processus utilisateur: %s", {e})
+        logger.error("Erreur lors de la récupération des processus utilisateur: %s", e)
         return JsonResponse({'error': str(e)}, status=500)
 

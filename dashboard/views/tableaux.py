@@ -54,6 +54,9 @@ from ..serializers import (
 
 logger = logging.getLogger(__name__)
 
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated, DashboardTableauListCreatePermission])
 def tableaux_bord_list_create(request):
     """Lister ou créer des tableaux de bord"""
     try:
