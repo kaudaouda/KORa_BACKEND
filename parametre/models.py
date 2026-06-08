@@ -2001,3 +2001,150 @@ class ThrottleConfig(models.Model):
     def get_config(cls):
         obj, _ = cls.objects.get_or_create(id=1)
         return obj
+
+
+class RecaptchaConfig(models.Model):
+    """
+    Singleton : configuration du service reCAPTCHA v3.
+    Activable/désactivable à chaud depuis l'interface admin.
+    Les clés sont lues depuis la DB ; si vides, fallback sur les settings Django.
+    """
+    is_enabled = models.BooleanField(
+        default=True,
+        verbose_name='reCAPTCHA activé',
+        help_text='Désactiver ignore complètement la vérification reCAPTCHA.',
+    )
+    fail_open_on_network_error = models.BooleanField(
+        default=False,
+        verbose_name='Fail-open si Google injoignable',
+        help_text=(
+            'Si activé, un token est accepté sans vérification quand Google est '
+            'injoignable (réseau KO, timeout). '
+            'Si désactivé (défaut), la requête échoue avec HTTP 500 — plus sûr.'
+        ),
+    )
+    site_key = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Clé publique (site key)',
+        help_text='Laissez vide pour utiliser RECAPTCHA_SITE_KEY du fichier .env.',
+    )
+    # La clé secrète est stockée chiffrée — jamais en clair en DB.
+    # Utiliser set_secret_key() / get_secret_key() pour y accéder.
+    secret_key_encrypted = models.TextField(
+        blank=True, default='',
+        verbose_name='Clé secrète chiffrée',
+        editable=False,
+        help_text='Chiffré automatiquement. Ne pas modifier directement.',
+    )
+    min_score = models.FloatField(
+        default=0.5,
+        verbose_name='Score minimum v3 (global)',
+        help_text='Entre 0.0 (bot) et 1.0 (humain). Recommandé : 0.5. Utilisé quand le score par endpoint est absent.',
+    )
+    min_score_login = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name='Score min. — connexion',
+        help_text='Laissez vide pour utiliser le score global.',
+    )
+    min_score_register = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name='Score min. — inscription',
+        help_text='Laissez vide pour utiliser le score global.',
+    )
+    min_score_invitation = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name="Score min. — complétion d'invitation",
+        help_text='Laissez vide pour utiliser le score global.',
+    )
+    min_score_password_reset = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name='Score min. — réinitialisation de mot de passe',
+        help_text='Laissez vide pour utiliser le score global.',
+    )
+    allowed_hostname = models.CharField(
+        max_length=253, blank=True, default='',
+        verbose_name='Hostname autorisé',
+        help_text=(
+            'Domaine retourné par Google dans la réponse reCAPTCHA '
+            '(ex : app.example.com). '
+            'Laissez vide pour ne pas vérifier le hostname.'
+        ),
+    )
+    apply_to_login = models.BooleanField(
+        default=True,
+        verbose_name='Actif sur la connexion',
+    )
+    apply_to_register = models.BooleanField(
+        default=True,
+        verbose_name="Actif sur l'inscription",
+    )
+    apply_to_invitation = models.BooleanField(
+        default=True,
+        verbose_name="Actif sur la complétion d'invitation",
+    )
+    apply_to_password_reset = models.BooleanField(
+        default=True,
+        verbose_name='Actif sur la réinitialisation de mot de passe',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'recaptcha_config'
+        verbose_name = 'Configuration reCAPTCHA'
+        verbose_name_plural = 'Configuration reCAPTCHA'
+
+    def __str__(self):
+        state = 'activé' if self.is_enabled else 'désactivé'
+        per_endpoint = any(
+            v is not None for v in [
+                self.min_score_login, self.min_score_register,
+                self.min_score_invitation, self.min_score_password_reset,
+            ]
+        )
+        suffix = ' + scores/endpoint' if per_endpoint else ''
+        return f'RecaptchaConfig ({state}, score>={self.min_score}{suffix})'
+
+    def set_secret_key(self, raw_key: str) -> None:
+        """Chiffre et stocke la clé secrète. Appeler avant save()."""
+        if not raw_key:
+            self.secret_key_encrypted = ''
+            return
+        try:
+            from .utils.email_security import EmailPasswordEncryption
+            self.secret_key_encrypted = EmailPasswordEncryption.encrypt_password(raw_key)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Erreur chiffrement secret_key reCAPTCHA : %s", exc)
+            raise
+
+    def get_secret_key(self) -> str | None:
+        """Déchiffre et retourne la clé secrète stockée, ou None si absente."""
+        if not self.secret_key_encrypted:
+            return None
+        try:
+            from .utils.email_security import EmailPasswordEncryption
+            return EmailPasswordEncryption.decrypt_password(self.secret_key_encrypted)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Erreur déchiffrement secret_key reCAPTCHA : %s", exc)
+            return None
+
+    def get_effective_site_key(self) -> str | None:
+        """Retourne la clé publique DB ou fallback settings."""
+        if self.site_key:
+            return self.site_key
+        from django.conf import settings as django_settings
+        return getattr(django_settings, 'RECAPTCHA_SITE_KEY', None)
+
+    def get_effective_secret_key(self) -> str | None:
+        """Retourne la clé secrète déchiffrée (DB) ou fallback settings."""
+        decrypted = self.get_secret_key()
+        if decrypted:
+            return decrypted
+        from django.conf import settings as django_settings
+        return getattr(django_settings, 'RECAPTCHA_SECRET_KEY', None)
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj

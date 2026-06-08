@@ -63,7 +63,7 @@ from ..serializers import (
     DetailsPacSerializer, DetailsPacCreateSerializer, DetailsPacUpdateSerializer
 )
 from shared.authentication import AuthService
-from shared.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
+from parametre.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
 import json
 import logging
 
@@ -85,21 +85,22 @@ def register(request):
             data = request.data
         
         # Validation reCAPTCHA (si configuré)
-        if recaptcha_service.is_enabled():
+        if recaptcha_service.is_enabled_for('register'):
             recaptcha_token = data.get('recaptcha_token')
             if not recaptcha_token:
                 return Response({
                     'error': 'Vérification de sécurité requise',
                     'recaptcha_required': True
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
+
             try:
                 remote_ip = request.META.get('REMOTE_ADDR')
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
-                    recaptcha_token, 
-                    remote_ip
+                    recaptcha_token,
+                    remote_ip,
+                    expected_action='register',
                 )
-                
+
                 if not is_valid:
                     logger.warning("reCAPTCHA validation échouée pour l'inscription: %s", recaptcha_data)
                     return Response({
@@ -107,9 +108,9 @@ def register(request):
                         'recaptcha_error': recaptcha_data.get('error'),
                         'recaptcha_required': True
                     }, status=status.HTTP_400_BAD_REQUEST)
-                
+
                 logger.info("reCAPTCHA validé pour l'inscription: score=%s", recaptcha_data.get('score'))
-                
+
             except RecaptchaValidationError as e:
                 logger.error("Erreur reCAPTCHA lors de l'inscription: %s", str(e))
                 return Response({
@@ -206,21 +207,22 @@ def login(request):
             data = request.data
         
         # Validation reCAPTCHA (si configuré)
-        if recaptcha_service.is_enabled():
+        if recaptcha_service.is_enabled_for('login'):
             recaptcha_token = data.get('recaptcha_token')
             if not recaptcha_token:
                 return Response({
                     'error': 'Vérification de sécurité requise',
                     'recaptcha_required': True
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
+
             try:
                 remote_ip = request.META.get('REMOTE_ADDR')
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
-                    recaptcha_token, 
-                    remote_ip
+                    recaptcha_token,
+                    remote_ip,
+                    expected_action='login',
                 )
-                
+
                 if not is_valid:
                     logger.warning("reCAPTCHA validation échouée pour la connexion: %s", recaptcha_data)
                     return Response({
@@ -228,9 +230,9 @@ def login(request):
                         'recaptcha_error': recaptcha_data.get('error'),
                         'recaptcha_required': True
                     }, status=status.HTTP_400_BAD_REQUEST)
-                
+
                 logger.info("reCAPTCHA validé pour la connexion: score=%s", recaptcha_data.get('score'))
-                
+
             except RecaptchaValidationError as e:
                 logger.error("Erreur reCAPTCHA lors de la connexion: %s", str(e))
                 return Response({
@@ -781,8 +783,7 @@ def complete_invitation(request):
         data = request.data
         
         # ========== VALIDATION reCAPTCHA (Security by Design) ==========
-        # Protection contre les bots et les attaques automatisées
-        if recaptcha_service.is_enabled():
+        if recaptcha_service.is_enabled_for('invitation'):
             recaptcha_token = data.get('recaptcha_token')
             if not recaptcha_token:
                 logger.warning("reCAPTCHA token manquant pour complete_invitation depuis IP: %s", client_ip)
@@ -791,14 +792,15 @@ def complete_invitation(request):
                     'recaptcha_required': True,
                     'code': 'RECAPTCHA_REQUIRED'
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
+
             try:
                 remote_ip = get_client_ip(request)
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
-                    recaptcha_token, 
-                    remote_ip
+                    recaptcha_token,
+                    remote_ip,
+                    expected_action='complete_invitation',
                 )
-                
+
                 if not is_valid:
                     logger.warning("reCAPTCHA validation échouée pour complete_invitation: %s", recaptcha_data)
                     return Response({
@@ -807,9 +809,9 @@ def complete_invitation(request):
                         'recaptcha_required': True,
                         'code': 'RECAPTCHA_FAILED'
                     }, status=status.HTTP_400_BAD_REQUEST)
-                
+
                 logger.info("reCAPTCHA validé pour complete_invitation: score=%s", recaptcha_data.get('score'))
-                
+
             except RecaptchaValidationError as e:
                 logger.error("Erreur reCAPTCHA lors de la finalisation de l'invitation: %s", str(e))
                 return Response({
@@ -1287,7 +1289,7 @@ def password_reset_confirm(request):
         data = request.data
         
         # ========== VALIDATION reCAPTCHA (Security by Design) ==========
-        if recaptcha_service.is_enabled():
+        if recaptcha_service.is_enabled_for('password_reset'):
             recaptcha_token = data.get('recaptcha_token')
             if not recaptcha_token:
                 logger.warning("reCAPTCHA token manquant pour password_reset_confirm depuis IP: %s", client_ip)
@@ -1296,14 +1298,15 @@ def password_reset_confirm(request):
                     'recaptcha_required': True,
                     'code': 'RECAPTCHA_REQUIRED'
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
+
             try:
                 remote_ip = get_client_ip(request)
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
-                    recaptcha_token, 
-                    remote_ip
+                    recaptcha_token,
+                    remote_ip,
+                    expected_action='password_reset_confirm',
                 )
-                
+
                 if not is_valid:
                     logger.warning("reCAPTCHA validation échouée pour password_reset_confirm: %s", recaptcha_data)
                     return Response({
@@ -1312,9 +1315,9 @@ def password_reset_confirm(request):
                         'recaptcha_required': True,
                         'code': 'RECAPTCHA_FAILED'
                     }, status=status.HTTP_400_BAD_REQUEST)
-                
+
                 logger.info("reCAPTCHA validé pour password_reset_confirm: score=%s", recaptcha_data.get('score'))
-                
+
             except RecaptchaValidationError as e:
                 logger.error("Erreur reCAPTCHA lors de la réinitialisation: %s", str(e))
                 return Response({
@@ -1529,34 +1532,24 @@ def password_reset_confirm(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def recaptcha_config(request):
-    """Obtenir la configuration reCAPTCHA pour le frontend"""
+    """Obtenir la configuration reCAPTCHA pour le frontend (maintenu pour compatibilité)."""
     try:
-        from django.conf import settings
-        
-        # Nettoyer les cookies si l'utilisateur n'est pas authentifié mais les tokens existent
+        config = recaptcha_service.get_public_config()
+
+        # Nettoyer les cookies orphelins si utilisateur anonyme
         if request.user.is_anonymous and request.COOKIES.get('access_token'):
             logger.warning("recaptcha_config: utilisateur anonyme avec access_token -> nettoyage cookies")
-            response = Response({
-                'enabled': recaptcha_service.is_enabled(),
-                'site_key': getattr(settings, 'RECAPTCHA_SITE_KEY', None),
-                'min_score': recaptcha_service.get_min_score(),
-            }, status=status.HTTP_200_OK)
+            response = Response(config, status=status.HTTP_200_OK)
             response.delete_cookie('access_token')
             response.delete_cookie('refresh_token')
             return response
 
-        config = {
-            'enabled': recaptcha_service.is_enabled(),
-            'site_key': getattr(settings, 'RECAPTCHA_SITE_KEY', None),
-            'min_score': recaptcha_service.get_min_score(),
-        }
-        
-        logger.debug("recaptcha_config: %s", config)
         return Response(config, status=status.HTTP_200_OK)
-        
+
     except Exception as e:
         logger.error("Erreur lors de la récupération de la config reCAPTCHA: %s", str(e))
-        return Response({
-            'error': 'Configuration de sécurité indisponible'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {'error': 'Configuration de sécurité indisponible'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
