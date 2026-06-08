@@ -209,6 +209,8 @@ def dashboard_notification_settings_update(request):
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def upcoming_notifications(request):
     """
     Récupère les échéances à venir pour l'utilisateur connecté - Délai de réalisation uniquement

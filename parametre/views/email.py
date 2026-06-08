@@ -66,6 +66,8 @@ from .utils import (
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def email_settings_detail(request):
     """
     Récupérer les paramètres email globaux — réservé aux super-admins.

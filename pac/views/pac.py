@@ -73,6 +73,9 @@ logger = logging.getLogger(__name__)
 
 from .utils import AllowAnyWithJWT, _get_next_num_amendement_for_pac
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def processus_list(request):
     """Liste des processus de l'utilisateur connecté"""
     try:

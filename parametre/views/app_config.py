@@ -66,6 +66,8 @@ from .utils import (
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def application_config_list(request):
     """Liste toutes les configurations d'applications (super admin uniquement)"""
     if not (request.user.is_staff and request.user.is_superuser):

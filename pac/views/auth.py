@@ -72,6 +72,9 @@ logger = logging.getLogger(__name__)
 
 from .utils import AllowAnyWithJWT, _get_next_num_amendement_for_pac
 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def register(request):
     """Inscription d'un nouvel utilisateur avec validation reCAPTCHA"""
     try:

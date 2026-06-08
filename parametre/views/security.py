@@ -66,6 +66,8 @@ from .utils import (
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def admin_security(request):
     """
     Tableau de bord sécurité : tentatives de connexion échouées, IPs suspectes.

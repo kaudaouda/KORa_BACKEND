@@ -26,6 +26,9 @@ CDR_500_MESSAGE = "Une erreur interne est survenue."
 
 from .utils import check_cdr_action_or_403, _get_next_num_amendement_for_cdr
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def validate_cdr(request, uuid):
     """Valider une CDR pour permettre la saisie des suivis d'action"""
     try:
