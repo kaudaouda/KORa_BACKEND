@@ -1679,7 +1679,20 @@ class RecaptchaConfigAdmin(admin.ModelAdmin):
         }),
         ('Score minimum v3', {
             'fields': ('min_score',),
-            'description': '0.0 = bot certain, 1.0 = humain certain. Recommandé : 0.5.',
+            'description': '0.0 = bot certain, 1.0 = humain certain. Recommandé : 0.5. Seuil global appliqué si le score par endpoint est absent.',
+        }),
+        ('Score par endpoint', {
+            'fields': (
+                'min_score_login',
+                'min_score_register',
+                'min_score_invitation',
+                'min_score_password_reset',
+            ),
+            'classes': ('collapse',),
+            'description': (
+                'Laissez vide pour utiliser le score global. '
+                'Exemple : score plus strict (0.7) sur la connexion, plus souple (0.3) sur l\'invitation.'
+            ),
         }),
         ('Endpoints protégés', {
             'fields': (

@@ -730,6 +730,8 @@ class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
             'secret_key', 'secret_key_has_value',
             'allowed_hostname',
             'min_score',
+            'min_score_login', 'min_score_register',
+            'min_score_invitation', 'min_score_password_reset',
             'apply_to_login', 'apply_to_register',
             'apply_to_invitation', 'apply_to_password_reset',
             'updated_at',
@@ -743,10 +745,27 @@ class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
         """Indique si une clé secrète est stockée en DB (sans la révéler)."""
         return bool(obj.secret_key_encrypted)
 
+    def _validate_score(self, value):
+        if value is not None and not (0.0 <= value <= 1.0):
+            raise serializers.ValidationError('Le score doit être entre 0.0 et 1.0.')
+        return value
+
     def validate_min_score(self, value):
         if not (0.0 <= value <= 1.0):
             raise serializers.ValidationError('Le score doit être entre 0.0 et 1.0.')
         return value
+
+    def validate_min_score_login(self, value):
+        return self._validate_score(value)
+
+    def validate_min_score_register(self, value):
+        return self._validate_score(value)
+
+    def validate_min_score_invitation(self, value):
+        return self._validate_score(value)
+
+    def validate_min_score_password_reset(self, value):
+        return self._validate_score(value)
 
     def to_representation(self, instance):
         """

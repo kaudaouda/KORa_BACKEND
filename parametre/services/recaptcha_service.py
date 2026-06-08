@@ -20,6 +20,14 @@ ENDPOINT_FIELD = {
     'password_reset': 'apply_to_password_reset',
 }
 
+# Mapping action reCAPTCHA → champ de score par endpoint sur RecaptchaConfig
+ACTION_MIN_SCORE_FIELD = {
+    'login': 'min_score_login',
+    'register': 'min_score_register',
+    'complete_invitation': 'min_score_invitation',
+    'password_reset_confirm': 'min_score_password_reset',
+}
+
 
 class RecaptchaValidationError(Exception):
     """Erreur de communication avec l'API Google reCAPTCHA."""
@@ -60,6 +68,18 @@ class RecaptchaService:
         if config and config.allowed_hostname:
             return config.allowed_hostname
         return getattr(django_settings, 'RECAPTCHA_ALLOWED_HOSTNAME', None)
+
+    def _effective_min_score(self, config, action: str = None) -> float:
+        """Score seuil effectif : per-endpoint si défini, sinon global."""
+        if action and config:
+            field = ACTION_MIN_SCORE_FIELD.get(action)
+            if field:
+                per_score = getattr(config, field, None)
+                if per_score is not None:
+                    return per_score
+        if config:
+            return config.min_score
+        return float(getattr(django_settings, 'RECAPTCHA_MIN_SCORE', 0.5))
 
     # ── API publique ────────────────────────────────────────────────────────
 
@@ -126,7 +146,7 @@ class RecaptchaService:
         """
         config = self._get_config()
         secret_key = self._effective_secret_key(config)
-        min_score = self.get_min_score()
+        min_score = self._effective_min_score(config, expected_action)
 
         if not secret_key:
             logger.warning("reCAPTCHA désactivé — secret_key manquante, validation ignorée.")

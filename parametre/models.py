@@ -2038,8 +2038,28 @@ class RecaptchaConfig(models.Model):
     )
     min_score = models.FloatField(
         default=0.5,
-        verbose_name='Score minimum v3',
-        help_text='Entre 0.0 (bot) et 1.0 (humain). Recommandé : 0.5.',
+        verbose_name='Score minimum v3 (global)',
+        help_text='Entre 0.0 (bot) et 1.0 (humain). Recommandé : 0.5. Utilisé quand le score par endpoint est absent.',
+    )
+    min_score_login = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name='Score min. — connexion',
+        help_text='Laissez vide pour utiliser le score global.',
+    )
+    min_score_register = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name='Score min. — inscription',
+        help_text='Laissez vide pour utiliser le score global.',
+    )
+    min_score_invitation = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name="Score min. — complétion d'invitation",
+        help_text='Laissez vide pour utiliser le score global.',
+    )
+    min_score_password_reset = models.FloatField(
+        null=True, blank=True, default=None,
+        verbose_name='Score min. — réinitialisation de mot de passe',
+        help_text='Laissez vide pour utiliser le score global.',
     )
     allowed_hostname = models.CharField(
         max_length=253, blank=True, default='',
