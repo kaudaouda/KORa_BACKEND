@@ -3,9 +3,11 @@ Service reCAPTCHA v3 — configuration pilotée depuis la base de données.
 La configuration est lue à chaque appel (pas au démarrage), ce qui permet
 d'activer/désactiver le service sans redémarrer Django.
 """
+import hashlib
 import logging
 import requests
 from django.conf import settings as django_settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +171,20 @@ class RecaptchaService:
                 'score': score,
                 'min_score': min_score,
             }
+
+        # 4 — Anti-replay : un token Google v3 est valide 120 s.
+        # On stocke son empreinte SHA-256 en cache dès qu'il est accepté.
+        # Tout token déjà vu dans cette fenêtre est rejeté.
+        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        cache_key = f'recaptcha:replay:{token_hash}'
+        if cache.get(cache_key):
+            logger.warning(
+                "reCAPTCHA replay détecté (action=%s score=%.2f) — token rejeté",
+                actual_action, score,
+            )
+            return False, {'error': 'Token reCAPTCHA déjà utilisé', 'replay': True}
+
+        cache.set(cache_key, True, timeout=120)
 
         logger.info(
             "reCAPTCHA validé: score=%.2f action=%s",
