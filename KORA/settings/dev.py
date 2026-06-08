@@ -20,9 +20,10 @@ LOGGING = {
         'console': {'class': 'logging.StreamHandler'},
     },
     'loggers': {
-        'shared.authentication': {'handlers': ['console'], 'level': _APP_LOG_LEVEL, 'propagate': True},
-        'pac.views':             {'handlers': ['console'], 'level': _APP_LOG_LEVEL, 'propagate': True},
-        'parametre.scheduler':   {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
-        'apscheduler':           {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'shared.authentication':  {'handlers': ['console'], 'level': _APP_LOG_LEVEL, 'propagate': True},
+        'pac.views':              {'handlers': ['console'], 'level': _APP_LOG_LEVEL, 'propagate': True},
+        'parametre.services':     {'handlers': ['console'], 'level': _APP_LOG_LEVEL, 'propagate': True},
+        'parametre.scheduler':    {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'apscheduler':            {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
     },
 }

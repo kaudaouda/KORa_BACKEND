@@ -78,11 +78,7 @@ from .utils import AllowAnyWithJWT, _get_next_num_amendement_for_pac
 def register(request):
     """Inscription d'un nouvel utilisateur avec validation reCAPTCHA"""
     try:
-        # Accepter les données JSON ou form-encoded
-        if request.content_type == 'application/json':
-            data = json.loads(request.body)
-        else:
-            data = request.data
+        data = request.data
         
         # Validation reCAPTCHA (si configuré)
         if recaptcha_service.is_enabled_for('register'):
@@ -200,12 +196,8 @@ def register(request):
 def login(request):
     """Connexion d'un utilisateur avec validation reCAPTCHA"""
     try:
-        # Accepter les données JSON ou form-encoded
-        if request.content_type == 'application/json':
-            data = json.loads(request.body)
-        else:
-            data = request.data
-        
+        data = request.data
+
         # Validation reCAPTCHA (si configuré)
         if recaptcha_service.is_enabled_for('login'):
             recaptcha_token = data.get('recaptcha_token')
@@ -228,6 +220,7 @@ def login(request):
                     return Response({
                         'error': 'Vérification de sécurité échouée',
                         'recaptcha_error': recaptcha_data.get('error'),
+                        'recaptcha_error_codes': recaptcha_data.get('error_codes', []),
                         'recaptcha_required': True
                     }, status=status.HTTP_400_BAD_REQUEST)
 
