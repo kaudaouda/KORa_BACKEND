@@ -72,6 +72,9 @@ logger = logging.getLogger(__name__)
 
 from .utils import AllowAnyWithJWT, _get_next_num_amendement_for_pac
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def traitement_list(request):
     """Liste des traitements"""
     try:

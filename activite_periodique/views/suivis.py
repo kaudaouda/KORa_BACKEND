@@ -51,6 +51,8 @@ logger = logging.getLogger(__name__)
 
 from .utils import _has_amendements_following, _get_next_num_amendement_for_ap
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def suivis_ap_list(request):
     """Liste tous les suivis AP de l'utilisateur connecté"""
     try:

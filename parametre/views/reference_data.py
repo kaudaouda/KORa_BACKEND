@@ -34,7 +34,7 @@ from ..models import (
     NotificationSettings, DashboardNotificationSettings, EmailSettings, DysfonctionnementRecommandation, Frequence,
     FrequenceRisque, GraviteRisque, CriticiteRisque, Risque, Mois, TypeDocument,
     Role, UserProcessus, UserProcessusRole, Notification, NotificationPolicy,
-    ReminderEmailLog, FailedLoginAttempt, LoginSecurityConfig, LoginBlock,
+    ReminderEmailLog, FailedLoginAttempt, LoginSecurityConfig, LoginBlock, Annee, Periodicite,
 )
 from ..utils.notification_policy import should_notify_pac
 from ..serializers import (
@@ -47,7 +47,7 @@ from ..serializers import (
     CriticiteRisqueSerializer, DysfonctionnementRecommandationSerializer,
     NatureSerializer, ProcessusSerializer, ServiceSerializer,
     MoisSerializer, FrequenceRisqueSerializer, GraviteRisqueSerializer,
-    TypeDocumentSerializer,
+    TypeDocumentSerializer, AnneeSerializer,
 )
 from ..utils.email_security import EmailValidator, EmailContentSanitizer, EmailRateLimiter, SecureEmailLogger
 from ..utils.email_config import load_email_settings_into_django
@@ -1143,7 +1143,6 @@ def mois_list(request):
 def periodicites_list(request):
     """Liste toutes les périodicités"""
     try:
-        from .models import Periodicite
         periodicites = Periodicite.objects.all().order_by('frequence_id', 'periode')
         
         # Créer un serializer simple pour les périodicités
@@ -1177,9 +1176,6 @@ def annees_list(request):
     Liste des années actives pour les formulaires
     """
     try:
-        from .models import Annee
-        from .serializers import AnneeSerializer
-        
         annees = Annee.objects.filter(is_active=True).order_by('-annee')
         serializer = AnneeSerializer(annees, many=True)
         
@@ -1199,9 +1195,6 @@ def annees_all_list(request):
     Liste de toutes les années (actives et inactives)
     """
     try:
-        from .models import Annee
-        from .serializers import AnneeSerializer
-        
         annees = Annee.objects.all().order_by('-annee')
         serializer = AnneeSerializer(annees, many=True)
         
@@ -1222,8 +1215,6 @@ def annee_create(request):
     if not (request.user.is_staff and request.user.is_superuser):
         return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
-        from .models import Annee
-        from .serializers import AnneeSerializer
         serializer = AnneeSerializer(data=request.data)
         if serializer.is_valid():
             annee = serializer.save()
@@ -1241,8 +1232,6 @@ def annee_update(request, uuid):
     if not (request.user.is_staff and request.user.is_superuser):
         return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
-        from .models import Annee
-        from .serializers import AnneeSerializer
         annee = Annee.objects.get(uuid=uuid)
         serializer = AnneeSerializer(annee, data=request.data, partial=True)
         if serializer.is_valid():
@@ -1263,7 +1252,6 @@ def annee_delete(request, uuid):
     if not (request.user.is_staff and request.user.is_superuser):
         return Response({'error': 'Accès non autorisé'}, status=status.HTTP_403_FORBIDDEN)
     try:
-        from .models import Annee
         annee = Annee.objects.get(uuid=uuid)
         annee.delete()
         return Response({'message': 'Année supprimée avec succès'}, status=status.HTTP_200_OK)

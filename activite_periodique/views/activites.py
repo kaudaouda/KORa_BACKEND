@@ -51,6 +51,8 @@ logger = logging.getLogger(__name__)
 
 from .utils import _has_amendements_following, _get_next_num_amendement_for_ap
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def activite_periodique_home(request):
     """Endpoint de base pour l'activité périodique"""
     try:

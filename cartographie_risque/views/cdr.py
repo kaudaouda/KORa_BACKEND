@@ -26,6 +26,9 @@ CDR_500_MESSAGE = "Une erreur interne est survenue."
 
 from .utils import check_cdr_action_or_403, _get_next_num_amendement_for_cdr
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def cartographie_risque_home(request):
     """Endpoint de base pour la cartographie de risque"""
     try:

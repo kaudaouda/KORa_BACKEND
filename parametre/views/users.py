@@ -66,6 +66,8 @@ from .utils import (
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def roles_list(request):
     """Liste des rôles actifs"""
     try:
