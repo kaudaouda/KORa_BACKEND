@@ -2095,7 +2095,14 @@ class RecaptchaConfig(models.Model):
 
     def __str__(self):
         state = 'activé' if self.is_enabled else 'désactivé'
-        return f'RecaptchaConfig ({state}, score>={self.min_score})'
+        per_endpoint = any(
+            v is not None for v in [
+                self.min_score_login, self.min_score_register,
+                self.min_score_invitation, self.min_score_password_reset,
+            ]
+        )
+        suffix = ' + scores/endpoint' if per_endpoint else ''
+        return f'RecaptchaConfig ({state}, score>={self.min_score}{suffix})'
 
     def set_secret_key(self, raw_key: str) -> None:
         """Chiffre et stocke la clé secrète. Appeler avant save()."""

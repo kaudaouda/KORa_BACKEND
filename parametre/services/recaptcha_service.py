@@ -83,23 +83,25 @@ class RecaptchaService:
 
     # ── API publique ────────────────────────────────────────────────────────
 
-    def is_enabled(self):
-        """True si le service est actif ET que les deux clés sont disponibles."""
-        config = self._get_config()
+    def _is_globally_enabled(self, config) -> bool:
+        """Vérifie l'état global avec un config déjà chargé (évite le double-read)."""
         if config and not config.is_enabled:
             return False
-        return bool(
-            self._effective_secret_key(config) and self._effective_site_key(config)
-        )
+        return bool(self._effective_secret_key(config) and self._effective_site_key(config))
+
+    def is_enabled(self):
+        """True si le service est actif ET que les deux clés sont disponibles."""
+        return self._is_globally_enabled(self._get_config())
 
     def is_enabled_for(self, endpoint: str) -> bool:
         """
         True si reCAPTCHA est actif ET activé pour l'endpoint donné.
         endpoint: 'login' | 'register' | 'invitation' | 'password_reset'
+        Une seule lecture DB (pas de double-read via is_enabled()).
         """
-        if not self.is_enabled():
-            return False
         config = self._get_config()
+        if not self._is_globally_enabled(config):
+            return False
         if config is None:
             return True
         field = ENDPOINT_FIELD.get(endpoint)
@@ -108,34 +110,46 @@ class RecaptchaService:
         return getattr(config, field, True)
 
     def get_min_score(self):
+        """Score global. Préférer _effective_min_score(config, action) quand config est déjà chargé."""
         config = self._get_config()
         if config:
             return config.min_score
         return float(getattr(django_settings, 'RECAPTCHA_MIN_SCORE', 0.5))
 
     def get_public_config(self):
-        """Retourne le dict exposé au frontend (jamais la secret_key)."""
+        """Retourne le dict exposé au frontend (jamais la secret_key). Une seule lecture DB."""
         config = self._get_config()
         return {
-            'enabled': self.is_enabled(),
+            'enabled': self._is_globally_enabled(config),
             'site_key': self._effective_site_key(config),
-            'min_score': self.get_min_score(),
+            'min_score': config.min_score if config else float(
+                getattr(django_settings, 'RECAPTCHA_MIN_SCORE', 0.5)
+            ),
             'apply_to_login': getattr(config, 'apply_to_login', True) if config else True,
             'apply_to_register': getattr(config, 'apply_to_register', True) if config else True,
             'apply_to_invitation': getattr(config, 'apply_to_invitation', True) if config else True,
             'apply_to_password_reset': getattr(config, 'apply_to_password_reset', True) if config else True,
         }
 
-    def verify_token(self, token: str, remote_ip: str = None, expected_action: str = None):
+    def verify_token(
+        self,
+        token: str,
+        remote_ip: str = None,
+        expected_action: str = None,
+        skip_replay_check: bool = False,
+    ):
         """
         Vérifie un token reCAPTCHA v3 auprès de Google.
 
         Args:
-            token:           Token généré par le frontend.
-            remote_ip:       IP du client (transmise à Google pour scoring).
-            expected_action: Nom d'action attendu (ex: 'login', 'register').
-                             Si fourni, le service rejette les tokens générés
-                             pour une autre action — empêche le replay cross-action.
+            token:             Token généré par le frontend.
+            remote_ip:         IP du client (transmise à Google pour scoring).
+            expected_action:   Nom d'action attendu (ex: 'login', 'register').
+                               Si fourni, le service rejette les tokens générés
+                               pour une autre action — empêche le replay cross-action.
+            skip_replay_check: Si True, le check anti-replay (cache SHA-256) est ignoré.
+                               Réservé aux tests admin — ne jamais utiliser sur les flux
+                               d'authentification réels.
 
         Returns:
             (True, data_dict)   si le token est valide, l'action correspond
@@ -230,16 +244,19 @@ class RecaptchaService:
         # 5 — Anti-replay : un token Google v3 est valide 120 s.
         # On stocke son empreinte SHA-256 en cache dès qu'il est accepté.
         # Tout token déjà vu dans cette fenêtre est rejeté.
-        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
-        cache_key = f'recaptcha:replay:{token_hash}'
-        if cache.get(cache_key):
-            logger.warning(
-                "reCAPTCHA replay détecté (action=%s score=%.2f) — token rejeté",
-                actual_action, score,
-            )
-            return False, {'error': 'Token reCAPTCHA déjà utilisé', 'replay': True}
-
-        cache.set(cache_key, True, timeout=120)
+        # skip_replay_check=True est réservé aux tests admin (jamais aux flux réels).
+        if skip_replay_check:
+            logger.info("reCAPTCHA anti-replay ignoré (skip_replay_check=True, usage admin)")
+        else:
+            token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+            cache_key = f'recaptcha:replay:{token_hash}'
+            if cache.get(cache_key):
+                logger.warning(
+                    "reCAPTCHA replay détecté (action=%s score=%.2f) — token rejeté",
+                    actual_action, score,
+                )
+                return False, {'error': 'Token reCAPTCHA déjà utilisé', 'replay': True}
+            cache.set(cache_key, True, timeout=120)
 
         logger.info(
             "reCAPTCHA validé: score=%.2f action=%s",

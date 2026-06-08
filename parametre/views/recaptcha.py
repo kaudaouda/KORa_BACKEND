@@ -105,7 +105,11 @@ def recaptcha_admin_test(request):
 
     try:
         remote_ip = request.META.get('REMOTE_ADDR')
-        is_valid, data = recaptcha_service.verify_token(token, remote_ip, expected_action=expected_action)
+        is_valid, data = recaptcha_service.verify_token(
+            token, remote_ip,
+            expected_action=expected_action,
+            skip_replay_check=True,  # Test admin : le même token peut être soumis plusieurs fois
+        )
         return Response({
             'success': is_valid,
             'details': data,
