@@ -50,13 +50,20 @@ def recaptcha_admin_config(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     serializer.save()
+
+    # Re-lire depuis la DB et sérialiser fresh — garantit qu'aucune donnée
+    # du payload d'entrée ne transite directement vers la réponse.
+    config.refresh_from_db()
     logger.info(
         "RecaptchaConfig mis à jour par %s: is_enabled=%s min_score=%s",
         request.user.username,
         config.is_enabled,
         config.min_score,
     )
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(
+        RecaptchaConfigAdminSerializer(config).data,
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(['POST'])

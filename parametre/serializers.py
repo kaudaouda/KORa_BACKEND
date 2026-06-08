@@ -698,6 +698,13 @@ class RecaptchaConfigPublicSerializer(serializers.ModelSerializer):
     def get_site_key(self, obj):
         return obj.get_effective_site_key()
 
+    def to_representation(self, instance):
+        """Garde-fou : retire toute trace de clé secrète de la sortie."""
+        data = super().to_representation(instance)
+        data.pop('secret_key', None)
+        data.pop('secret_key_encrypted', None)
+        return data
+
 
 class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
     """
@@ -739,6 +746,16 @@ class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
         if not (0.0 <= value <= 1.0):
             raise serializers.ValidationError('Le score doit être entre 0.0 et 1.0.')
         return value
+
+    def to_representation(self, instance):
+        """
+        Garde-fou final : retire toute trace de clé secrète de la sortie,
+        quelle que soit la configuration des champs (defense in depth).
+        """
+        data = super().to_representation(instance)
+        data.pop('secret_key', None)
+        data.pop('secret_key_encrypted', None)
+        return data
 
     def update(self, instance, validated_data):
         raw_key = validated_data.pop('secret_key', None)
