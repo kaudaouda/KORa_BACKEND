@@ -700,32 +700,59 @@ class RecaptchaConfigPublicSerializer(serializers.ModelSerializer):
 
 
 class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
-    """Sérialiseur admin : lecture et mise à jour complète, secret_key en write-only."""
+    """
+    Sérialiseur admin : lecture et mise à jour complète.
+    La secret_key est write-only — elle n'est JAMAIS retournée dans une réponse.
+    Le champ secret_key_has_value indique si une clé est stockée en DB.
+    """
     site_key_effective = serializers.SerializerMethodField(read_only=True)
+    secret_key_has_value = serializers.SerializerMethodField(read_only=True)
+    # Champ virtuel write-only : saisi par l'admin, chiffré côté serveur, jamais relu
     secret_key = serializers.CharField(
         max_length=255, required=False, allow_blank=True,
-        write_only=False,
+        write_only=True,
         style={'input_type': 'password'},
-        help_text='Laissez vide pour utiliser la valeur du fichier .env.',
+        help_text='Laissez vide pour conserver la clé actuelle. Sera chiffrée automatiquement.',
     )
 
     class Meta:
         model = RecaptchaConfig
         fields = [
             'id', 'is_enabled',
-            'site_key', 'site_key_effective', 'secret_key',
+            'site_key', 'site_key_effective',
+            'secret_key', 'secret_key_has_value',
             'min_score',
             'apply_to_login', 'apply_to_register',
             'apply_to_invitation', 'apply_to_password_reset',
             'updated_at',
         ]
-        read_only_fields = ['id', 'site_key_effective', 'updated_at']
+        read_only_fields = ['id', 'site_key_effective', 'secret_key_has_value', 'updated_at']
 
     def get_site_key_effective(self, obj):
         return obj.get_effective_site_key()
+
+    def get_secret_key_has_value(self, obj):
+        """Indique si une clé secrète est stockée en DB (sans la révéler)."""
+        return bool(obj.secret_key_encrypted)
 
     def validate_min_score(self, value):
         if not (0.0 <= value <= 1.0):
             raise serializers.ValidationError('Le score doit être entre 0.0 et 1.0.')
         return value
+
+    def update(self, instance, validated_data):
+        raw_key = validated_data.pop('secret_key', None)
+        instance = super().update(instance, validated_data)
+        if raw_key:
+            instance.set_secret_key(raw_key)
+            instance.save(update_fields=['secret_key_encrypted'])
+        return instance
+
+    def create(self, validated_data):
+        raw_key = validated_data.pop('secret_key', None)
+        instance = super().create(validated_data)
+        if raw_key:
+            instance.set_secret_key(raw_key)
+            instance.save(update_fields=['secret_key_encrypted'])
+        return instance
 

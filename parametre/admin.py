@@ -1640,14 +1640,19 @@ class LoginBlockAdmin(admin.ModelAdmin):
 class RecaptchaConfigAdminForm(forms.ModelForm):
     secret_key = forms.CharField(
         label='Clé secrète (secret key)',
-        widget=forms.PasswordInput(render_value=True),
+        widget=forms.PasswordInput(render_value=False),
         required=False,
-        help_text='Laissez vide pour utiliser RECAPTCHA_SECRET_KEY du fichier .env.',
+        help_text=(
+            'Laissez vide pour conserver la clé actuelle ou utiliser '
+            'RECAPTCHA_SECRET_KEY du fichier .env. '
+            'Sera chiffrée automatiquement à la sauvegarde.'
+        ),
     )
 
     class Meta:
         model = RecaptchaConfig
-        fields = '__all__'
+        # On exclut le champ brut chiffré — géré via set_secret_key()
+        exclude = ('secret_key_encrypted',)
 
 
 @admin.register(RecaptchaConfig)
@@ -1714,6 +1719,9 @@ class RecaptchaConfigAdmin(admin.ModelAdmin):
         return redirect(reverse('admin:parametre_recaptchaconfig_change', args=[obj.pk]))
 
     def save_model(self, request, obj, form, change):
+        raw_key = form.cleaned_data.get('secret_key')
+        if raw_key:
+            obj.set_secret_key(raw_key)
         super().save_model(request, obj, form, change)
         state = 'activé' if obj.is_enabled else 'désactivé'
         self.message_user(

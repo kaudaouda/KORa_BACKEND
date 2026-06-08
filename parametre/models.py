@@ -2019,10 +2019,13 @@ class RecaptchaConfig(models.Model):
         verbose_name='Clé publique (site key)',
         help_text='Laissez vide pour utiliser RECAPTCHA_SITE_KEY du fichier .env.',
     )
-    secret_key = models.CharField(
-        max_length=255, blank=True, default='',
-        verbose_name='Clé secrète (secret key)',
-        help_text='Laissez vide pour utiliser RECAPTCHA_SECRET_KEY du fichier .env.',
+    # La clé secrète est stockée chiffrée — jamais en clair en DB.
+    # Utiliser set_secret_key() / get_secret_key() pour y accéder.
+    secret_key_encrypted = models.TextField(
+        blank=True, default='',
+        verbose_name='Clé secrète chiffrée',
+        editable=False,
+        help_text='Chiffré automatiquement. Ne pas modifier directement.',
     )
     min_score = models.FloatField(
         default=0.5,
@@ -2056,17 +2059,43 @@ class RecaptchaConfig(models.Model):
         state = 'activé' if self.is_enabled else 'désactivé'
         return f'RecaptchaConfig ({state}, score>={self.min_score})'
 
-    def get_effective_site_key(self):
+    def set_secret_key(self, raw_key: str) -> None:
+        """Chiffre et stocke la clé secrète. Appeler avant save()."""
+        if not raw_key:
+            self.secret_key_encrypted = ''
+            return
+        try:
+            from .utils.email_security import EmailPasswordEncryption
+            self.secret_key_encrypted = EmailPasswordEncryption.encrypt_password(raw_key)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Erreur chiffrement secret_key reCAPTCHA : %s", exc)
+            raise
+
+    def get_secret_key(self) -> str | None:
+        """Déchiffre et retourne la clé secrète stockée, ou None si absente."""
+        if not self.secret_key_encrypted:
+            return None
+        try:
+            from .utils.email_security import EmailPasswordEncryption
+            return EmailPasswordEncryption.decrypt_password(self.secret_key_encrypted)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Erreur déchiffrement secret_key reCAPTCHA : %s", exc)
+            return None
+
+    def get_effective_site_key(self) -> str | None:
         """Retourne la clé publique DB ou fallback settings."""
         if self.site_key:
             return self.site_key
         from django.conf import settings as django_settings
         return getattr(django_settings, 'RECAPTCHA_SITE_KEY', None)
 
-    def get_effective_secret_key(self):
-        """Retourne la clé secrète DB ou fallback settings."""
-        if self.secret_key:
-            return self.secret_key
+    def get_effective_secret_key(self) -> str | None:
+        """Retourne la clé secrète déchiffrée (DB) ou fallback settings."""
+        decrypted = self.get_secret_key()
+        if decrypted:
+            return decrypted
         from django.conf import settings as django_settings
         return getattr(django_settings, 'RECAPTCHA_SECRET_KEY', None)
 
