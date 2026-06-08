@@ -14,6 +14,7 @@ from .models import (
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
     Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy,
     FailedLoginAttempt, LoginSecurityConfig, LoginBlock, ThrottleConfig,
+    RecaptchaConfig,
 )
 
 
@@ -1634,6 +1635,92 @@ class LoginBlockAdmin(admin.ModelAdmin):
         count = queryset.count()
         queryset.delete()
         self.message_user(request, f'{count} blocage(s) supprimé(s).', level='SUCCESS')
+
+
+class RecaptchaConfigAdminForm(forms.ModelForm):
+    secret_key = forms.CharField(
+        label='Clé secrète (secret key)',
+        widget=forms.PasswordInput(render_value=True),
+        required=False,
+        help_text='Laissez vide pour utiliser RECAPTCHA_SECRET_KEY du fichier .env.',
+    )
+
+    class Meta:
+        model = RecaptchaConfig
+        fields = '__all__'
+
+
+@admin.register(RecaptchaConfig)
+class RecaptchaConfigAdmin(admin.ModelAdmin):
+    form = RecaptchaConfigAdminForm
+
+    fieldsets = (
+        ('État', {
+            'fields': ('is_enabled', 'status_display'),
+            'description': 'Désactiver ignore complètement la vérification reCAPTCHA sur tous les endpoints.',
+        }),
+        ('Clés API Google reCAPTCHA v3', {
+            'fields': ('site_key', 'secret_key'),
+            'description': (
+                'Laissez les champs vides pour utiliser les valeurs du fichier <code>.env</code> '
+                '(<code>RECAPTCHA_SITE_KEY</code> / <code>RECAPTCHA_SECRET_KEY</code>). '
+                'Les valeurs saisies ici prennent priorité sur le <code>.env</code>.'
+            ),
+        }),
+        ('Score minimum v3', {
+            'fields': ('min_score',),
+            'description': '0.0 = bot certain, 1.0 = humain certain. Recommandé : 0.5.',
+        }),
+        ('Endpoints protégés', {
+            'fields': (
+                'apply_to_login',
+                'apply_to_register',
+                'apply_to_invitation',
+                'apply_to_password_reset',
+            ),
+            'description': 'Décochez pour désactiver la vérification sur un endpoint spécifique sans désactiver le service entier.',
+        }),
+        ('Métadonnées', {
+            'fields': ('updated_at',),
+            'classes': ('collapse',),
+        }),
+    )
+
+    readonly_fields = ('updated_at', 'status_display')
+
+    @admin.display(description='Statut actuel')
+    def status_display(self, obj):
+        from parametre.services.recaptcha_service import recaptcha_service
+        enabled = recaptcha_service.is_enabled()
+        if enabled:
+            return format_html(
+                '<span style="background:#10b981;color:#fff;padding:3px 12px;border-radius:4px;font-weight:bold;">✅ Actif</span>'
+            )
+        return format_html(
+            '<span style="background:#ef4444;color:#fff;padding:3px 12px;border-radius:4px;font-weight:bold;">⛔ Inactif</span>'
+            ' <small style="color:#6b7280">(vérifiez les clés et le toggle)</small>'
+        )
+
+    def has_add_permission(self, request):
+        return not RecaptchaConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        from django.urls import reverse
+        from django.shortcuts import redirect
+        obj, _ = RecaptchaConfig.objects.get_or_create(id=1)
+        return redirect(reverse('admin:parametre_recaptchaconfig_change', args=[obj.pk]))
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        state = 'activé' if obj.is_enabled else 'désactivé'
+        self.message_user(
+            request,
+            f"reCAPTCHA {state} — score minimum : {obj.min_score}.",
+            level='SUCCESS' if obj.is_enabled else 'WARNING',
+        )
 
 
 @admin.register(ThrottleConfig)
