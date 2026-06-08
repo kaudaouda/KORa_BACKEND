@@ -56,6 +56,11 @@ class RecaptchaService:
                 return key
         return getattr(django_settings, 'RECAPTCHA_SITE_KEY', None)
 
+    def _effective_allowed_hostname(self, config):
+        if config and config.allowed_hostname:
+            return config.allowed_hostname
+        return getattr(django_settings, 'RECAPTCHA_ALLOWED_HOSTNAME', None)
+
     # ── API publique ────────────────────────────────────────────────────────
 
     def is_enabled(self):
@@ -145,7 +150,24 @@ class RecaptchaService:
             logger.warning("reCAPTCHA échoué: %s", codes)
             return False, {'error': 'Validation reCAPTCHA échouée', 'error_codes': codes}
 
-        # 2 — Vérification de l'action (Security by Design)
+        # 2 — Vérification du hostname
+        # Un token généré sur un domaine différent (ex: attaquant copiant la site_key)
+        # est rejeté si allowed_hostname est configuré.
+        allowed_hostname = self._effective_allowed_hostname(config)
+        if allowed_hostname:
+            actual_hostname = result.get('hostname', '')
+            if actual_hostname != allowed_hostname:
+                logger.warning(
+                    "reCAPTCHA hostname mismatch: expected=%r actual=%r — token rejeté",
+                    allowed_hostname, actual_hostname,
+                )
+                return False, {
+                    'error': 'Hostname reCAPTCHA invalide',
+                    'expected_hostname': allowed_hostname,
+                    'actual_hostname': actual_hostname,
+                }
+
+        # 3 — Vérification de l'action (Security by Design)
         # Un token généré pour 'register' ne peut pas être utilisé sur 'login'.
         actual_action = result.get('action', '')
         if expected_action and actual_action != expected_action:
@@ -159,7 +181,7 @@ class RecaptchaService:
                 'actual_action': actual_action,
             }
 
-        # 3 — Vérification du score
+        # 4 — Vérification du score
         score = result.get('score', 0.0)
         if score < min_score:
             logger.warning(
@@ -172,7 +194,7 @@ class RecaptchaService:
                 'min_score': min_score,
             }
 
-        # 4 — Anti-replay : un token Google v3 est valide 120 s.
+        # 5 — Anti-replay : un token Google v3 est valide 120 s.
         # On stocke son empreinte SHA-256 en cache dès qu'il est accepté.
         # Tout token déjà vu dans cette fenêtre est rejeté.
         token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()

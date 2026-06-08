@@ -728,6 +728,7 @@ class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
             'id', 'is_enabled',
             'site_key', 'site_key_effective',
             'secret_key', 'secret_key_has_value',
+            'allowed_hostname',
             'min_score',
             'apply_to_login', 'apply_to_register',
             'apply_to_invitation', 'apply_to_password_reset',

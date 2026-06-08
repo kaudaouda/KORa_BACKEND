@@ -2032,6 +2032,15 @@ class RecaptchaConfig(models.Model):
         verbose_name='Score minimum v3',
         help_text='Entre 0.0 (bot) et 1.0 (humain). Recommandé : 0.5.',
     )
+    allowed_hostname = models.CharField(
+        max_length=253, blank=True, default='',
+        verbose_name='Hostname autorisé',
+        help_text=(
+            'Domaine retourné par Google dans la réponse reCAPTCHA '
+            '(ex : app.example.com). '
+            'Laissez vide pour ne pas vérifier le hostname.'
+        ),
+    )
     apply_to_login = models.BooleanField(
         default=True,
         verbose_name='Actif sur la connexion',

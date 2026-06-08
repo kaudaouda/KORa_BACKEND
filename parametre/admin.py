@@ -1665,10 +1665,11 @@ class RecaptchaConfigAdmin(admin.ModelAdmin):
             'description': 'Désactiver ignore complètement la vérification reCAPTCHA sur tous les endpoints.',
         }),
         ('Clés API Google reCAPTCHA v3', {
-            'fields': ('site_key', 'secret_key'),
+            'fields': ('site_key', 'secret_key', 'allowed_hostname'),
             'description': (
                 'Laissez les champs vides pour utiliser les valeurs du fichier <code>.env</code> '
-                '(<code>RECAPTCHA_SITE_KEY</code> / <code>RECAPTCHA_SECRET_KEY</code>). '
+                '(<code>RECAPTCHA_SITE_KEY</code> / <code>RECAPTCHA_SECRET_KEY</code> / '
+                '<code>RECAPTCHA_ALLOWED_HOSTNAME</code>). '
                 'Les valeurs saisies ici prennent priorité sur le <code>.env</code>.'
             ),
         }),
