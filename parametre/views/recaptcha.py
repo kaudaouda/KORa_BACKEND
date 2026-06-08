@@ -1,9 +1,10 @@
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 import logging
 
+from shared.throttles import KoraAnonThrottle, KoraSensitiveThrottle
 from ..models import RecaptchaConfig
 from ..serializers import RecaptchaConfigPublicSerializer, RecaptchaConfigAdminSerializer
 from parametre.services.recaptcha_service import recaptcha_service
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([KoraAnonThrottle])
 def recaptcha_config_public(request):
     """
     Retourne la configuration reCAPTCHA destinée au frontend.
@@ -86,6 +88,7 @@ def recaptcha_admin_config(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([KoraSensitiveThrottle])
 def recaptcha_admin_test(request):
     """
     Teste un token reCAPTCHA depuis l'interface admin.
