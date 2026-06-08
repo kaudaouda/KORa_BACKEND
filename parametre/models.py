@@ -2001,3 +2001,76 @@ class ThrottleConfig(models.Model):
     def get_config(cls):
         obj, _ = cls.objects.get_or_create(id=1)
         return obj
+
+
+class RecaptchaConfig(models.Model):
+    """
+    Singleton : configuration du service reCAPTCHA v3.
+    Activable/désactivable à chaud depuis l'interface admin.
+    Les clés sont lues depuis la DB ; si vides, fallback sur les settings Django.
+    """
+    is_enabled = models.BooleanField(
+        default=True,
+        verbose_name='reCAPTCHA activé',
+        help_text='Désactiver ignore complètement la vérification reCAPTCHA.',
+    )
+    site_key = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Clé publique (site key)',
+        help_text='Laissez vide pour utiliser RECAPTCHA_SITE_KEY du fichier .env.',
+    )
+    secret_key = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Clé secrète (secret key)',
+        help_text='Laissez vide pour utiliser RECAPTCHA_SECRET_KEY du fichier .env.',
+    )
+    min_score = models.FloatField(
+        default=0.5,
+        verbose_name='Score minimum v3',
+        help_text='Entre 0.0 (bot) et 1.0 (humain). Recommandé : 0.5.',
+    )
+    apply_to_login = models.BooleanField(
+        default=True,
+        verbose_name='Actif sur la connexion',
+    )
+    apply_to_register = models.BooleanField(
+        default=True,
+        verbose_name="Actif sur l'inscription",
+    )
+    apply_to_invitation = models.BooleanField(
+        default=True,
+        verbose_name="Actif sur la complétion d'invitation",
+    )
+    apply_to_password_reset = models.BooleanField(
+        default=True,
+        verbose_name='Actif sur la réinitialisation de mot de passe',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'recaptcha_config'
+        verbose_name = 'Configuration reCAPTCHA'
+        verbose_name_plural = 'Configuration reCAPTCHA'
+
+    def __str__(self):
+        state = 'activé' if self.is_enabled else 'désactivé'
+        return f'RecaptchaConfig ({state}, score>={self.min_score})'
+
+    def get_effective_site_key(self):
+        """Retourne la clé publique DB ou fallback settings."""
+        if self.site_key:
+            return self.site_key
+        from django.conf import settings as django_settings
+        return getattr(django_settings, 'RECAPTCHA_SITE_KEY', None)
+
+    def get_effective_secret_key(self):
+        """Retourne la clé secrète DB ou fallback settings."""
+        if self.secret_key:
+            return self.secret_key
+        from django.conf import settings as django_settings
+        return getattr(django_settings, 'RECAPTCHA_SECRET_KEY', None)
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj

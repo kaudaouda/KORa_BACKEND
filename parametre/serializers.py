@@ -7,7 +7,7 @@ from .models import (
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus,
     Service, EtatMiseEnOeuvre, Frequence, Annee, Risque, StatutActionCDR,
     Role, UserProcessus, UserProcessusRole, CriticiteRisque, DysfonctionnementRecommandation,
-    Mois, FrequenceRisque, GraviteRisque, TypeDocument,
+    Mois, FrequenceRisque, GraviteRisque, TypeDocument, RecaptchaConfig,
 )
 
 
@@ -682,4 +682,50 @@ class UserProcessusRoleSerializer(serializers.ModelSerializer):
 
         return data
 
+
+class RecaptchaConfigPublicSerializer(serializers.ModelSerializer):
+    """Sérialiseur public : site_key uniquement, jamais la secret_key."""
+    site_key = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecaptchaConfig
+        fields = [
+            'is_enabled', 'site_key', 'min_score',
+            'apply_to_login', 'apply_to_register',
+            'apply_to_invitation', 'apply_to_password_reset',
+        ]
+
+    def get_site_key(self, obj):
+        return obj.get_effective_site_key()
+
+
+class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
+    """Sérialiseur admin : lecture et mise à jour complète, secret_key en write-only."""
+    site_key_effective = serializers.SerializerMethodField(read_only=True)
+    secret_key = serializers.CharField(
+        max_length=255, required=False, allow_blank=True,
+        write_only=False,
+        style={'input_type': 'password'},
+        help_text='Laissez vide pour utiliser la valeur du fichier .env.',
+    )
+
+    class Meta:
+        model = RecaptchaConfig
+        fields = [
+            'id', 'is_enabled',
+            'site_key', 'site_key_effective', 'secret_key',
+            'min_score',
+            'apply_to_login', 'apply_to_register',
+            'apply_to_invitation', 'apply_to_password_reset',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'site_key_effective', 'updated_at']
+
+    def get_site_key_effective(self, obj):
+        return obj.get_effective_site_key()
+
+    def validate_min_score(self, value):
+        if not (0.0 <= value <= 1.0):
+            raise serializers.ValidationError('Le score doit être entre 0.0 et 1.0.')
+        return value
 

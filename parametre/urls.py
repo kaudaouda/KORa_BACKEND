@@ -202,6 +202,11 @@ urlpatterns = [
     path('users/create/', views.users_create, name='users_create'),
     path('users/invite/', views.users_invite, name='users_invite'),
 
+    # ==================== RECAPTCHA ====================
+    path('recaptcha/config/', views.recaptcha_config_public, name='recaptcha_config_public'),
+    path('admin/recaptcha/config/', views.recaptcha_admin_config, name='recaptcha_admin_config'),
+    path('admin/recaptcha/test/', views.recaptcha_admin_test, name='recaptcha_admin_test'),
+
     # ==================== APPLICATION CONFIG ====================
     path('application-configs/', views.application_config_list, name='application_config_list'),
     path('application-configs/<str:app_name>/toggle/', views.application_config_toggle, name='application_config_toggle'),
