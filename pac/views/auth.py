@@ -410,9 +410,33 @@ def verify_otp(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        ip = get_client_ip(request)
+        ua = request.META.get('HTTP_USER_AGENT', '')
         success, error_msg, user = TwoFactorService.verify_otp(session_key, code)
 
         if not success:
+            # Log de l'échec dans FailedLoginAttempt pour la protection IP globale
+            from parametre.views import _parse_user_agent
+            device_type, browser, os_name = _parse_user_agent(ua)
+            FailedLoginAttempt.objects.create(
+                email_attempted='',
+                ip_address=ip,
+                user_agent=ua,
+                device_type=device_type,
+                browser=browser,
+                os_name=os_name,
+                reason='otp_failed',
+            )
+            log_activity(
+                user=None,
+                action='view',
+                entity_type='auth',
+                entity_id=session_key[:8],
+                entity_name='verify_otp',
+                description=f'Échec vérification OTP 2FA : {error_msg}',
+                ip_address=ip,
+                user_agent=ua,
+            )
             return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
 
         # OTP valide → on génère les tokens et on connecte l'utilisateur
@@ -420,8 +444,18 @@ def verify_otp(request):
 
         log_user_login(
             user=user,
-            ip_address=get_client_ip(request),
-            user_agent=request.META.get('HTTP_USER_AGENT'),
+            ip_address=ip,
+            user_agent=ua,
+        )
+        log_activity(
+            user=user,
+            action='view',
+            entity_type='auth',
+            entity_id=str(user.id),
+            entity_name=user.username,
+            description='Vérification OTP 2FA réussie — connexion accordée.',
+            ip_address=ip,
+            user_agent=ua,
         )
 
         response = Response({
@@ -703,7 +737,10 @@ def change_password(request):
         # Changer le mot de passe
         user.set_password(new_password)
         user.save()
-        
+
+        # Security by Design : changement de mot de passe = révoquer la session 2FA
+        TwoFactorService.invalidate_session(user)
+
         return Response({
             'message': 'Mot de passe changé avec succès'
         }, status=status.HTTP_200_OK)
@@ -1507,6 +1544,9 @@ def password_reset_confirm(request):
         user.set_password(password)
         user.save()
         logger.info("Mot de passe réinitialisé pour %s", user.username)
+
+        # Security by Design : réinitialisation = révoquer la session 2FA
+        TwoFactorService.invalidate_session(user)
         
         # Générer les tokens JWT et connecter automatiquement l'utilisateur
         logger.info("Génération des tokens JWT...")

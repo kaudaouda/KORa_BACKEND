@@ -14,7 +14,7 @@ from .models import (
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
     Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy,
     FailedLoginAttempt, LoginSecurityConfig, LoginBlock, ThrottleConfig,
-    RecaptchaConfig, TwoFactorConfig, EmailOTP,
+    RecaptchaConfig, TwoFactorConfig, EmailOTP, TwoFactorUserSession,
 )
 
 
@@ -1841,6 +1841,37 @@ class EmailOTPAdmin(admin.ModelAdmin):
     search_fields = ('user__email', 'ip_address')
     readonly_fields = ('session_key', 'user', 'code_hash', 'created_at', 'expires_at', 'attempts', 'is_used', 'ip_address')
     ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(TwoFactorUserSession)
+class TwoFactorUserSessionAdmin(admin.ModelAdmin):
+    """
+    Permet aux admins de visualiser et révoquer les sessions 2FA des utilisateurs.
+    Utile en cas d'incident de sécurité (supprimer la ligne = obliger l'utilisateur à repasser le 2FA).
+    """
+    list_display   = ('user', 'verified_at', 'session_restante')
+    search_fields  = ('user__email', 'user__username')
+    readonly_fields = ('user', 'verified_at')
+    ordering = ('-verified_at',)
+
+    def session_restante(self, obj):
+        from django.utils import timezone
+        from datetime import timedelta
+        config = TwoFactorConfig.get_config()
+        expires_at = obj.verified_at + timedelta(seconds=config.otp_lifetime_seconds)
+        delta = expires_at - timezone.now()
+        if delta.total_seconds() <= 0:
+            return 'Expirée'
+        h = int(delta.total_seconds() // 3600)
+        m = int((delta.total_seconds() % 3600) // 60)
+        return f'{h}h {m}min'
+    session_restante.short_description = 'Durée restante'
 
     def has_add_permission(self, request):
         return False

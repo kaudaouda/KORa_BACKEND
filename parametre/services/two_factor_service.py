@@ -43,6 +43,15 @@ class TwoFactorService:
         return TwoFactorUserSession.has_valid_session(user, config)
 
     @staticmethod
+    def invalidate_session(user) -> None:
+        """
+        Révoque la session 2FA d'un utilisateur.
+        Doit être appelé lors de tout changement de mot de passe ou de réinitialisation.
+        """
+        TwoFactorUserSession.objects.filter(user=user).delete()
+        logger.info("Session 2FA révoquée pour %s", user.email)
+
+    @staticmethod
     def send_otp(user, ip_address: str) -> EmailOTP:
         """
         Génère un code OTP pour l'utilisateur, l'envoie par email,
