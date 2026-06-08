@@ -1730,6 +1730,24 @@ class RecaptchaConfigAdmin(admin.ModelAdmin):
             f"reCAPTCHA {state} — score minimum : {obj.min_score}.",
             level='SUCCESS' if obj.is_enabled else 'WARNING',
         )
+        try:
+            from parametre.views.utils import log_activity
+            log_activity(
+                user=request.user,
+                action='update',
+                entity_type='recaptcha_config',
+                entity_id=str(obj.pk),
+                entity_name='RecaptchaConfig',
+                description=(
+                    f"{request.user.username} a modifié la configuration reCAPTCHA "
+                    f"via l'admin Django (is_enabled={obj.is_enabled}, min_score={obj.min_score})"
+                ),
+                ip_address=request.META.get('REMOTE_ADDR'),
+                user_agent=request.META.get('HTTP_USER_AGENT'),
+            )
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger(__name__).error("log_activity RecaptchaConfigAdmin.save_model: %s", exc)
 
 
 @admin.register(ThrottleConfig)

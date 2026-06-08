@@ -7,6 +7,7 @@ import logging
 from ..models import RecaptchaConfig
 from ..serializers import RecaptchaConfigPublicSerializer, RecaptchaConfigAdminSerializer
 from parametre.services.recaptcha_service import recaptcha_service
+from .utils import log_activity, get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,23 @@ def recaptcha_admin_config(request):
         config.is_enabled,
         config.min_score,
     )
+    try:
+        log_activity(
+            user=request.user,
+            action='update',
+            entity_type='recaptcha_config',
+            entity_id=str(config.pk),
+            entity_name='RecaptchaConfig',
+            description=(
+                f"{request.user.username} a modifié la configuration reCAPTCHA "
+                f"(is_enabled={config.is_enabled}, min_score={config.min_score})"
+            ),
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT'),
+        )
+    except Exception as exc:
+        logger.error("log_activity recaptcha_admin_config: %s", exc)
+
     return Response(
         RecaptchaConfigAdminSerializer(config).data,
         status=status.HTTP_200_OK,
