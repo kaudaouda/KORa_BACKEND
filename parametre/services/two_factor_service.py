@@ -7,7 +7,7 @@ from django.template.loader import render_to_string
 from django.core.mail import send_mail
 from django.conf import settings
 
-from parametre.models import TwoFactorConfig, EmailOTP
+from parametre.models import TwoFactorConfig, EmailOTP, TwoFactorUserSession
 from parametre.utils.email_config import load_email_settings_into_django
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,15 @@ class TwoFactorService:
     @staticmethod
     def is_enabled() -> bool:
         return TwoFactorConfig.get_config().is_enabled
+
+    @staticmethod
+    def has_valid_session(user) -> bool:
+        """
+        Retourne True si l'utilisateur a passé le 2FA dans le délai configuré.
+        Dans ce cas, le 2FA ne doit pas être redemandé à la connexion.
+        """
+        config = TwoFactorConfig.get_config()
+        return TwoFactorUserSession.has_valid_session(user, config)
 
     @staticmethod
     def send_otp(user, ip_address: str) -> EmailOTP:
@@ -89,9 +98,10 @@ class TwoFactorService:
             remaining = config.max_attempts - otp.attempts
             return False, f'Code incorrect. {remaining} tentative{"s" if remaining > 1 else ""} restante{"s" if remaining > 1 else ""}.', None
 
-        # Code correct → invalider l'OTP
+        # Code correct → invalider l'OTP et enregistrer la session de confiance
         otp.is_used = True
         otp.save(update_fields=['is_used'])
+        TwoFactorUserSession.record(otp.user)
 
         logger.info("OTP vérifié avec succès pour %s (session=%s)", otp.user.email, session_key)
         return True, '', otp.user
@@ -101,7 +111,7 @@ class TwoFactorService:
         """Envoie l'email contenant le code OTP."""
         load_email_settings_into_django()
 
-        lifetime_display = _lifetime_display(config.otp_lifetime_seconds)
+        lifetime_display = _lifetime_display(300)  # Le code email expire après 5 minutes (fixe)
         timestamp = timezone.localtime(timezone.now()).strftime('%d/%m/%Y à %H:%M')
 
         context = {

@@ -2158,14 +2158,14 @@ class TwoFactorConfig(models.Model):
     is_enabled = models.BooleanField(
         default=False,
         verbose_name='2FA activé',
-        help_text='Si activé, un code par email est requis après chaque connexion.',
+        help_text='Si activé, un code par email est requis à la connexion si la session 2FA est expirée.',
     )
     otp_lifetime_seconds = models.PositiveIntegerField(
-        default=300,
-        verbose_name='Durée de validité du code (secondes)',
+        default=86400,
+        verbose_name='Durée de la session 2FA (secondes)',
         help_text=(
-            'Exemples : 60 = 1 min, 300 = 5 min, 3600 = 1h, '
-            '86400 = 1 jour, 31536000 = 1 an.'
+            'Durée pendant laquelle l\'utilisateur n\'est pas redemandé après une vérification réussie. '
+            'Exemples : 3600 = 1h, 86400 = 1 jour, 604800 = 7 jours, 2592000 = 30 jours.'
         ),
     )
     max_attempts = models.PositiveIntegerField(
@@ -2277,10 +2277,52 @@ class EmailOTP(models.Model):
         # Générer le code en clair
         raw_code = str(secrets.randbelow(10 ** config.code_length)).zfill(config.code_length)
 
+        # Le code email est toujours valide 5 minutes (indépendant de la durée de session)
+        # Le code email est toujours valide 5 minutes (indépendant de la durée de session)
         otp = cls.objects.create(
             user=user,
             code_hash=make_password(raw_code),
-            expires_at=timezone.now() + timedelta(seconds=config.otp_lifetime_seconds),
+            expires_at=timezone.now() + timedelta(minutes=5),
             ip_address=ip_address,
         )
         return otp, raw_code
+
+
+class TwoFactorUserSession(models.Model):
+    """
+    Enregistre la dernière vérification 2FA réussie d'un utilisateur.
+    Tant que la session est dans le délai configuré (otp_lifetime_seconds),
+    le 2FA n'est pas redemandé à la connexion.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='two_factor_session',
+        verbose_name='Utilisateur',
+    )
+    verified_at = models.DateTimeField(verbose_name='Dernière vérification 2FA réussie')
+
+    class Meta:
+        db_table = 'two_factor_user_session'
+        verbose_name = 'Session 2FA utilisateur'
+        verbose_name_plural = 'Sessions 2FA utilisateurs'
+
+    def __str__(self):
+        return f'Session 2FA {self.user.email} — {self.verified_at:%Y-%m-%d %H:%M}'
+
+    @classmethod
+    def has_valid_session(cls, user, config) -> bool:
+        """Retourne True si l'utilisateur a passé le 2FA dans le délai configuré."""
+        from django.utils import timezone
+        from datetime import timedelta
+        try:
+            session = cls.objects.get(user=user)
+            return (timezone.now() - session.verified_at) < timedelta(seconds=config.otp_lifetime_seconds)
+        except cls.DoesNotExist:
+            return False
+
+    @classmethod
+    def record(cls, user):
+        """Enregistre ou met à jour la dernière vérification 2FA réussie."""
+        from django.utils import timezone
+        cls.objects.update_or_create(user=user, defaults={'verified_at': timezone.now()})

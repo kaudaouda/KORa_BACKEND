@@ -343,21 +343,24 @@ def login(request):
 
         # ── Vérification 2FA ──────────────────────────────────────────────────
         if TwoFactorService.is_enabled():
-            try:
-                otp = TwoFactorService.send_otp(user, ip)
-            except Exception as exc:
-                logger.error("Impossible d'envoyer le code 2FA à %s : %s", user.email, exc)
-                return Response(
-                    {'error': 'Impossible d\'envoyer le code de vérification. Réessayez plus tard.'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            # On masque partiellement l'email pour ne pas le révéler en clair
-            masked = _mask_email(user.email)
-            return Response({
-                'requires_2fa': True,
-                'session_key': str(otp.session_key),
-                'message': f'Un code de vérification a été envoyé à {masked}.',
-            }, status=status.HTTP_200_OK)
+            # Si l'utilisateur a déjà une session 2FA valide → connexion directe
+            if TwoFactorService.has_valid_session(user):
+                logger.info("Session 2FA valide pour %s — 2FA ignoré", user.email)
+            else:
+                try:
+                    otp = TwoFactorService.send_otp(user, ip)
+                except Exception as exc:
+                    logger.error("Impossible d'envoyer le code 2FA à %s : %s", user.email, exc)
+                    return Response(
+                        {'error': 'Impossible d\'envoyer le code de vérification. Réessayez plus tard.'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+                masked = _mask_email(user.email)
+                return Response({
+                    'requires_2fa': True,
+                    'session_key': str(otp.session_key),
+                    'message': f'Un code de vérification a été envoyé à {masked}.',
+                }, status=status.HTTP_200_OK)
 
         # ── Connexion directe (2FA désactivé) ────────────────────────────────
         access_token, refresh_token = AuthService.create_tokens(user)

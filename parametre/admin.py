@@ -1804,21 +1804,19 @@ class TwoFactorConfigAdmin(admin.ModelAdmin):
         ('Activation', {
             'fields': ('is_enabled',),
             'description': (
-                'Activer impose la vérification par email à chaque connexion. '
+                'Activer impose une vérification par code email si la session 2FA de l\'utilisateur est expirée. '
                 'Désactiver revient au comportement normal (email + mot de passe uniquement).'
             ),
         }),
         ('Code OTP', {
             'fields': ('code_length', 'max_attempts'),
-            'description': 'Paramètres du code envoyé par email.',
+            'description': 'Paramètres du code envoyé par email. Le code expire après 5 minutes (fixe).',
         }),
-        ('Durée de validité', {
+        ('Durée de la session 2FA', {
             'fields': ('otp_lifetime_seconds',),
-            'description': format_html(
-                'Durée en secondes pendant laquelle le code reste valide.<br>'
-                '<strong>Référence :</strong> 60 = 1 min &nbsp;|&nbsp; '
-                '300 = 5 min &nbsp;|&nbsp; 3 600 = 1 h &nbsp;|&nbsp; '
-                '86 400 = 1 jour &nbsp;|&nbsp; 31 536 000 = 1 an.'
+            'description': (
+                'Durée en secondes pendant laquelle l\'utilisateur n\'est pas redemandé après une vérification réussie. '
+                'Référence : 3 600 = 1h | 86 400 = 1 jour | 604 800 = 7 jours | 2 592 000 = 30 jours.'
             ),
         }),
     )
