@@ -64,6 +64,7 @@ from ..serializers import (
 )
 from shared.authentication import AuthService
 from parametre.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
+from parametre.services.two_factor_service import TwoFactorService
 import json
 import logging
 
@@ -71,6 +72,16 @@ logger = logging.getLogger(__name__)
 
 
 from .utils import AllowAnyWithJWT, _get_next_num_amendement_for_pac
+
+
+def _mask_email(email: str) -> str:
+    """Masque partiellement un email : j***@example.com"""
+    try:
+        local, domain = email.split('@', 1)
+        visible = local[:2] if len(local) >= 2 else local[:1]
+        return f"{visible}***@{domain}"
+    except Exception:
+        return '***@***'
 
 
 @api_view(['POST'])
@@ -330,7 +341,25 @@ def login(request):
 
         user = authed
 
-        # Générer les tokens
+        # ── Vérification 2FA ──────────────────────────────────────────────────
+        if TwoFactorService.is_enabled():
+            try:
+                otp = TwoFactorService.send_otp(user, ip)
+            except Exception as exc:
+                logger.error("Impossible d'envoyer le code 2FA à %s : %s", user.email, exc)
+                return Response(
+                    {'error': 'Impossible d\'envoyer le code de vérification. Réessayez plus tard.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            # On masque partiellement l'email pour ne pas le révéler en clair
+            masked = _mask_email(user.email)
+            return Response({
+                'requires_2fa': True,
+                'session_key': str(otp.session_key),
+                'message': f'Un code de vérification a été envoyé à {masked}.',
+            }, status=status.HTTP_200_OK)
+
+        # ── Connexion directe (2FA désactivé) ────────────────────────────────
         access_token, refresh_token = AuthService.create_tokens(user)
 
         # Log de l'activité de connexion
@@ -360,6 +389,51 @@ def login(request):
             'error': 'Impossible de se connecter. Réessayez plus tard.',
             'code': 'LOGIN_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
+def verify_otp(request):
+    """Vérifie le code OTP 2FA et finalise la connexion si correct."""
+    try:
+        data = request.data
+        session_key = data.get('session_key', '').strip()
+        code = data.get('code', '').strip()
+
+        if not session_key or not code:
+            return Response(
+                {'error': 'session_key et code sont requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        success, error_msg, user = TwoFactorService.verify_otp(session_key, code)
+
+        if not success:
+            return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        # OTP valide → on génère les tokens et on connecte l'utilisateur
+        access_token, refresh_token = AuthService.create_tokens(user)
+
+        log_user_login(
+            user=user,
+            ip_address=get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT'),
+        )
+
+        response = Response({
+            'message': 'Connexion réussie',
+            'user': UserSerializer(user).data,
+        }, status=status.HTTP_200_OK)
+
+        return AuthService.set_auth_cookies(response, access_token, refresh_token)
+
+    except Exception as e:
+        logger.error("Erreur lors de la vérification OTP : %s", str(e))
+        return Response(
+            {'error': 'Erreur interne. Réessayez plus tard.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(['POST'])

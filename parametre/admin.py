@@ -14,7 +14,7 @@ from .models import (
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
     Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy,
     FailedLoginAttempt, LoginSecurityConfig, LoginBlock, ThrottleConfig,
-    RecaptchaConfig,
+    RecaptchaConfig, TwoFactorConfig, EmailOTP,
 )
 
 
@@ -1796,3 +1796,56 @@ class ThrottleConfigAdmin(admin.ModelAdmin):
         from django.shortcuts import redirect
         obj, _ = ThrottleConfig.objects.get_or_create(id=1)
         return redirect(reverse('admin:parametre_throttleconfig_change', args=[obj.pk]))
+
+
+@admin.register(TwoFactorConfig)
+class TwoFactorConfigAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ('Activation', {
+            'fields': ('is_enabled',),
+            'description': (
+                'Activer impose la vérification par email à chaque connexion. '
+                'Désactiver revient au comportement normal (email + mot de passe uniquement).'
+            ),
+        }),
+        ('Code OTP', {
+            'fields': ('code_length', 'max_attempts'),
+            'description': 'Paramètres du code envoyé par email.',
+        }),
+        ('Durée de validité', {
+            'fields': ('otp_lifetime_seconds',),
+            'description': format_html(
+                'Durée en secondes pendant laquelle le code reste valide.<br>'
+                '<strong>Référence :</strong> 60 = 1 min &nbsp;|&nbsp; '
+                '300 = 5 min &nbsp;|&nbsp; 3 600 = 1 h &nbsp;|&nbsp; '
+                '86 400 = 1 jour &nbsp;|&nbsp; 31 536 000 = 1 an.'
+            ),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return not TwoFactorConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        from django.urls import reverse
+        from django.shortcuts import redirect
+        obj, _ = TwoFactorConfig.objects.get_or_create(id=1)
+        return redirect(reverse('admin:parametre_twofactorconfig_change', args=[obj.pk]))
+
+
+@admin.register(EmailOTP)
+class EmailOTPAdmin(admin.ModelAdmin):
+    list_display = ('user', 'session_key', 'created_at', 'expires_at', 'attempts', 'is_used', 'ip_address')
+    list_filter = ('is_used',)
+    search_fields = ('user__email', 'ip_address')
+    readonly_fields = ('session_key', 'user', 'code_hash', 'created_at', 'expires_at', 'attempts', 'is_used', 'ip_address')
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

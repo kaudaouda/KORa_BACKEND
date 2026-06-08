@@ -19,6 +19,7 @@ urlpatterns = [
     path('auth/password-reset-confirm/', views.password_reset_confirm, name='password_reset_confirm'),
     path('auth/refresh/', views.refresh_token, name='refresh_token'),
     path('auth/recaptcha-config/', views.recaptcha_config, name='recaptcha_config'),
+    path('auth/verify-otp/', views.verify_otp, name='verify_otp'),
     
     # ==================== API PAC ====================
     path('pac/', views.pac_list, name='pac_list'),

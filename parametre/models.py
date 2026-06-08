@@ -2148,3 +2148,139 @@ class RecaptchaConfig(models.Model):
     def get_config(cls):
         obj, _ = cls.objects.get_or_create(id=1)
         return obj
+
+
+class TwoFactorConfig(models.Model):
+    """
+    Singleton : configuration de l'authentification à deux facteurs par email.
+    Activable/désactivable à chaud depuis l'interface admin.
+    """
+    is_enabled = models.BooleanField(
+        default=False,
+        verbose_name='2FA activé',
+        help_text='Si activé, un code par email est requis après chaque connexion.',
+    )
+    otp_lifetime_seconds = models.PositiveIntegerField(
+        default=300,
+        verbose_name='Durée de validité du code (secondes)',
+        help_text=(
+            'Exemples : 60 = 1 min, 300 = 5 min, 3600 = 1h, '
+            '86400 = 1 jour, 31536000 = 1 an.'
+        ),
+    )
+    max_attempts = models.PositiveIntegerField(
+        default=3,
+        verbose_name='Tentatives max',
+        help_text='Nombre de codes incorrects avant invalidation du code.',
+    )
+    code_length = models.PositiveIntegerField(
+        default=6,
+        verbose_name='Longueur du code',
+        help_text='Nombre de chiffres du code OTP (4 à 8 recommandé).',
+    )
+
+    class Meta:
+        db_table = 'two_factor_config'
+        verbose_name = 'Configuration 2FA'
+        verbose_name_plural = 'Configuration 2FA'
+
+    def __str__(self):
+        state = 'activé' if self.is_enabled else 'désactivé'
+        return f'Configuration 2FA ({state})'
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+
+class EmailOTP(models.Model):
+    """
+    Code OTP généré pour la vérification 2FA par email.
+    Chaque enregistrement est lié à une tentative de connexion en attente.
+    """
+    session_key = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        verbose_name='Clé de session',
+        help_text='Identifiant temporaire transmis au frontend pour désigner cette session 2FA.',
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='email_otps',
+        verbose_name='Utilisateur',
+    )
+    code_hash = models.CharField(
+        max_length=256,
+        verbose_name='Hash du code',
+        help_text='Code haché — jamais stocké en clair.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Créé le')
+    expires_at = models.DateTimeField(verbose_name='Expire le')
+    attempts = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name='Tentatives',
+    )
+    is_used = models.BooleanField(
+        default=False,
+        verbose_name='Utilisé',
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True, blank=True,
+        verbose_name='Adresse IP',
+    )
+
+    class Meta:
+        db_table = 'email_otp'
+        verbose_name = 'Code OTP email'
+        verbose_name_plural = 'Codes OTP email'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'OTP {self.user.email} — {self.created_at:%Y-%m-%d %H:%M}'
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        return timezone.now() >= self.expires_at
+
+    @property
+    def is_valid(self):
+        config = TwoFactorConfig.get_config()
+        return (
+            not self.is_used
+            and not self.is_expired
+            and self.attempts < config.max_attempts
+        )
+
+    def check_code(self, raw_code: str) -> bool:
+        from django.contrib.auth.hashers import check_password
+        return check_password(raw_code, self.code_hash)
+
+    @classmethod
+    def create_for_user(cls, user, ip_address, config: 'TwoFactorConfig') -> tuple['EmailOTP', str]:
+        """
+        Génère un nouveau code OTP pour l'utilisateur.
+        Invalide tous les codes précédents non utilisés.
+        Retourne (instance, code_en_clair).
+        """
+        import secrets
+        from django.utils import timezone
+        from django.contrib.auth.hashers import make_password
+        from datetime import timedelta
+
+        # Invalider les OTP précédents de l'utilisateur
+        cls.objects.filter(user=user, is_used=False).update(is_used=True)
+
+        # Générer le code en clair
+        raw_code = str(secrets.randbelow(10 ** config.code_length)).zfill(config.code_length)
+
+        otp = cls.objects.create(
+            user=user,
+            code_hash=make_password(raw_code),
+            expires_at=timezone.now() + timedelta(seconds=config.otp_lifetime_seconds),
+            ip_address=ip_address,
+        )
+        return otp, raw_code

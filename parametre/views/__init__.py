@@ -10,3 +10,4 @@ from .app_config import application_config_list, application_config_toggle, app_
 from .security import admin_security, admin_security_blocks, admin_security_unblock, admin_security_config, admin_throttle_config
 from .scheduler import admin_scheduler_jobs, admin_scheduler_job_update, admin_scheduler_job_trigger, admin_scheduler_executions
 from .recaptcha import recaptcha_config_public, recaptcha_admin_config, recaptcha_admin_test
+from .two_factor import two_factor_admin_config
