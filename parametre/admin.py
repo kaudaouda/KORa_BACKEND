@@ -1661,8 +1661,12 @@ class RecaptchaConfigAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('État', {
-            'fields': ('is_enabled', 'status_display'),
-            'description': 'Désactiver ignore complètement la vérification reCAPTCHA sur tous les endpoints.',
+            'fields': ('is_enabled', 'fail_open_on_network_error', 'status_display'),
+            'description': (
+                'Désactiver <strong>reCAPTCHA activé</strong> ignore complètement la vérification sur tous les endpoints. '
+                '<strong>Fail-open</strong> : si activé, un utilisateur est laissé passer quand Google est injoignable '
+                '(réseau KO) — à n\'activer qu\'en dernier recours.'
+            ),
         }),
         ('Clés API Google reCAPTCHA v3', {
             'fields': ('site_key', 'secret_key', 'allowed_hostname'),

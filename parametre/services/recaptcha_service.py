@@ -142,6 +142,19 @@ class RecaptchaService:
             result = resp.json()
         except requests.RequestException as exc:
             logger.error("Erreur réseau reCAPTCHA: %s", exc)
+            fail_open = getattr(config, 'fail_open_on_network_error', False) if config else False
+            if not fail_open:
+                fail_open = bool(getattr(django_settings, 'RECAPTCHA_FAIL_OPEN', False))
+            if fail_open:
+                logger.warning(
+                    "reCAPTCHA réseau KO — fail-open actif, token accepté sans vérification Google"
+                )
+                return True, {
+                    'score': 1.0,
+                    'action': expected_action or 'unknown',
+                    'success': True,
+                    'fail_open': True,
+                }
             raise RecaptchaValidationError(f"Erreur de communication avec reCAPTCHA : {exc}")
 
         # 1 — Vérification du succès Google

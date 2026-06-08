@@ -725,7 +725,7 @@ class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecaptchaConfig
         fields = [
-            'id', 'is_enabled',
+            'id', 'is_enabled', 'fail_open_on_network_error',
             'site_key', 'site_key_effective',
             'secret_key', 'secret_key_has_value',
             'allowed_hostname',

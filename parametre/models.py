@@ -2014,6 +2014,15 @@ class RecaptchaConfig(models.Model):
         verbose_name='reCAPTCHA activé',
         help_text='Désactiver ignore complètement la vérification reCAPTCHA.',
     )
+    fail_open_on_network_error = models.BooleanField(
+        default=False,
+        verbose_name='Fail-open si Google injoignable',
+        help_text=(
+            'Si activé, un token est accepté sans vérification quand Google est '
+            'injoignable (réseau KO, timeout). '
+            'Si désactivé (défaut), la requête échoue avec HTTP 500 — plus sûr.'
+        ),
+    )
     site_key = models.CharField(
         max_length=255, blank=True, default='',
         verbose_name='Clé publique (site key)',
