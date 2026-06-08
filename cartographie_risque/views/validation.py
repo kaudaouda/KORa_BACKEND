@@ -2,13 +2,14 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from ..models import CDR, DetailsCDR, EvaluationRisque, PlanAction, SuiviAction
+from ..models import CDR, DetailsCDR, EvaluationRisque, PlanAction, SuiviAction, PlanActionResponsable
 from ..serializers import (
     CDRSerializer, CDRCreateSerializer,
     DetailsCDRSerializer, DetailsCDRCreateSerializer, DetailsCDRUpdateSerializer,
     EvaluationRisqueSerializer, EvaluationRisqueCreateSerializer, EvaluationRisqueUpdateSerializer,
     PlanActionSerializer, PlanActionCreateSerializer, PlanActionUpdateSerializer,
     SuiviActionSerializer, SuiviActionCreateSerializer, SuiviActionUpdateSerializer,
+    VersionEvaluationCDRSerializer,
 )
 from parametre.views import (
     log_cdr_creation,
@@ -104,7 +105,6 @@ def validate_cdr(request, uuid):
                     detail_errors.append('Le type de risque est requis dans l\'évaluation initiale')
             
             # Vérifier qu'il y a au moins un plan d'action
-            from .models import PlanActionResponsable
             plans = PlanAction.objects.filter(details_cdr=detail)
             if plans.count() == 0:
                 detail_errors.append('Au moins un plan d\'action est requis')
@@ -274,7 +274,6 @@ def versions_evaluation_list(request):
     """Liste toutes les versions d'évaluation actives triées par date de création"""
     try:
         from parametre.models import VersionEvaluationCDR
-        from .serializers import VersionEvaluationCDRSerializer
 
         versions = VersionEvaluationCDR.objects.filter(is_active=True).order_by('created_at')
         serializer = VersionEvaluationCDRSerializer(versions, many=True)
@@ -296,7 +295,6 @@ def create_reevaluation(request, detail_cdr_uuid):
     """
     try:
         from parametre.models import VersionEvaluationCDR
-        from .serializers import EvaluationRisqueCreateSerializer, EvaluationRisqueSerializer
 
         # Récupérer le détail CDR
         detail_cdr = DetailsCDR.objects.select_related('cdr__processus').get(uuid=detail_cdr_uuid)
