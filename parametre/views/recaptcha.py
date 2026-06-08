@@ -80,9 +80,11 @@ def recaptcha_admin_test(request):
     if not token:
         return Response({'error': 'Le champ "token" est requis.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    expected_action = request.data.get('expected_action') or None
+
     try:
         remote_ip = request.META.get('REMOTE_ADDR')
-        is_valid, data = recaptcha_service.verify_token(token, remote_ip)
+        is_valid, data = recaptcha_service.verify_token(token, remote_ip, expected_action=expected_action)
         return Response({
             'success': is_valid,
             'details': data,

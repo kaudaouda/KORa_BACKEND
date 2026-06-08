@@ -97,7 +97,8 @@ def register(request):
                 remote_ip = request.META.get('REMOTE_ADDR')
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
                     recaptcha_token,
-                    remote_ip
+                    remote_ip,
+                    expected_action='register',
                 )
 
                 if not is_valid:
@@ -218,7 +219,8 @@ def login(request):
                 remote_ip = request.META.get('REMOTE_ADDR')
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
                     recaptcha_token,
-                    remote_ip
+                    remote_ip,
+                    expected_action='login',
                 )
 
                 if not is_valid:
@@ -795,7 +797,8 @@ def complete_invitation(request):
                 remote_ip = get_client_ip(request)
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
                     recaptcha_token,
-                    remote_ip
+                    remote_ip,
+                    expected_action='complete_invitation',
                 )
 
                 if not is_valid:
@@ -1300,7 +1303,8 @@ def password_reset_confirm(request):
                 remote_ip = get_client_ip(request)
                 is_valid, recaptcha_data = recaptcha_service.verify_token(
                     recaptcha_token,
-                    remote_ip
+                    remote_ip,
+                    expected_action='password_reset_confirm',
                 )
 
                 if not is_valid:

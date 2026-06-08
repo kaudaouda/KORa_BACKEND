@@ -99,13 +99,21 @@ class RecaptchaService:
             'apply_to_password_reset': getattr(config, 'apply_to_password_reset', True) if config else True,
         }
 
-    def verify_token(self, token: str, remote_ip: str = None):
+    def verify_token(self, token: str, remote_ip: str = None, expected_action: str = None):
         """
         Vérifie un token reCAPTCHA v3 auprès de Google.
 
+        Args:
+            token:           Token généré par le frontend.
+            remote_ip:       IP du client (transmise à Google pour scoring).
+            expected_action: Nom d'action attendu (ex: 'login', 'register').
+                             Si fourni, le service rejette les tokens générés
+                             pour une autre action — empêche le replay cross-action.
+
         Returns:
-            (True, data_dict)  si le token est valide et le score suffisant
-            (False, error_dict) sinon
+            (True, data_dict)   si le token est valide, l'action correspond
+                                et le score est suffisant.
+            (False, error_dict) sinon.
         Raises:
             RecaptchaValidationError si la communication avec Google échoue.
         """
@@ -115,7 +123,7 @@ class RecaptchaService:
 
         if not secret_key:
             logger.warning("reCAPTCHA désactivé — secret_key manquante, validation ignorée.")
-            return True, {'score': 1.0, 'action': 'verify', 'success': True}
+            return True, {'score': 1.0, 'action': expected_action or 'verify', 'success': True}
 
         payload = {'secret': secret_key, 'response': token}
         if remote_ip:
@@ -129,22 +137,44 @@ class RecaptchaService:
             logger.error("Erreur réseau reCAPTCHA: %s", exc)
             raise RecaptchaValidationError(f"Erreur de communication avec reCAPTCHA : {exc}")
 
+        # 1 — Vérification du succès Google
         if not result.get('success', False):
             codes = result.get('error-codes', [])
             logger.warning("reCAPTCHA échoué: %s", codes)
             return False, {'error': 'Validation reCAPTCHA échouée', 'error_codes': codes}
 
+        # 2 — Vérification de l'action (Security by Design)
+        # Un token généré pour 'register' ne peut pas être utilisé sur 'login'.
+        actual_action = result.get('action', '')
+        if expected_action and actual_action != expected_action:
+            logger.warning(
+                "reCAPTCHA action mismatch: expected=%r actual=%r — token rejeté",
+                expected_action, actual_action,
+            )
+            return False, {
+                'error': 'Action reCAPTCHA invalide',
+                'expected_action': expected_action,
+                'actual_action': actual_action,
+            }
+
+        # 3 — Vérification du score
         score = result.get('score', 0.0)
         if score < min_score:
-            logger.warning("Score reCAPTCHA insuffisant: %.2f < %.2f", score, min_score)
+            logger.warning(
+                "Score reCAPTCHA insuffisant: %.2f < %.2f (action=%s)",
+                score, min_score, actual_action,
+            )
             return False, {
                 'error': 'Score de sécurité insuffisant',
                 'score': score,
                 'min_score': min_score,
             }
 
-        logger.info("reCAPTCHA validé: score=%.2f action=%s", score, result.get('action', ''))
-        return True, {'score': score, 'action': result.get('action', ''), 'success': True}
+        logger.info(
+            "reCAPTCHA validé: score=%.2f action=%s",
+            score, actual_action,
+        )
+        return True, {'score': score, 'action': actual_action, 'success': True}
 
 
 recaptcha_service = RecaptchaService()
