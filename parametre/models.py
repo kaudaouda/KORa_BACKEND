@@ -2188,10 +2188,28 @@ class TwoFactorConfig(models.Model):
         db_table = 'two_factor_config'
         verbose_name = 'Configuration 2FA'
         verbose_name_plural = 'Configuration 2FA'
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(otp_lifetime_seconds__gte=300) & models.Q(otp_lifetime_seconds__lte=31_536_000),
+                name='2fa_otp_lifetime_range',
+            ),
+            models.CheckConstraint(
+                check=models.Q(max_attempts__gte=1) & models.Q(max_attempts__lte=10),
+                name='2fa_max_attempts_range',
+            ),
+            models.CheckConstraint(
+                check=models.Q(code_length__gte=4) & models.Q(code_length__lte=8),
+                name='2fa_code_length_range',
+            ),
+        ]
 
     def __str__(self):
         state = 'activé' if self.is_enabled else 'désactivé'
         return f'Configuration 2FA ({state})'
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     @classmethod
     def get_config(cls):
