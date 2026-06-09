@@ -19,9 +19,17 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle, Simple
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _get_ip(request):
-    xff = request.META.get('HTTP_X_FORWARDED_FOR')
-    if xff:
-        return xff.split(',')[0].strip()
+    # Security by Design — même logique que IPBlockMiddleware._get_ip() :
+    # on lit TRUSTED_PROXY_COUNT pour éviter que le client contrôle son IP
+    # en forgeant X-Forwarded-For (bypass du rate-limiting sinon possible).
+    from django.conf import settings
+    trusted = getattr(settings, 'TRUSTED_PROXY_COUNT', 0)
+    if trusted > 0:
+        xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+        ips = [ip.strip() for ip in xff.split(',') if ip.strip()]
+        if ips:
+            idx = max(0, len(ips) - trusted)
+            return ips[idx]
     return request.META.get('REMOTE_ADDR', '')
 
 

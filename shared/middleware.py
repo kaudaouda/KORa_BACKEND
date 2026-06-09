@@ -169,12 +169,29 @@ class AdminLoginRateLimitMiddleware(MiddlewareMixin):
         if request.method == 'POST' and request.path == admin_url:
             ip = IPBlockMiddleware._get_ip(request)
             key = f'admin_login_ratelimit:{ip}'
-            attempts = cache.get(key, 0)
-            if attempts >= self.MAX_ATTEMPTS:
+            # Security by Design — incrément atomique (cache.add + cache.incr) :
+            # évite le TOCTOU du pattern read-check-write non atomique.
+            cache.add(key, 0, self.WINDOW)
+            attempts = cache.incr(key)
+            if attempts > self.MAX_ATTEMPTS:
                 logger.warning("Admin login rate limit atteint pour IP %s", ip)
                 return HttpResponseForbidden('Trop de tentatives. Réessayez dans quelques minutes.')
-            cache.set(key, attempts + 1, self.WINDOW)
         return None
+
+
+class ContentSecurityPolicyMiddleware(MiddlewareMixin):
+    """
+    Pose le header Content-Security-Policy depuis settings.CONTENT_SECURITY_POLICY.
+    Security by Design — défense en profondeur : limite les sources autorisées
+    pour scripts, styles, images et connexions, réduisant la surface XSS/exfiltration.
+    Actif uniquement si CONTENT_SECURITY_POLICY est défini (prod.py).
+    """
+
+    def process_response(self, request, response):
+        csp = getattr(settings, 'CONTENT_SECURITY_POLICY', None)
+        if csp and 'Content-Security-Policy' not in response:
+            response['Content-Security-Policy'] = csp
+        return response
 
 
 class MediaFrameOptionsMiddleware(MiddlewareMixin):
