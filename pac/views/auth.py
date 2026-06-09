@@ -910,24 +910,26 @@ def complete_invitation(request):
         logger.info("IP: %s", get_client_ip(request))
         
         # ========== RATE LIMITING (Security by Design) ==========
-        # Protection contre les attaques par force brute sur les tokens
         from django.core.cache import cache
-        
+
         client_ip = get_client_ip(request)
         rate_limit_key = f'invitation_complete_rate_limit_{client_ip}'
-        attempts = cache.get(rate_limit_key, 0)
-        max_attempts = 3  # Maximum 3 tentatives par IP par 30 minutes
+        max_attempts = 3
         rate_limit_window = 1800  # 30 minutes
 
-        if attempts >= max_attempts:
-            logger.warning("Rate limit dépassé pour complete_invitation")
+        # Incrément atomique : cache.add() pose la clé à 0 si absente (avec TTL),
+        # cache.incr() l'incrémente en une opération native Redis/Memcached.
+        # Sans atomicité, deux requêtes simultanées peuvent toutes deux passer
+        # le seuil en lisant la même valeur avant que l'une n'écrive.
+        cache.add(rate_limit_key, 0, rate_limit_window)
+        attempts = cache.incr(rate_limit_key)
+
+        if attempts > max_attempts:
+            logger.warning("Rate limit dépassé pour complete_invitation depuis IP: %s", client_ip)
             return Response({
                 'error': 'Trop de tentatives. Veuillez réessayer dans 30 minutes.',
                 'code': 'RATE_LIMIT_EXCEEDED'
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-
-        # Incrémenter le compteur
-        cache.set(rate_limit_key, attempts + 1, rate_limit_window)
         # ========== FIN RATE LIMITING ==========
         
         logger.info("request.data type: %s", type(request.data))
@@ -1384,22 +1386,23 @@ def password_reset_confirm(request):
         
         # ========== RATE LIMITING (Security by Design) ==========
         from django.core.cache import cache
-        
+
         client_ip = get_client_ip(request)
         rate_limit_key = f'password_reset_confirm_rate_limit_{client_ip}'
-        attempts = cache.get(rate_limit_key, 0)
-        max_attempts = 5  # Maximum 5 tentatives par IP par heure
+        max_attempts = 5
         rate_limit_window = 3600  # 1 heure
-        
-        if attempts >= max_attempts:
+
+        # Même pattern atomique que complete_invitation :
+        # cache.add() + cache.incr() = read-modify-write en une opération native.
+        cache.add(rate_limit_key, 0, rate_limit_window)
+        attempts = cache.incr(rate_limit_key)
+
+        if attempts > max_attempts:
             logger.warning("Rate limit dépassé pour password_reset_confirm depuis IP: %s", client_ip)
             return Response({
                 'error': 'Trop de tentatives. Veuillez réessayer dans 1 heure.',
                 'code': 'RATE_LIMIT_EXCEEDED'
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        
-        # Incrémenter le compteur
-        cache.set(rate_limit_key, attempts + 1, rate_limit_window)
         # ========== FIN RATE LIMITING ==========
         
         logger.info("request.data type: %s", type(request.data))
