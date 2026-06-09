@@ -88,7 +88,7 @@ def document_list(request):
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -105,7 +105,7 @@ def document_list_active(request):
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -122,7 +122,7 @@ def document_detail(request, uuid):
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -153,7 +153,7 @@ def document_create(request):
             validate_pdf_file(fichier)
         except ValidationError as e:
             return Response(
-                {'error': str(e)},
+                {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -202,7 +202,7 @@ def document_create(request):
         )
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -251,7 +251,7 @@ def document_update(request, uuid):
         )
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -280,7 +280,7 @@ def document_delete(request, uuid):
         )
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -328,7 +328,7 @@ def document_amend(request, uuid):
             validate_pdf_file(fichier)
         except ValidationError as e:
             return Response(
-                {'error': str(e)},
+                {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -386,7 +386,7 @@ def document_amend(request, uuid):
     except Exception as e:
         logger.error("Erreur lors de la création de l'amendement: %s", e)
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -418,7 +418,7 @@ def document_version_chain(request, uuid):
     except Exception as e:
         logger.error("Erreur lors de la récupération de la chaîne de versions: %s", e)
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -435,7 +435,7 @@ def editions_list(request):
         return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -452,7 +452,7 @@ def amendements_list(request):
         return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -469,6 +469,6 @@ def types_document_list(request):
         return Response(data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response(
-            {'error': str(e)},
+            {'error': "Une erreur inattendue s'est produite. Veuillez réessayer."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

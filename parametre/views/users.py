@@ -82,7 +82,7 @@ def roles_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des rôles',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -113,7 +113,7 @@ def roles_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les rôles',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -332,7 +332,7 @@ def user_processus_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des attributions processus',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -504,7 +504,7 @@ def user_processus_role_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des rôles utilisateur-processus',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

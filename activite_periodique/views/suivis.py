@@ -84,8 +84,7 @@ def suivis_ap_list(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération des suivis AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -126,8 +125,7 @@ def suivis_ap_by_detail_ap(request, detail_ap_uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération des suivis AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -193,8 +191,7 @@ def suivi_ap_create(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la création du suivi AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['PUT'])
@@ -250,8 +247,7 @@ def suivi_ap_update(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la mise à jour du suivi AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['DELETE'])
@@ -299,8 +295,7 @@ def suivi_ap_delete(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la suppression du suivi AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -378,8 +373,7 @@ def get_last_ap_previous_year(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération de l\'AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== STATISTIQUES ACTIVITE PERIODIQUE ====================
@@ -487,8 +481,7 @@ def activite_periodique_stats(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération des statistiques',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== MEDIA LIVRABLE ====================

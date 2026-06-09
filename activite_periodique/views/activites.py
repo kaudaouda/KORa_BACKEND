@@ -69,7 +69,7 @@ def activite_periodique_home(request):
         return Response({
             'success': False,
             'message': 'Erreur serveur',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -116,8 +116,7 @@ def activites_periodiques_list(request):
         return Response({
             'success': False,
             'error': 'Erreur lors de la récupération des Activités Périodiques',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -154,8 +153,7 @@ def activite_periodique_detail(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération de l\'Activité Périodique',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -278,8 +276,7 @@ def activite_periodique_get_or_create(request):
         logger.error("[activite_periodique_get_or_create] Traceback: %s", traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la création/récupération de l\'Activité Périodique',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -319,8 +316,7 @@ def activite_periodique_create(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la création de l\'Activité Périodique',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['PUT'])
@@ -375,8 +371,7 @@ def activite_periodique_update(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la mise à jour de l\'Activité Périodique',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['DELETE'])
@@ -414,8 +409,7 @@ def activite_periodique_delete(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la suppression de l\'Activité Périodique',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -513,8 +507,7 @@ def activite_periodique_validate(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la validation de l\'Activité Périodique',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -570,8 +563,7 @@ def activite_periodique_unvalidate(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la dévalidation de l\'Activité Périodique',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== ENDPOINTS API DETAILS AP ====================

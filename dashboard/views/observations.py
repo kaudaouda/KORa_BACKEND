@@ -380,5 +380,4 @@ def get_last_tableau_bord_previous_year(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération du Tableau de Bord',
-            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

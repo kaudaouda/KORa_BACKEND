@@ -186,7 +186,7 @@ def admin_scheduler_job_update(request, job_id):
         return Response(_serialize_job(job))
     except Exception as e:
         logger.error("[SCHEDULER] Erreur reprogrammation job %s: %s", job_id, e, exc_info=True)
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])

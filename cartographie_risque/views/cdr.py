@@ -182,7 +182,6 @@ def cdr_stats(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération des statistiques',
-            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

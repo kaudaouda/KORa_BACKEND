@@ -1303,7 +1303,7 @@ class UserProcessusRoleAdmin(admin.ModelAdmin):
             import logging
             logger = logging.getLogger(__name__)
             logger.error("Erreur lors de la récupération des processus utilisateur: %s", e, exc_info=True)
-            return JsonResponse({'error': str(e)}, status=500)
+            return JsonResponse({'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=500)
     
     def get_user_roles(self, request):
         """Vue pour récupérer les rôles déjà attribués à un utilisateur pour ses processus"""
@@ -1339,7 +1339,7 @@ class UserProcessusRoleAdmin(admin.ModelAdmin):
             import logging
             logger = logging.getLogger(__name__)
             logger.error("Erreur lors de la récupération des rôles utilisateur: %s", e, exc_info=True)
-            return JsonResponse({'error': str(e)}, status=500)
+            return JsonResponse({'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=500)
     
     def save_model(self, request, obj, form, change):
         """
