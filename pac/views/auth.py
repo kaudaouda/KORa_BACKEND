@@ -129,8 +129,8 @@ def register(request):
         
         email = data.get('email')
         password = data.get('password')
-        first_name = data.get('prenom', '')
-        last_name = data.get('nom', '')
+        first_name = str(data.get('prenom', ''))[:150]
+        last_name = str(data.get('nom', ''))[:150]
 
         # Validation des données
         if not email or not password:
@@ -631,10 +631,16 @@ def update_profile(request):
         
         # Mettre à jour les champs autorisés
         if 'first_name' in data:
-            user.first_name = data['first_name']
+            fn = str(data['first_name'])
+            if len(fn) > 150:
+                return Response({'error': 'Le prénom ne peut pas dépasser 150 caractères.'}, status=status.HTTP_400_BAD_REQUEST)
+            user.first_name = fn
         if 'last_name' in data:
-            user.last_name = data['last_name']
-        
+            ln = str(data['last_name'])
+            if len(ln) > 150:
+                return Response({'error': 'Le nom ne peut pas dépasser 150 caractères.'}, status=status.HTTP_400_BAD_REQUEST)
+            user.last_name = ln
+
         # Sécurité : Bloquer la modification de l'email côté backend
         if 'email' in data:
             return Response({
@@ -687,9 +693,15 @@ def admin_update_profile(request):
         
         # Mettre à jour tous les champs autorisés
         if 'first_name' in data:
-            user.first_name = data['first_name']
+            fn = str(data['first_name'])
+            if len(fn) > 150:
+                return Response({'error': 'Le prénom ne peut pas dépasser 150 caractères.'}, status=status.HTTP_400_BAD_REQUEST)
+            user.first_name = fn
         if 'last_name' in data:
-            user.last_name = data['last_name']
+            ln = str(data['last_name'])
+            if len(ln) > 150:
+                return Response({'error': 'Le nom ne peut pas dépasser 150 caractères.'}, status=status.HTTP_400_BAD_REQUEST)
+            user.last_name = ln
         if 'email' in data:
             # Vérifier que l'email n'est pas déjà utilisé par un autre utilisateur
             if User.objects.filter(email=data['email']).exclude(id=user.id).exists():
@@ -1272,7 +1284,7 @@ def password_reset_request(request):
         token = default_token_generator.make_token(user)
         logger.info("Token de réinitialisation généré pour uid=%s", uid)
         
-        frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_base = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173')
         raw_reset_url = f"{frontend_base}/reset-password?uid={uid}&token={token}"
         reset_url = EmailContentSanitizer.sanitize_url(raw_reset_url)
         

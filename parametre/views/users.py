@@ -1157,7 +1157,7 @@ def users_invite(request):
         token = default_token_generator.make_token(user)
         logger.info("Token d'invitation généré pour uid=%s", uid)
 
-        frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_base = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173')
         raw_invite_url = f"{frontend_base}/set-password?uid={uid}&token={token}"
         invite_url = EmailContentSanitizer.sanitize_url(raw_invite_url)
 
