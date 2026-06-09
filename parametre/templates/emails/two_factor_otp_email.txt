@@ -15,10 +15,6 @@ NE PARTAGEZ JAMAIS CE CODE.
 Si vous n'avez pas initié cette connexion, ignorez cet email
 et changez votre mot de passe immédiatement.
 
---- Détails de la tentative ---
-Adresse IP : {{ ip_address|default:"inconnue" }}
-Date       : {{ timestamp }}
-----------------------------------------
 
 Cet email a été envoyé automatiquement par KORA.
 Ne pas répondre à cet email.
