@@ -7,7 +7,7 @@ from .models import (
     NotificationSettings, DashboardNotificationSettings, EmailSettings, Nature, Source, Processus,
     Service, EtatMiseEnOeuvre, Frequence, Annee, Risque, StatutActionCDR,
     Role, UserProcessus, UserProcessusRole, CriticiteRisque, DysfonctionnementRecommandation,
-    Mois, FrequenceRisque, GraviteRisque, TypeDocument, RecaptchaConfig,
+    Mois, FrequenceRisque, GraviteRisque, TypeDocument, RecaptchaConfig, TwoFactorConfig,
 )
 
 
@@ -792,4 +792,25 @@ class RecaptchaConfigAdminSerializer(serializers.ModelSerializer):
             instance.set_secret_key(raw_key)
             instance.save(update_fields=['secret_key_encrypted'])
         return instance
+
+
+class TwoFactorConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TwoFactorConfig
+        fields = ['is_enabled', 'otp_lifetime_seconds', 'max_attempts', 'code_length']
+
+    def validate_otp_lifetime_seconds(self, value):
+        if value < 30:
+            raise serializers.ValidationError('La durée minimale est de 30 secondes.')
+        return value
+
+    def validate_max_attempts(self, value):
+        if value < 1:
+            raise serializers.ValidationError('Le nombre de tentatives doit être au moins 1.')
+        return value
+
+    def validate_code_length(self, value):
+        if not (4 <= value <= 8):
+            raise serializers.ValidationError('La longueur du code doit être entre 4 et 8 chiffres.')
+        return value
 

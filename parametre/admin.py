@@ -14,7 +14,7 @@ from .models import (
     TypeDocument, EditionDocument, AmendementDocument, MediaDocument,
     Role, UserProcessus, UserProcessusRole, ApplicationConfig, NotificationPolicy,
     FailedLoginAttempt, LoginSecurityConfig, LoginBlock, ThrottleConfig,
-    RecaptchaConfig,
+    RecaptchaConfig, TwoFactorConfig, EmailOTP, TwoFactorUserSession,
 )
 
 
@@ -1796,3 +1796,85 @@ class ThrottleConfigAdmin(admin.ModelAdmin):
         from django.shortcuts import redirect
         obj, _ = ThrottleConfig.objects.get_or_create(id=1)
         return redirect(reverse('admin:parametre_throttleconfig_change', args=[obj.pk]))
+
+
+@admin.register(TwoFactorConfig)
+class TwoFactorConfigAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ('Activation', {
+            'fields': ('is_enabled',),
+            'description': (
+                'Activer impose une vérification par code email si la session 2FA de l\'utilisateur est expirée. '
+                'Désactiver revient au comportement normal (email + mot de passe uniquement).'
+            ),
+        }),
+        ('Code OTP', {
+            'fields': ('code_length', 'max_attempts'),
+            'description': 'Paramètres du code envoyé par email. Le code expire après 5 minutes (fixe).',
+        }),
+        ('Durée de la session 2FA', {
+            'fields': ('otp_lifetime_seconds',),
+            'description': (
+                'Durée en secondes pendant laquelle l\'utilisateur n\'est pas redemandé après une vérification réussie. '
+                'Référence : 3 600 = 1h | 86 400 = 1 jour | 604 800 = 7 jours | 2 592 000 = 30 jours.'
+            ),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return not TwoFactorConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        from django.urls import reverse
+        from django.shortcuts import redirect
+        obj, _ = TwoFactorConfig.objects.get_or_create(id=1)
+        return redirect(reverse('admin:parametre_twofactorconfig_change', args=[obj.pk]))
+
+
+@admin.register(EmailOTP)
+class EmailOTPAdmin(admin.ModelAdmin):
+    list_display = ('user', 'session_key', 'created_at', 'expires_at', 'attempts', 'is_used', 'ip_address')
+    list_filter = ('is_used',)
+    search_fields = ('user__email', 'ip_address')
+    readonly_fields = ('session_key', 'user', 'code_hash', 'created_at', 'expires_at', 'attempts', 'is_used', 'ip_address')
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(TwoFactorUserSession)
+class TwoFactorUserSessionAdmin(admin.ModelAdmin):
+    """
+    Permet aux admins de visualiser et révoquer les sessions 2FA des utilisateurs.
+    Utile en cas d'incident de sécurité (supprimer la ligne = obliger l'utilisateur à repasser le 2FA).
+    """
+    list_display   = ('user', 'verified_at', 'session_restante')
+    search_fields  = ('user__email', 'user__username')
+    readonly_fields = ('user', 'verified_at')
+    ordering = ('-verified_at',)
+
+    def session_restante(self, obj):
+        from django.utils import timezone
+        from datetime import timedelta
+        config = TwoFactorConfig.get_config()
+        expires_at = obj.verified_at + timedelta(seconds=config.otp_lifetime_seconds)
+        delta = expires_at - timezone.now()
+        if delta.total_seconds() <= 0:
+            return 'Expirée'
+        h = int(delta.total_seconds() // 3600)
+        m = int((delta.total_seconds() % 3600) // 60)
+        return f'{h}h {m}min'
+    session_restante.short_description = 'Durée restante'
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

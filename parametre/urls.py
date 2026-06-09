@@ -19,6 +19,7 @@ urlpatterns = [
     path('admin/scheduler/executions/', views.admin_scheduler_executions, name='admin_scheduler_executions'),
     path('admin/security/blocks/', views.admin_security_blocks, name='admin_security_blocks'),
     path('admin/security/blocks/<int:block_id>/unblock/', views.admin_security_unblock, name='admin_security_unblock'),
+    path('admin/two-factor/config/', views.two_factor_admin_config, name='two_factor_admin_config'),
     
     # ==================== PARAMÈTRES ====================
     # Endpoints pour les formulaires (éléments actifs uniquement)

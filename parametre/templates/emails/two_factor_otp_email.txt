@@ -1,0 +1,20 @@
+KORA — Code de vérification
+Autorité Nationale de l'Aviation Civile
+========================================
+
+Bonjour {{ user_first_name|default:user_username }},
+
+Une tentative de connexion à votre compte KORA a été détectée.
+Utilisez le code ci-dessous pour finaliser votre connexion.
+
+CODE DE VÉRIFICATION : {{ otp_code }}
+
+Ce code est valable pendant {{ lifetime_display }}.
+
+NE PARTAGEZ JAMAIS CE CODE.
+Si vous n'avez pas initié cette connexion, ignorez cet email
+et changez votre mot de passe immédiatement.
+
+
+Cet email a été envoyé automatiquement par KORA.
+Ne pas répondre à cet email.

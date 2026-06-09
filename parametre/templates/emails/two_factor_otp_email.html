@@ -1,0 +1,117 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="fr">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>KORA - Code de vérification</title>
+    <style type="text/css">
+        {% include 'emails/email_styles.css' %}
+        .otp-box {
+            background-color: #f0f4ff;
+            border: 2px solid #3b5bdb;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            margin: 24px 0;
+        }
+        .otp-code {
+            font-size: 40px;
+            font-weight: 700;
+            letter-spacing: 12px;
+            color: #1a237e;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .otp-validity {
+            font-size: 13px;
+            color: #555;
+            margin-top: 10px;
+        }
+        .warning-box {
+            background-color: #fff8e1;
+            border-left: 4px solid #f59e0b;
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .warning-box p {
+            margin: 0;
+            font-size: 13px;
+            color: #78350f;
+        }
+    </style>
+</head>
+<body>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" class="email-wrapper">
+        <tr>
+            <td align="center">
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="email-container">
+
+                    <!-- Header -->
+                    <tr>
+                        <td class="email-header-dashboard">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <h1 class="email-logo">KORA</h1>
+                                        <p class="email-subtitle email-subtitle-dashboard">Autorité Nationale de l'Aviation Civile</p>
+                                        <div class="email-divider"></div>
+                                        <p class="email-title">Code de vérification</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Contenu -->
+                    <tr>
+                        <td class="email-content">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td>
+                                        <p class="email-greeting">
+                                            Bonjour <strong class="color-dashboard">{{ user_first_name|default:user_username }}</strong>,
+                                        </p>
+                                        <p class="email-text-small">
+                                            Une tentative de connexion à votre compte KORA a été détectée.
+                                            Utilisez le code ci-dessous pour finaliser votre connexion.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Code OTP -->
+                            <div class="otp-box">
+                                <div class="otp-code">{{ otp_code }}</div>
+                                <p class="otp-validity">
+                                    Ce code est valable pendant <strong>{{ lifetime_display }}</strong>.
+                                </p>
+                            </div>
+
+                            <!-- Avertissement sécurité -->
+                            <div class="warning-box">
+                                <p>
+                                    <strong>Ne partagez jamais ce code.</strong>
+                                    Si vous n'avez pas initié cette connexion, ignorez cet email
+                                    et changez votre mot de passe immédiatement.
+                                </p>
+                            </div>
+
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td class="email-footer">
+                            <p class="email-footer-text">
+                                Cet email a été envoyé automatiquement par KORA — Autorité Nationale de l'Aviation Civile.
+                                Ne pas répondre à cet email.
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

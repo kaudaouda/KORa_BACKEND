@@ -64,6 +64,7 @@ from ..serializers import (
 )
 from shared.authentication import AuthService
 from parametre.services.recaptcha_service import recaptcha_service, RecaptchaValidationError
+from parametre.services.two_factor_service import TwoFactorService
 import json
 import logging
 
@@ -71,6 +72,16 @@ logger = logging.getLogger(__name__)
 
 
 from .utils import AllowAnyWithJWT, _get_next_num_amendement_for_pac
+
+
+def _mask_email(email: str) -> str:
+    """Masque partiellement un email : j***@example.com"""
+    try:
+        local, domain = email.split('@', 1)
+        visible = local[:2] if len(local) >= 2 else local[:1]
+        return f"{visible}***@{domain}"
+    except Exception:
+        return '***@***'
 
 
 @api_view(['POST'])
@@ -330,7 +341,28 @@ def login(request):
 
         user = authed
 
-        # Générer les tokens
+        # ── Vérification 2FA ──────────────────────────────────────────────────
+        if TwoFactorService.is_enabled():
+            # Si l'utilisateur a déjà une session 2FA valide → connexion directe
+            if TwoFactorService.has_valid_session(user):
+                logger.info("Session 2FA valide pour %s — 2FA ignoré", user.email)
+            else:
+                try:
+                    otp = TwoFactorService.send_otp(user, ip)
+                except Exception as exc:
+                    logger.error("Impossible d'envoyer le code 2FA à %s : %s", user.email, exc)
+                    return Response(
+                        {'error': 'Impossible d\'envoyer le code de vérification. Réessayez plus tard.'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+                masked = _mask_email(user.email)
+                return Response({
+                    'requires_2fa': True,
+                    'session_key': str(otp.session_key),
+                    'message': f'Un code de vérification a été envoyé à {masked}.',
+                }, status=status.HTTP_200_OK)
+
+        # ── Connexion directe (2FA désactivé) ────────────────────────────────
         access_token, refresh_token = AuthService.create_tokens(user)
 
         # Log de l'activité de connexion
@@ -360,6 +392,102 @@ def login(request):
             'error': 'Impossible de se connecter. Réessayez plus tard.',
             'code': 'LOGIN_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
+def verify_otp(request):
+    """Vérifie le code OTP 2FA et finalise la connexion si correct."""
+    try:
+        import uuid as _uuid
+        data = request.data
+        session_key = data.get('session_key', '').strip()
+        code = data.get('code', '').strip()
+
+        if not session_key or not code:
+            return Response(
+                {'error': 'session_key et code sont requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validation format UUID — évite une exception 500 sur session_key malformé
+        try:
+            _uuid.UUID(session_key)
+        except ValueError:
+            return Response(
+                {'error': 'Session invalide ou expirée.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Limite la longueur du code pour éviter une amplification DoS via PBKDF2
+        if len(code) > 8:
+            return Response(
+                {'error': 'Code invalide.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ip = get_client_ip(request)
+        ua = request.META.get('HTTP_USER_AGENT', '')
+        success, error_msg, user = TwoFactorService.verify_otp(session_key, code)
+
+        if not success:
+            # Log de l'échec dans FailedLoginAttempt pour la protection IP globale
+            from parametre.views import _parse_user_agent
+            device_type, browser, os_name = _parse_user_agent(ua)
+            FailedLoginAttempt.objects.create(
+                email_attempted='',
+                ip_address=ip,
+                user_agent=ua,
+                device_type=device_type,
+                browser=browser,
+                os_name=os_name,
+                reason='otp_failed',
+            )
+            log_activity(
+                user=None,
+                action='view',
+                entity_type='auth',
+                entity_id=session_key[:8],
+                entity_name='verify_otp',
+                description=f'Échec vérification OTP 2FA : {error_msg}',
+                ip_address=ip,
+                user_agent=ua,
+            )
+            return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        # OTP valide → on génère les tokens et on connecte l'utilisateur
+        access_token, refresh_token = AuthService.create_tokens(user)
+
+        log_user_login(
+            user=user,
+            ip_address=ip,
+            user_agent=ua,
+        )
+        log_activity(
+            user=user,
+            action='view',
+            entity_type='auth',
+            entity_id=str(user.id),
+            entity_name=user.username,
+            description='Vérification OTP 2FA réussie — connexion accordée.',
+            ip_address=ip,
+            user_agent=ua,
+        )
+
+        response = Response({
+            'message': 'Connexion réussie',
+            'user': UserSerializer(user).data,
+        }, status=status.HTTP_200_OK)
+
+        return AuthService.set_auth_cookies(response, access_token, refresh_token)
+
+    except Exception as e:
+        logger.error("Erreur lors de la vérification OTP : %s", str(e))
+        return Response(
+            {'error': 'Erreur interne. Réessayez plus tard.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(['POST'])
@@ -626,7 +754,10 @@ def change_password(request):
         # Changer le mot de passe
         user.set_password(new_password)
         user.save()
-        
+
+        # Security by Design : changement de mot de passe = révoquer la session 2FA
+        TwoFactorService.invalidate_session(user)
+
         return Response({
             'message': 'Mot de passe changé avec succès'
         }, status=status.HTTP_200_OK)
@@ -1430,6 +1561,9 @@ def password_reset_confirm(request):
         user.set_password(password)
         user.save()
         logger.info("Mot de passe réinitialisé pour %s", user.username)
+
+        # Security by Design : réinitialisation = révoquer la session 2FA
+        TwoFactorService.invalidate_session(user)
         
         # Générer les tokens JWT et connecter automatiquement l'utilisateur
         logger.info("Génération des tokens JWT...")
