@@ -68,6 +68,7 @@ from parametre.services.recaptcha_service import recaptcha_service, RecaptchaVal
 from parametre.services.two_factor_service import TwoFactorService
 import json
 import logging
+from django.db import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -169,14 +170,22 @@ def register(request):
                 ]
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Créer l'utilisateur
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name
-        )
+        # Créer l'utilisateur — IntegrityError si deux requêtes simultanées passent
+        # le exists() check avant que l'une d'elles n'insère (TOCTOU). L'index UNIQUE
+        # en base garantit qu'une seule réussit ; l'autre reçoit une erreur contrôlée.
+        try:
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+        except IntegrityError:
+            return Response(
+                {'error': 'Cet email est déjà utilisé'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Générer les tokens
         access_token, refresh_token = AuthService.create_tokens(user)
@@ -290,6 +299,14 @@ def login(request):
                 reason = 'inactive_account'
         except User.DoesNotExist:
             reason = 'user_not_found'
+        except User.MultipleObjectsReturned:
+            # Ne devrait jamais arriver avec l'index UNIQUE en base.
+            # Défense contre des données corrompues pré-migration.
+            logger.error("[SECURITY] Plusieurs comptes avec l'email %s — investigation requise", email)
+            return Response(
+                {'error': 'Erreur de configuration du compte. Contactez l\'administrateur.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         if reason:
             from parametre.views import _parse_user_agent
