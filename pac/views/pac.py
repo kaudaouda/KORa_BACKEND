@@ -538,7 +538,7 @@ def pac_get_or_create(request):
             except PermissionDenied as e:
                 return Response({
                     'success': False,
-                    'error': str(e) or "Vous n'avez pas les permissions nécessaires pour créer un PAC."
+                    'error': "Vous n'avez pas les permissions nécessaires pour créer un PAC."
                 }, status=status.HTTP_403_FORBIDDEN)
         # ========== FIN VÉRIFICATION DES PERMISSIONS ==========
 

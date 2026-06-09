@@ -241,7 +241,7 @@ def tableaux_bord_list_create(request):
                     }, status=status.HTTP_201_CREATED)
                 except Exception as e:
                     logger.error("Erreur lors de la sauvegarde du tableau: %s", str(e))
-                    return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({'success': False, 'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=status.HTTP_400_BAD_REQUEST)
             else:
                 logger.error("Erreurs de validation serializer: %s", serializer.errors)
                 return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -300,7 +300,7 @@ def tableau_bord_detail(request, uuid):
 
                 return Response({'success': True, 'data': TableauBordSerializer(instance).data})
             except Exception as e:
-                return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'success': False, 'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'success': False, 'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
     else:  # DELETE
         # Note: La vérification des permissions est maintenant gérée par DashboardTableauDeletePermission

@@ -514,7 +514,7 @@ def recent_activities(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des activités',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -563,7 +563,7 @@ def user_activities(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des activités',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -633,7 +633,7 @@ def admin_notifications_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des notifications',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -688,6 +688,6 @@ def admin_email_logs(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des logs email',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

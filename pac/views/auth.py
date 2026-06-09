@@ -115,7 +115,6 @@ def register(request):
                     logger.warning("reCAPTCHA validation échouée pour l'inscription: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
-                        'recaptcha_error': recaptcha_data.get('error'),
                         'recaptcha_required': True
                     }, status=status.HTTP_400_BAD_REQUEST)
 
@@ -125,7 +124,6 @@ def register(request):
                 logger.error("Erreur reCAPTCHA lors de l'inscription: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
-                    'recaptcha_error': str(e),
                     'recaptcha_required': True
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
@@ -241,8 +239,6 @@ def login(request):
                     logger.warning("reCAPTCHA validation échouée pour la connexion: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
-                        'recaptcha_error': recaptcha_data.get('error'),
-                        'recaptcha_error_codes': recaptcha_data.get('error_codes', []),
                         'recaptcha_required': True
                     }, status=status.HTTP_400_BAD_REQUEST)
 
@@ -252,7 +248,6 @@ def login(request):
                 logger.error("Erreur reCAPTCHA lors de la connexion: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
-                    'recaptcha_error': str(e),
                     'recaptcha_required': True
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
@@ -812,16 +807,15 @@ def check_invitation(request):
     - Permet au frontend de rediriger automatiquement si le lien a déjà été utilisé
     """
     try:
-        logger.info("=" * 60)
-        logger.info("DEBUT check_invitation")
-        logger.info("IP: %s", get_client_ip(request))
+        logger.debug("=" * 60)
+        logger.debug("DEBUT check_invitation")
+        logger.debug("IP: %s", get_client_ip(request))
         
         # Récupérer les paramètres depuis la query string
         uidb64 = request.GET.get('uid')
         token = request.GET.get('token')
         
         logger.info("uidb64: %s", uidb64)
-        logger.info("token: %s...", token[:20] if token else None)
         
         # Validation des paramètres requis
         if not uidb64 or not token:
@@ -837,7 +831,7 @@ def check_invitation(request):
             decoded_bytes = urlsafe_base64_decode(uidb64)
             uid = force_str(decoded_bytes)
             user = User.objects.get(pk=uid)
-            logger.info("Utilisateur trouvé: id=%s", user.id)
+            logger.debug("Utilisateur trouvé: id=%s", user.id)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
             logger.warning("Erreur lors du décodage ou utilisateur non trouvé: %s", type(e).__name__)
             return Response({
@@ -902,11 +896,11 @@ def complete_invitation(request):
     - Active le compte et connecte automatiquement l'utilisateur
     """
     try:
-        logger.info("=" * 60)
-        logger.info("DEBUT complete_invitation")
-        logger.info("Content-Type: %s", request.content_type)
-        logger.info("Method: %s", request.method)
-        logger.info("IP: %s", get_client_ip(request))
+        logger.debug("=" * 60)
+        logger.debug("DEBUT complete_invitation")
+        logger.debug("Content-Type: %s", request.content_type)
+        logger.debug("Method: %s", request.method)
+        logger.debug("IP: %s", get_client_ip(request))
         
         # ========== RATE LIMITING (Security by Design) ==========
         from django.core.cache import cache
@@ -931,8 +925,7 @@ def complete_invitation(request):
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
         # ========== FIN RATE LIMITING ==========
         
-        logger.info("request.data type: %s", type(request.data))
-        logger.info("request.data: %s", request.data)
+        logger.debug("request.data type: %s", type(request.data))
 
         # IMPORTANT : ne plus toucher à request.body ici, DRF l'a déjà consommé
         # On se fie uniquement à request.data, qui contient déjà les données parsées
@@ -961,7 +954,6 @@ def complete_invitation(request):
                     logger.warning("reCAPTCHA validation échouée pour complete_invitation: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
-                        'recaptcha_error': recaptcha_data.get('error'),
                         'recaptcha_required': True,
                         'code': 'RECAPTCHA_FAILED'
                     }, status=status.HTTP_400_BAD_REQUEST)
@@ -972,7 +964,6 @@ def complete_invitation(request):
                 logger.error("Erreur reCAPTCHA lors de la finalisation de l'invitation: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
-                    'recaptcha_error': str(e),
                     'recaptcha_required': True,
                     'code': 'RECAPTCHA_ERROR'
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1013,7 +1004,7 @@ def complete_invitation(request):
             decoded_bytes = urlsafe_base64_decode(uidb64)
             uid = force_str(decoded_bytes)
             user = User.objects.get(pk=uid)
-            logger.info("Utilisateur trouvé: id=%s", user.id)
+            logger.debug("Utilisateur trouvé: id=%s", user.id)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
             # Minimal Disclosure : le type d'exception ne doit pas être exposé au client.
             # Les détails sont dans les logs pour le débogage.
@@ -1024,9 +1015,9 @@ def complete_invitation(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Vérifier le token d'invitation
-        logger.info("Vérification du token d'invitation...")
+        logger.debug("Vérification du token d'invitation...")
         token_valid = default_token_generator.check_token(user, token)
-        logger.info("Token valide: %s", token_valid)
+        logger.debug("Token valide: %s", token_valid)
         
         if not token_valid:
             logger.warning("Token d'invitation invalide ou expiré pour l'utilisateur %s", user.username)
@@ -1047,7 +1038,7 @@ def complete_invitation(request):
         
         # Vérifier que l'utilisateur n'a pas déjà un mot de passe défini (sécurité supplémentaire)
         has_usable = user.has_usable_password()
-        logger.info("Utilisateur a un mot de passe utilisable: %s", has_usable)
+        logger.debug("Utilisateur a un mot de passe utilisable: %s", has_usable)
         
         if has_usable:
             logger.warning("Tentative d'utilisation d'un lien d'invitation déjà utilisé pour: %s", user.username)
@@ -1073,10 +1064,10 @@ def complete_invitation(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Valider la force du mot de passe
-        logger.info("Validation de la force du mot de passe...")
+        logger.debug("Validation de la force du mot de passe...")
         try:
             validate_password(password, user=user)
-            logger.info("Mot de passe validé avec succès")
+            logger.debug("Mot de passe validé avec succès")
         except ValidationError as e:
             logger.error("Mot de passe invalide: %s", list(e.messages))
             return Response({
@@ -1118,10 +1109,10 @@ def complete_invitation(request):
             # Ne pas bloquer si le log échoue
         
         # Générer les tokens JWT et connecter automatiquement l'utilisateur
-        logger.info("Génération des tokens JWT...")
+        logger.debug("Génération des tokens JWT...")
         try:
             access_token, refresh_token = AuthService.create_tokens(user)
-            logger.info("Tokens JWT générés avec succès")
+            logger.debug("Tokens JWT générés avec succès")
         except Exception as token_error:
             logger.error("ERREUR lors de la génération des tokens: %s", str(token_error))
             import traceback
@@ -1129,10 +1120,10 @@ def complete_invitation(request):
             raise
         
         # Créer la réponse avec les tokens dans les cookies
-        logger.info("Création de la réponse...")
+        logger.debug("Création de la réponse...")
         try:
             user_data = UserSerializer(user).data
-            logger.info("Données utilisateur sérialisées: %s", list(user_data.keys()))
+            logger.debug("Données utilisateur sérialisées: %s", list(user_data.keys()))
         except Exception as serializer_error:
             logger.error("ERREUR lors de la sérialisation de l'utilisateur: %s", str(serializer_error))
             import traceback
@@ -1148,7 +1139,7 @@ def complete_invitation(request):
         # Définir les cookies d'authentification
         try:
             AuthService.set_auth_cookies(response, access_token, refresh_token)
-            logger.info("Cookies d'authentification définis")
+            logger.debug("Cookies d'authentification définis")
         except Exception as cookie_error:
             logger.error("ERREUR lors de la définition des cookies: %s", str(cookie_error))
             import traceback
@@ -1156,7 +1147,7 @@ def complete_invitation(request):
             raise
         
         # Logger la connexion automatique après finalisation de l'invitation
-        logger.info("Log de la connexion...")
+        logger.debug("Log de la connexion...")
         try:
             log_user_login(
                 user=user,
@@ -1170,7 +1161,7 @@ def complete_invitation(request):
             # Ne pas bloquer si le log échoue
         
         logger.info("Invitation finalisée avec succès pour %s", user.username)
-        logger.info("=" * 60)
+        logger.debug("=" * 60)
         
         return response
         
@@ -1200,10 +1191,10 @@ def password_reset_request(request):
     - Ne révèle pas si l'email existe ou non (sécurité)
     """
     try:
-        logger.info("=" * 60)
-        logger.info("DEBUT password_reset_request")
+        logger.debug("=" * 60)
+        logger.debug("DEBUT password_reset_request")
         logger.info("Utilisateur qui demande: %s (is_staff=%s, is_superuser=%s)", request.user.username, request.user.is_staff, request.user.is_superuser)
-        logger.info("IP: %s", get_client_ip(request))
+        logger.debug("IP: %s", get_client_ip(request))
         
         # ========== VÉRIFICATION DE SÉCURITÉ ==========
         can_manage = can_manage_users(request.user)
@@ -1257,7 +1248,7 @@ def password_reset_request(request):
         # Chercher l'utilisateur par email
         try:
             user = User.objects.get(email=email)
-            logger.info("Utilisateur trouvé: id=%s", user.id)
+            logger.debug("Utilisateur trouvé: id=%s", user.id)
         except User.DoesNotExist:
             # Security by Design : Ne pas révéler si l'email existe ou non
             # Retourner un succès générique pour éviter l'énumération d'emails
@@ -1279,7 +1270,7 @@ def password_reset_request(request):
         # Générer un token de réinitialisation
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        logger.info("Token de réinitialisation généré: uid=%s, token=%s...", uid, token[:20])
+        logger.info("Token de réinitialisation généré pour uid=%s", uid)
         
         frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
         raw_reset_url = f"{frontend_base}/reset-password?uid={uid}&token={token}"
@@ -1348,7 +1339,7 @@ def password_reset_request(request):
         )
         
         logger.info("Demande de réinitialisation terminée avec succès pour %s", user.email)
-        logger.info("=" * 60)
+        logger.debug("=" * 60)
         
         return Response({
             'success': True,
@@ -1377,11 +1368,11 @@ def password_reset_confirm(request):
     - Connecte automatiquement l'utilisateur après réinitialisation
     """
     try:
-        logger.info("=" * 60)
-        logger.info("DEBUT password_reset_confirm")
-        logger.info("Content-Type: %s", request.content_type)
-        logger.info("Method: %s", request.method)
-        logger.info("IP: %s", get_client_ip(request))
+        logger.debug("=" * 60)
+        logger.debug("DEBUT password_reset_confirm")
+        logger.debug("Content-Type: %s", request.content_type)
+        logger.debug("Method: %s", request.method)
+        logger.debug("IP: %s", get_client_ip(request))
         
         # ========== RATE LIMITING (Security by Design) ==========
         from django.core.cache import cache
@@ -1404,8 +1395,7 @@ def password_reset_confirm(request):
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
         # ========== FIN RATE LIMITING ==========
         
-        logger.info("request.data type: %s", type(request.data))
-        logger.info("request.data: %s", request.data)
+        logger.debug("request.data type: %s", type(request.data))
         
         data = request.data
         
@@ -1432,7 +1422,6 @@ def password_reset_confirm(request):
                     logger.warning("reCAPTCHA validation échouée pour password_reset_confirm: %s", recaptcha_data)
                     return Response({
                         'error': 'Vérification de sécurité échouée',
-                        'recaptcha_error': recaptcha_data.get('error'),
                         'recaptcha_required': True,
                         'code': 'RECAPTCHA_FAILED'
                     }, status=status.HTTP_400_BAD_REQUEST)
@@ -1443,7 +1432,6 @@ def password_reset_confirm(request):
                 logger.error("Erreur reCAPTCHA lors de la réinitialisation: %s", str(e))
                 return Response({
                     'error': 'Problème de vérification de sécurité',
-                    'recaptcha_error': str(e),
                     'recaptcha_required': True,
                     'code': 'RECAPTCHA_ERROR'
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1484,7 +1472,7 @@ def password_reset_confirm(request):
             decoded_bytes = urlsafe_base64_decode(uidb64)
             uid = force_str(decoded_bytes)
             user = User.objects.get(pk=uid)
-            logger.info("Utilisateur trouvé: id=%s", user.id)
+            logger.debug("Utilisateur trouvé: id=%s", user.id)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
             logger.error("Erreur lors du décodage ou utilisateur non trouvé: %s: %s", type(e).__name__, str(e))
             return Response({
@@ -1493,9 +1481,9 @@ def password_reset_confirm(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Vérifier le token de réinitialisation
-        logger.info("Vérification du token de réinitialisation...")
+        logger.debug("Vérification du token de réinitialisation...")
         token_valid = default_token_generator.check_token(user, token)
-        logger.info("Token valide: %s", token_valid)
+        logger.debug("Token valide: %s", token_valid)
         
         if not token_valid:
             logger.warning("Token de réinitialisation invalide ou expiré pour l'utilisateur %s", user.username)
@@ -1509,7 +1497,7 @@ def password_reset_confirm(request):
         
         # Vérifier que l'utilisateur a un mot de passe utilisable (doit être True pour une réinitialisation)
         has_usable = user.has_usable_password()
-        logger.info("Utilisateur a un mot de passe utilisable: %s", has_usable)
+        logger.debug("Utilisateur a un mot de passe utilisable: %s", has_usable)
         
         if not has_usable:
             logger.warning("Tentative de réinitialisation pour un utilisateur sans mot de passe: %s", user.username)
@@ -1519,10 +1507,10 @@ def password_reset_confirm(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Valider la force du mot de passe
-        logger.info("Validation de la force du mot de passe...")
+        logger.debug("Validation de la force du mot de passe...")
         try:
             validate_password(password, user=user)
-            logger.info("Mot de passe validé avec succès")
+            logger.debug("Mot de passe validé avec succès")
         except ValidationError as e:
             logger.error("Mot de passe invalide: %s", list(e.messages))
             
@@ -1554,7 +1542,7 @@ def password_reset_confirm(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Définir le nouveau mot de passe
-        logger.info("Définition du nouveau mot de passe...")
+        logger.debug("Définition du nouveau mot de passe...")
         user.set_password(password)
         user.save()
         logger.info("Mot de passe réinitialisé pour %s", user.username)
@@ -1563,10 +1551,10 @@ def password_reset_confirm(request):
         TwoFactorService.invalidate_session(user)
         
         # Générer les tokens JWT et connecter automatiquement l'utilisateur
-        logger.info("Génération des tokens JWT...")
+        logger.debug("Génération des tokens JWT...")
         try:
             access_token, refresh_token = AuthService.create_tokens(user)
-            logger.info("Tokens JWT générés avec succès")
+            logger.debug("Tokens JWT générés avec succès")
         except Exception as token_error:
             logger.error("ERREUR lors de la génération des tokens: %s", str(token_error))
             import traceback
@@ -1574,10 +1562,10 @@ def password_reset_confirm(request):
             raise
         
         # Créer la réponse avec les tokens dans les cookies
-        logger.info("Création de la réponse...")
+        logger.debug("Création de la réponse...")
         try:
             user_data = UserSerializer(user).data
-            logger.info("Données utilisateur sérialisées: %s", list(user_data.keys()))
+            logger.debug("Données utilisateur sérialisées: %s", list(user_data.keys()))
         except Exception as serializer_error:
             logger.error("ERREUR lors de la sérialisation de l'utilisateur: %s", str(serializer_error))
             import traceback
@@ -1593,7 +1581,7 @@ def password_reset_confirm(request):
         # Définir les cookies d'authentification
         try:
             AuthService.set_auth_cookies(response, access_token, refresh_token)
-            logger.info("Cookies d'authentification définis")
+            logger.debug("Cookies d'authentification définis")
         except Exception as cookie_error:
             logger.error("ERREUR lors de la définition des cookies: %s", str(cookie_error))
             import traceback
@@ -1601,7 +1589,7 @@ def password_reset_confirm(request):
             raise
         
         # Logger la connexion automatique après réinitialisation
-        logger.info("Log de la connexion...")
+        logger.debug("Log de la connexion...")
         try:
             log_user_login(
                 user=user,
@@ -1630,7 +1618,7 @@ def password_reset_confirm(request):
             logger.warning("ERREUR lors du log d'activité (non bloquant): %s", str(log_error))
         
         logger.info("Réinitialisation finalisée avec succès pour %s", user.username)
-        logger.info("=" * 60)
+        logger.debug("=" * 60)
         
         return response
         

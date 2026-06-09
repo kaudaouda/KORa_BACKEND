@@ -85,8 +85,7 @@ def details_ap_list(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération des détails AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -127,8 +126,7 @@ def details_ap_by_activite_periodique(request, ap_uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la récupération des détails AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -186,8 +184,7 @@ def details_ap_create(request):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la création du détail AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['PUT'])
@@ -238,8 +235,7 @@ def details_ap_update(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la mise à jour du détail AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['DELETE'])
@@ -294,8 +290,7 @@ def details_ap_delete(request, uuid):
         logger.error(traceback.format_exc())
         return Response({
             'error': 'Erreur lors de la suppression du détail AP',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== ENDPOINTS API SUIVIS AP ====================

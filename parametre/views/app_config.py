@@ -89,7 +89,7 @@ def application_config_list(request):
         return JsonResponse(data, safe=False)
     except Exception as e:
         logger.error("Erreur application_config_list: %s", e)
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=500)
 
 
 @api_view(['PATCH'])
@@ -113,7 +113,7 @@ def application_config_toggle(request, app_name):
         return JsonResponse({'error': 'Application non trouvée'}, status=404)
     except Exception as e:
         logger.error("Erreur application_config_toggle: %s", e)
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=500)
 
 
 @api_view(['GET'])

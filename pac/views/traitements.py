@@ -145,7 +145,7 @@ def traitement_create(request):
                 except PermissionDenied as e:
                     return Response({
                         'success': False,
-                        'error': str(e) or "Vous n'avez pas les permissions nécessaires pour créer un traitement."
+                        'error': "Vous n'avez pas les permissions nécessaires pour créer un traitement."
                     }, status=status.HTTP_403_FORBIDDEN)
                 # ========== FIN VÉRIFICATION ==========
                 
@@ -605,7 +605,7 @@ def details_pac_create(request):
                 except PermissionDenied as e:
                     return Response({
                         'success': False,
-                        'error': str(e) or "Vous n'avez pas les permissions nécessaires pour créer un détail PAC."
+                        'error': "Vous n'avez pas les permissions nécessaires pour créer un détail PAC."
                     }, status=status.HTTP_403_FORBIDDEN)
                 # ========== FIN VÉRIFICATION ==========
                 

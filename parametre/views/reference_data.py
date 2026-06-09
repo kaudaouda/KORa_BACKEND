@@ -94,7 +94,7 @@ def natures_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des natures',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -126,7 +126,7 @@ def categories_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des catégories',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -158,7 +158,7 @@ def sources_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des sources',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -190,7 +190,7 @@ def action_types_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des types d\'action',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -222,7 +222,7 @@ def statuts_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des statuts',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -254,7 +254,7 @@ def etats_mise_en_oeuvre_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des états de mise en œuvre',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -286,7 +286,7 @@ def appreciations_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des appréciations',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -318,7 +318,7 @@ def statuts_action_cdr_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des statuts d\'action',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -350,7 +350,7 @@ def directions_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des directions',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -393,7 +393,7 @@ def sous_directions_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des sous-directions',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -440,7 +440,7 @@ def services_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des services',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -479,7 +479,7 @@ def processus_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des processus',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -517,7 +517,7 @@ def dysfonctionnements_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération des dysfonctionnements',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -538,7 +538,7 @@ def dysfonctionnements_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les dysfonctionnements',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -838,7 +838,7 @@ def natures_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les natures',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -859,7 +859,7 @@ def categories_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les catégories',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -880,7 +880,7 @@ def sources_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les sources',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -901,7 +901,7 @@ def action_types_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les types d\'action',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -922,7 +922,7 @@ def statuts_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les statuts',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -943,7 +943,7 @@ def etats_mise_en_oeuvre_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les états de mise en œuvre',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -964,7 +964,7 @@ def appreciations_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les appréciations',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -985,7 +985,7 @@ def directions_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les directions',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1028,7 +1028,7 @@ def sous_directions_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de toutes les sous-directions',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1075,7 +1075,7 @@ def services_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les services',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1096,7 +1096,7 @@ def processus_all_list(request):
         return Response({
             'success': False,
             'message': 'Erreur lors de la récupération de tous les processus',
-            'error': str(e)
+            'error': "Une erreur inattendue s'est produite. Veuillez réessayer."
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
