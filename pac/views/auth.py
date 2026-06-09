@@ -553,25 +553,18 @@ def refresh_token(request):
 
         try:
             refresh = RefreshToken(refresh_token_value)
-            new_access_token = refresh.access_token
+            # Accéder à .access_token déclenche la rotation côté simplejwt
+            # (ROTATE_REFRESH_TOKENS=True) : l'ancien refresh token est blacklisté,
+            # str(refresh) donne le nouveau. Les deux cookies doivent être mis à jour.
+            new_access_token = str(refresh.access_token)
+            new_refresh_token = str(refresh)
 
-            # Créer la réponse (Security by Design: token uniquement dans cookie httpOnly)
+            # Déléguer à AuthService — source unique de vérité pour les cookies :
+            # httponly=True, secure=not DEBUG, samesite='Lax', max_age cohérent.
             response = Response({
                 'message': 'Token rafraîchi avec succès'
             }, status=status.HTTP_200_OK)
-
-            # Mettre à jour le cookie access_token
-            response.set_cookie(
-                'access_token',
-                str(new_access_token),
-                max_age=30 * 60,  # 30 minutes — aligné sur ACCESS_TOKEN_LIFETIME
-                httponly=True,
-                secure=False,  # True en production avec HTTPS
-                samesite='Lax',
-                path='/'
-            )
-
-            return response
+            return AuthService.set_auth_cookies(response, new_access_token, new_refresh_token)
 
         except (InvalidToken, TokenError) as e:
             logger.warning("Refresh token invalide: %s", str(e))
