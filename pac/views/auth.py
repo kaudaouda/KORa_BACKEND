@@ -996,37 +996,13 @@ def complete_invitation(request):
             uid = force_str(decoded_bytes)
             user = User.objects.get(pk=uid)
             logger.info("Utilisateur trouvé: id=%s", user.id)
-        except TypeError as e:
-            logger.error("TypeError lors du décodage: %s", str(e))
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
+            # Minimal Disclosure : le type d'exception ne doit pas être exposé au client.
+            # Les détails sont dans les logs pour le débogage.
+            logger.error("Erreur décodage uid (complete_invitation): %s", e, exc_info=True)
             return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (TypeError)',
+                'error': 'Lien d\'invitation invalide ou expiré.',
                 'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except ValueError as e:
-            logger.error("ValueError lors du décodage: %s", str(e))
-            return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (ValueError)',
-                'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except OverflowError as e:
-            logger.error("OverflowError lors du décodage: %s", str(e))
-            return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (OverflowError)',
-                'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            logger.error("Utilisateur non trouvé avec uid: %s", uid)
-            return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (User not found)',
-                'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            logger.error("Exception inattendue lors du décodage: %s: %s", type(e).__name__, str(e))
-            import traceback
-            logger.error("Traceback: %s", traceback.format_exc())
-            return Response({
-                'error': f'Erreur lors du décodage du lien: {str(e)}',
-                'code': 'DECODE_ERROR'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Vérifier le token d'invitation
@@ -1180,21 +1156,15 @@ def complete_invitation(request):
         
         return response
         
-    except json.JSONDecodeError as e:
-        logger.error("Erreur de parsing JSON: %s", str(e))
+    except json.JSONDecodeError:
         return Response({
             'error': 'Format de données invalide',
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans complete_invitation: %s", str(e))
-        logger.error("Type d'erreur: %s", type(e).__name__)
-        import traceback
-        logger.error("Traceback complet:\n%s", traceback.format_exc())
-        logger.error("=" * 60)
+        logger.error("Erreur inattendue dans complete_invitation", exc_info=True)
         return Response({
-            'error': f'Erreur lors de la finalisation de l\'invitation: {str(e)}',
+            'error': 'Erreur interne. Réessayez plus tard.',
             'code': 'COMPLETE_INVITATION_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1368,15 +1338,10 @@ def password_reset_request(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans password_reset_request: %s", str(e))
-        logger.error("Type d'erreur: %s", type(e).__name__)
-        import traceback
-        logger.error("Traceback complet:\n%s", traceback.format_exc())
-        logger.error("=" * 60)
+        logger.error("Erreur inattendue dans password_reset_request", exc_info=True)
         return Response({
             'success': False,
-            'error': f"Erreur lors de la demande de réinitialisation: {str(e)}",
+            'error': 'Erreur interne. Réessayez plus tard.',
             'code': 'PASSWORD_RESET_REQUEST_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1650,21 +1615,15 @@ def password_reset_confirm(request):
         
         return response
         
-    except json.JSONDecodeError as e:
-        logger.error("Erreur de parsing JSON: %s", str(e))
+    except json.JSONDecodeError:
         return Response({
             'error': 'Format de données invalide',
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans password_reset_confirm: %s", str(e))
-        logger.error("Type d'erreur: %s", type(e).__name__)
-        import traceback
-        logger.error("Traceback complet:\n%s", traceback.format_exc())
-        logger.error("=" * 60)
+        logger.error("Erreur inattendue dans password_reset_confirm", exc_info=True)
         return Response({
-            'error': f'Erreur lors de la réinitialisation du mot de passe: {str(e)}',
+            'error': 'Erreur interne. Réessayez plus tard.',
             'code': 'PASSWORD_RESET_CONFIRM_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
