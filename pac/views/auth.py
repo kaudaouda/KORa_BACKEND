@@ -761,9 +761,26 @@ def change_password(request):
         # Security by Design : changement de mot de passe = révoquer la session 2FA
         TwoFactorService.invalidate_session(user)
 
-        return Response({
+        # Security by Design : révoquer le refresh token actuel pour invalider toutes
+        # les sessions existantes (y compris les tokens volés). Sans cette révocation,
+        # un attaquant en possession du refresh token peut continuer à l'utiliser
+        # pendant 2h après le changement de mot de passe.
+        old_refresh = request.COOKIES.get('refresh_token')
+        if old_refresh:
+            try:
+                from rest_framework_simplejwt.tokens import RefreshToken as RT
+                RT(old_refresh).blacklist()
+            except Exception:
+                # Token déjà invalide ou expiré — non bloquant
+                pass
+
+        # Émettre immédiatement une nouvelle paire de tokens : l'utilisateur reste
+        # connecté sans friction, mais avec des credentials propres non compromis.
+        new_access, new_refresh = AuthService.create_tokens(user)
+        response = Response({
             'message': 'Mot de passe changé avec succès'
         }, status=status.HTTP_200_OK)
+        return AuthService.set_auth_cookies(response, new_access, new_refresh)
         
     except Exception as e:
         logger.error("Erreur lors du changement de mot de passe: %s", str(e))
