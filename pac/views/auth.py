@@ -87,6 +87,7 @@ def _mask_email(email: str) -> str:
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
 def register(request):
     """Inscription d'un nouvel utilisateur avec validation reCAPTCHA"""
     try:
