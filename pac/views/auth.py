@@ -33,6 +33,7 @@ from parametre.permissions import (
     user_can_create_for_processus,
     get_user_processus_list,
     user_has_access_to_processus,
+    can_manage_users,
 )
 # Import des classes de permissions génériques PAC
 from permissions.permissions import (
@@ -67,6 +68,7 @@ from parametre.services.recaptcha_service import recaptcha_service, RecaptchaVal
 from parametre.services.two_factor_service import TwoFactorService
 import json
 import logging
+from django.db import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,7 @@ def _mask_email(email: str) -> str:
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([KoraSensitiveThrottle])
 def register(request):
     """Inscription d'un nouvel utilisateur avec validation reCAPTCHA"""
     try:
@@ -167,14 +170,22 @@ def register(request):
                 ]
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Créer l'utilisateur
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name
-        )
+        # Créer l'utilisateur — IntegrityError si deux requêtes simultanées passent
+        # le exists() check avant que l'une d'elles n'insère (TOCTOU). L'index UNIQUE
+        # en base garantit qu'une seule réussit ; l'autre reçoit une erreur contrôlée.
+        try:
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+        except IntegrityError:
+            return Response(
+                {'error': 'Cet email est déjà utilisé'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Générer les tokens
         access_token, refresh_token = AuthService.create_tokens(user)
@@ -288,6 +299,14 @@ def login(request):
                 reason = 'inactive_account'
         except User.DoesNotExist:
             reason = 'user_not_found'
+        except User.MultipleObjectsReturned:
+            # Ne devrait jamais arriver avec l'index UNIQUE en base.
+            # Défense contre des données corrompues pré-migration.
+            logger.error("[SECURITY] Plusieurs comptes avec l'email %s — investigation requise", email)
+            return Response(
+                {'error': 'Erreur de configuration du compte. Contactez l\'administrateur.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         if reason:
             from parametre.views import _parse_user_agent
@@ -552,31 +571,23 @@ def refresh_token(request):
 
         try:
             refresh = RefreshToken(refresh_token_value)
-            new_access_token = refresh.access_token
+            # Accéder à .access_token déclenche la rotation côté simplejwt
+            # (ROTATE_REFRESH_TOKENS=True) : l'ancien refresh token est blacklisté,
+            # str(refresh) donne le nouveau. Les deux cookies doivent être mis à jour.
+            new_access_token = str(refresh.access_token)
+            new_refresh_token = str(refresh)
 
-            # Créer la réponse (Security by Design: token uniquement dans cookie httpOnly)
+            # Déléguer à AuthService — source unique de vérité pour les cookies :
+            # httponly=True, secure=not DEBUG, samesite='Lax', max_age cohérent.
             response = Response({
                 'message': 'Token rafraîchi avec succès'
             }, status=status.HTTP_200_OK)
-
-            # Mettre à jour le cookie access_token
-            response.set_cookie(
-                'access_token',
-                str(new_access_token),
-                max_age=30 * 60,  # 30 minutes — aligné sur ACCESS_TOKEN_LIFETIME
-                httponly=True,
-                secure=False,  # True en production avec HTTPS
-                samesite='Lax',
-                path='/'
-            )
-
-            return response
+            return AuthService.set_auth_cookies(response, new_access_token, new_refresh_token)
 
         except (InvalidToken, TokenError) as e:
             logger.warning("Refresh token invalide: %s", str(e))
             return Response({
-                'error': 'Refresh token invalide',
-                'details': str(e),
+                'error': 'Session expirée, veuillez vous reconnecter.',
                 'code': 'REFRESH_TOKEN_INVALID'
             }, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -656,10 +667,12 @@ def update_profile(request):
 def admin_update_profile(request):
     """Mettre à jour le profil utilisateur (admin seulement)"""
     try:
-        # Vérifier que l'utilisateur est admin
-        if not request.user.is_staff:
+        # Exige is_staff ET is_superuser — cohérent avec can_manage_users utilisé partout ailleurs.
+        # is_staff seul est insuffisant : un staff partiel pourrait modifier l'email d'un superuser
+        # et déclencher ensuite un reset de mot de passe pour prendre le contrôle du compte.
+        if not can_manage_users(request.user):
             return Response({
-                'error': 'Accès refusé. Seuls les administrateurs peuvent modifier l\'email.'
+                'error': 'Accès refusé. Seuls les super-administrateurs peuvent modifier le profil d\'un utilisateur.'
             }, status=status.HTTP_403_FORBIDDEN)
         
         data = request.data
@@ -758,9 +771,26 @@ def change_password(request):
         # Security by Design : changement de mot de passe = révoquer la session 2FA
         TwoFactorService.invalidate_session(user)
 
-        return Response({
+        # Security by Design : révoquer le refresh token actuel pour invalider toutes
+        # les sessions existantes (y compris les tokens volés). Sans cette révocation,
+        # un attaquant en possession du refresh token peut continuer à l'utiliser
+        # pendant 2h après le changement de mot de passe.
+        old_refresh = request.COOKIES.get('refresh_token')
+        if old_refresh:
+            try:
+                from rest_framework_simplejwt.tokens import RefreshToken as RT
+                RT(old_refresh).blacklist()
+            except Exception:
+                # Token déjà invalide ou expiré — non bloquant
+                pass
+
+        # Émettre immédiatement une nouvelle paire de tokens : l'utilisateur reste
+        # connecté sans friction, mais avec des credentials propres non compromis.
+        new_access, new_refresh = AuthService.create_tokens(user)
+        response = Response({
             'message': 'Mot de passe changé avec succès'
         }, status=status.HTTP_200_OK)
+        return AuthService.set_auth_cookies(response, new_access, new_refresh)
         
     except Exception as e:
         logger.error("Erreur lors du changement de mot de passe: %s", str(e))
@@ -879,24 +909,26 @@ def complete_invitation(request):
         logger.info("IP: %s", get_client_ip(request))
         
         # ========== RATE LIMITING (Security by Design) ==========
-        # Protection contre les attaques par force brute sur les tokens
         from django.core.cache import cache
-        
+
         client_ip = get_client_ip(request)
         rate_limit_key = f'invitation_complete_rate_limit_{client_ip}'
-        attempts = cache.get(rate_limit_key, 0)
-        max_attempts = 3  # Maximum 3 tentatives par IP par 30 minutes
+        max_attempts = 3
         rate_limit_window = 1800  # 30 minutes
 
-        if attempts >= max_attempts:
-            logger.warning("Rate limit dépassé pour complete_invitation")
+        # Incrément atomique : cache.add() pose la clé à 0 si absente (avec TTL),
+        # cache.incr() l'incrémente en une opération native Redis/Memcached.
+        # Sans atomicité, deux requêtes simultanées peuvent toutes deux passer
+        # le seuil en lisant la même valeur avant que l'une n'écrive.
+        cache.add(rate_limit_key, 0, rate_limit_window)
+        attempts = cache.incr(rate_limit_key)
+
+        if attempts > max_attempts:
+            logger.warning("Rate limit dépassé pour complete_invitation depuis IP: %s", client_ip)
             return Response({
                 'error': 'Trop de tentatives. Veuillez réessayer dans 30 minutes.',
                 'code': 'RATE_LIMIT_EXCEEDED'
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-
-        # Incrémenter le compteur
-        cache.set(rate_limit_key, attempts + 1, rate_limit_window)
         # ========== FIN RATE LIMITING ==========
         
         logger.info("request.data type: %s", type(request.data))
@@ -982,37 +1014,13 @@ def complete_invitation(request):
             uid = force_str(decoded_bytes)
             user = User.objects.get(pk=uid)
             logger.info("Utilisateur trouvé: id=%s", user.id)
-        except TypeError as e:
-            logger.error("TypeError lors du décodage: %s", str(e))
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
+            # Minimal Disclosure : le type d'exception ne doit pas être exposé au client.
+            # Les détails sont dans les logs pour le débogage.
+            logger.error("Erreur décodage uid (complete_invitation): %s", e, exc_info=True)
             return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (TypeError)',
+                'error': 'Lien d\'invitation invalide ou expiré.',
                 'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except ValueError as e:
-            logger.error("ValueError lors du décodage: %s", str(e))
-            return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (ValueError)',
-                'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except OverflowError as e:
-            logger.error("OverflowError lors du décodage: %s", str(e))
-            return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (OverflowError)',
-                'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            logger.error("Utilisateur non trouvé avec uid: %s", uid)
-            return Response({
-                'error': 'Lien d\'invitation invalide ou expiré (User not found)',
-                'code': 'INVALID_LINK'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            logger.error("Exception inattendue lors du décodage: %s: %s", type(e).__name__, str(e))
-            import traceback
-            logger.error("Traceback: %s", traceback.format_exc())
-            return Response({
-                'error': f'Erreur lors du décodage du lien: {str(e)}',
-                'code': 'DECODE_ERROR'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Vérifier le token d'invitation
@@ -1166,21 +1174,15 @@ def complete_invitation(request):
         
         return response
         
-    except json.JSONDecodeError as e:
-        logger.error("Erreur de parsing JSON: %s", str(e))
+    except json.JSONDecodeError:
         return Response({
             'error': 'Format de données invalide',
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans complete_invitation: %s", str(e))
-        logger.error("Type d'erreur: %s", type(e).__name__)
-        import traceback
-        logger.error("Traceback complet:\n%s", traceback.format_exc())
-        logger.error("=" * 60)
+        logger.error("Erreur inattendue dans complete_invitation", exc_info=True)
         return Response({
-            'error': f'Erreur lors de la finalisation de l\'invitation: {str(e)}',
+            'error': 'Erreur interne. Réessayez plus tard.',
             'code': 'COMPLETE_INVITATION_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1204,7 +1206,6 @@ def password_reset_request(request):
         logger.info("IP: %s", get_client_ip(request))
         
         # ========== VÉRIFICATION DE SÉCURITÉ ==========
-        from parametre.permissions import can_manage_users
         can_manage = can_manage_users(request.user)
         logger.info("can_manage_users: %s", can_manage)
         
@@ -1355,15 +1356,10 @@ def password_reset_request(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans password_reset_request: %s", str(e))
-        logger.error("Type d'erreur: %s", type(e).__name__)
-        import traceback
-        logger.error("Traceback complet:\n%s", traceback.format_exc())
-        logger.error("=" * 60)
+        logger.error("Erreur inattendue dans password_reset_request", exc_info=True)
         return Response({
             'success': False,
-            'error': f"Erreur lors de la demande de réinitialisation: {str(e)}",
+            'error': 'Erreur interne. Réessayez plus tard.',
             'code': 'PASSWORD_RESET_REQUEST_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -1389,22 +1385,23 @@ def password_reset_confirm(request):
         
         # ========== RATE LIMITING (Security by Design) ==========
         from django.core.cache import cache
-        
+
         client_ip = get_client_ip(request)
         rate_limit_key = f'password_reset_confirm_rate_limit_{client_ip}'
-        attempts = cache.get(rate_limit_key, 0)
-        max_attempts = 5  # Maximum 5 tentatives par IP par heure
+        max_attempts = 5
         rate_limit_window = 3600  # 1 heure
-        
-        if attempts >= max_attempts:
+
+        # Même pattern atomique que complete_invitation :
+        # cache.add() + cache.incr() = read-modify-write en une opération native.
+        cache.add(rate_limit_key, 0, rate_limit_window)
+        attempts = cache.incr(rate_limit_key)
+
+        if attempts > max_attempts:
             logger.warning("Rate limit dépassé pour password_reset_confirm depuis IP: %s", client_ip)
             return Response({
                 'error': 'Trop de tentatives. Veuillez réessayer dans 1 heure.',
                 'code': 'RATE_LIMIT_EXCEEDED'
             }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        
-        # Incrémenter le compteur
-        cache.set(rate_limit_key, attempts + 1, rate_limit_window)
         # ========== FIN RATE LIMITING ==========
         
         logger.info("request.data type: %s", type(request.data))
@@ -1637,21 +1634,15 @@ def password_reset_confirm(request):
         
         return response
         
-    except json.JSONDecodeError as e:
-        logger.error("Erreur de parsing JSON: %s", str(e))
+    except json.JSONDecodeError:
         return Response({
             'error': 'Format de données invalide',
             'code': 'INVALID_JSON'
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans password_reset_confirm: %s", str(e))
-        logger.error("Type d'erreur: %s", type(e).__name__)
-        import traceback
-        logger.error("Traceback complet:\n%s", traceback.format_exc())
-        logger.error("=" * 60)
+        logger.error("Erreur inattendue dans password_reset_confirm", exc_info=True)
         return Response({
-            'error': f'Erreur lors de la réinitialisation du mot de passe: {str(e)}',
+            'error': 'Erreur interne. Réessayez plus tard.',
             'code': 'PASSWORD_RESET_CONFIRM_FAILED'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

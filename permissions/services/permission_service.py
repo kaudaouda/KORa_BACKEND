@@ -35,7 +35,7 @@ class PermissionService:
     - invalidate_user_cache() : Invalide le cache des permissions
     """
     
-    CACHE_TIMEOUT = 5  # 5 secondes - TTL ultra-court pour synchronisation IMMEDIATE
+    CACHE_TIMEOUT = 60  # 60 secondes — invalidation explicite via signal post_save
     CACHE_PREFIX = 'perm'
     
     @classmethod
@@ -148,11 +148,11 @@ class PermissionService:
         cache_key = cls._get_bulk_cache_key(user.id, app_name, processus_uuid)
         cached_permissions = cache.get(cache_key)
         if cached_permissions is not None:
-            logger.info("[PermissionService] ⚠️ Cache HIT pour %s", cache_key)
+            logger.debug("[PermissionService] Cache HIT pour %s", cache_key)
             return cached_permissions
-        
+
         # Cache miss : calculer les permissions depuis la DB
-        logger.info("[PermissionService] ✅ Cache MISS, calcul depuis DB pour %s", cache_key)
+        logger.debug("[PermissionService] Cache MISS pour %s", cache_key)
 
         # 1a. Récupérer les rôles spécifiques (non-globaux) de l'utilisateur
         specific_roles_query = UserProcessusRole.objects.filter(

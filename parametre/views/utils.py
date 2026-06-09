@@ -75,14 +75,26 @@ class ServerSentEventRenderer(BaseRenderer):
 
 def get_client_ip(request):
     """
-    Récupère l'adresse IP du client
+    Récupère l'adresse IP réelle du client en tenant compte des proxies de confiance.
+
+    Utilise TRUSTED_PROXY_COUNT (settings) pour déterminer combien de proxies sont
+    devant Django. Avec N proxies de confiance, l'IP client est à l'index len(XFF)-N
+    dans le header X-Forwarded-For.
+
+    Sans proxy (dev) : retourne REMOTE_ADDR directement, XFF ignoré.
+    Avec 1 proxy (nginx) : XFF="client, proxy" → idx=0 → "client".
+
+    Ce comportement est identique à IPBlockMiddleware._get_ip() pour garantir
+    que les mêmes IPs sont bloquées par le middleware et loguées dans les vues.
     """
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0]
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
+    trusted_proxy_count = getattr(settings, 'TRUSTED_PROXY_COUNT', 0)
+    if trusted_proxy_count > 0:
+        xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+        ips = [ip.strip() for ip in xff.split(',') if ip.strip()]
+        if ips:
+            idx = max(0, len(ips) - trusted_proxy_count)
+            return ips[idx]
+    return request.META.get('REMOTE_ADDR')
 
 
 def _parse_user_agent(ua_string):

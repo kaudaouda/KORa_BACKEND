@@ -378,11 +378,12 @@ def pac_create(request):
 
     except Exception as e:
         import traceback
+        # Security by Design — Minimal Disclosure : les détails techniques restent côté serveur,
+        # jamais exposés au client (fuite d'info sur la structure DB, chemins, etc.)
         logger.error("[pac_create] Erreur: %s\n%s", str(e), traceback.format_exc())
         return Response({
             'success': False,
             'error': 'Impossible de créer le PAC',
-            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -627,7 +628,6 @@ def pac_get_or_create(request):
                             pass
                     return Response({
                         'error': 'Erreur lors de la sauvegarde du PAC',
-                        'details': str(save_error)
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
                 try:
@@ -649,19 +649,16 @@ def pac_get_or_create(request):
                     logger.error("[pac_get_or_create] Erreur sérialisation: %s", serializer_error)
                     return Response({
                         'error': 'Erreur lors de la sérialisation du PAC',
-                        'details': str(serializer_error)
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             logger.error("[pac_get_or_create] Erreurs de validation: %s", create_serializer.errors)
             return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
-        logger.error("[pac_get_or_create] Erreur exception non gérée: %s", str(e))
         import traceback
-        logger.error("[pac_get_or_create] Traceback: %s", traceback.format_exc())
+        logger.error("[pac_get_or_create] Erreur exception non gérée: %s\n%s", str(e), traceback.format_exc())
         return Response({
             'error': 'Impossible de traiter la demande',
-            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -795,7 +792,6 @@ def pac_validate(request, uuid):
         logger.error("Erreur lors de la validation du PAC: %s", str(e))
         return Response({
             'error': 'Impossible de valider le PAC',
-            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -869,12 +865,10 @@ def pac_validate_by_type(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        logger.error("Erreur lors de la validation par amendement: %s", str(e))
         import traceback
-        logger.error(traceback.format_exc())
+        logger.error("Erreur lors de la validation par amendement: %s\n%s", str(e), traceback.format_exc())
         return Response({
             'error': 'Impossible de valider les PACs',
-            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -905,11 +899,9 @@ def pac_unvalidate(request, uuid):
             'error': 'PAC non trouvé'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error("Erreur lors de la dévalidation du PAC %s: %s", uuid, str(e))
         import traceback
-        logger.error(traceback.format_exc())
+        logger.error("Erreur lors de la dévalidation du PAC %s: %s\n%s", uuid, str(e), traceback.format_exc())
         return Response({
             'error': 'Impossible de dévalider le PAC',
-            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
