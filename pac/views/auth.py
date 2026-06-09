@@ -33,6 +33,7 @@ from parametre.permissions import (
     user_can_create_for_processus,
     get_user_processus_list,
     user_has_access_to_processus,
+    can_manage_users,
 )
 # Import des classes de permissions génériques PAC
 from permissions.permissions import (
@@ -656,10 +657,12 @@ def update_profile(request):
 def admin_update_profile(request):
     """Mettre à jour le profil utilisateur (admin seulement)"""
     try:
-        # Vérifier que l'utilisateur est admin
-        if not request.user.is_staff:
+        # Exige is_staff ET is_superuser — cohérent avec can_manage_users utilisé partout ailleurs.
+        # is_staff seul est insuffisant : un staff partiel pourrait modifier l'email d'un superuser
+        # et déclencher ensuite un reset de mot de passe pour prendre le contrôle du compte.
+        if not can_manage_users(request.user):
             return Response({
-                'error': 'Accès refusé. Seuls les administrateurs peuvent modifier l\'email.'
+                'error': 'Accès refusé. Seuls les super-administrateurs peuvent modifier le profil d\'un utilisateur.'
             }, status=status.HTTP_403_FORBIDDEN)
         
         data = request.data
@@ -1204,7 +1207,6 @@ def password_reset_request(request):
         logger.info("IP: %s", get_client_ip(request))
         
         # ========== VÉRIFICATION DE SÉCURITÉ ==========
-        from parametre.permissions import can_manage_users
         can_manage = can_manage_users(request.user)
         logger.info("can_manage_users: %s", can_manage)
         
