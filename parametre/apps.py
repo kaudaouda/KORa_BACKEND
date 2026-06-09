@@ -17,6 +17,9 @@ class ParametreConfig(AppConfig):
         except ImportError:
             pass
 
+        # Signaux de sécurité — chargés inconditionnellement (pas liés au scheduler)
+        from . import signals  # noqa: F401
+
         # Ne démarrer le scheduler que dans le sous-process de développement (RUN_MAIN)
         # ou dans un vrai serveur de production — jamais lors des commandes de management.
         if os.environ.get('RUN_MAIN') != 'true':
