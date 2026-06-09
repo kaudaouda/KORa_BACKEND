@@ -2,6 +2,8 @@
 Service pour l'authentification à deux facteurs par email.
 """
 import logging
+from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from django.template.loader import render_to_string
 from django.core.mail import send_mail
@@ -80,40 +82,56 @@ class TwoFactorService:
         """
         Vérifie le code OTP pour une session donnée.
 
+        Toutes les opérations sont dans une transaction avec SELECT FOR UPDATE pour éviter
+        les race conditions (TOCTOU) : deux requêtes simultanées avec le bon code ne peuvent
+        pas toutes les deux réussir.
+
         Retourne (success, error_message, user_or_none).
         """
         try:
-            otp = EmailOTP.objects.select_related('user').get(session_key=session_key)
-        except EmailOTP.DoesNotExist:
-            return False, 'Session invalide ou expirée.', None
+            with transaction.atomic():
+                try:
+                    otp = (
+                        EmailOTP.objects
+                        .select_for_update()
+                        .select_related('user')
+                        .get(session_key=session_key)
+                    )
+                except EmailOTP.DoesNotExist:
+                    return False, 'Session invalide ou expirée.', None
 
-        if otp.is_used:
-            return False, 'Ce code a déjà été utilisé.', None
+                if otp.is_used:
+                    return False, 'Ce code a déjà été utilisé.', None
 
-        if otp.is_expired:
-            otp.is_used = True
-            otp.save(update_fields=['is_used'])
-            return False, 'Ce code a expiré. Reconnectez-vous pour en obtenir un nouveau.', None
+                if otp.is_expired:
+                    otp.is_used = True
+                    otp.save(update_fields=['is_used'])
+                    return False, 'Ce code a expiré. Reconnectez-vous pour en obtenir un nouveau.', None
 
-        config = TwoFactorConfig.get_config()
-        if otp.attempts >= config.max_attempts:
-            otp.is_used = True
-            otp.save(update_fields=['is_used'])
-            return False, 'Nombre de tentatives dépassé. Reconnectez-vous pour obtenir un nouveau code.', None
+                config = TwoFactorConfig.get_config()
+                if otp.attempts >= config.max_attempts:
+                    otp.is_used = True
+                    otp.save(update_fields=['is_used'])
+                    return False, 'Nombre de tentatives dépassé. Reconnectez-vous pour obtenir un nouveau code.', None
 
-        if not otp.check_code(raw_code):
-            otp.attempts += 1
-            otp.save(update_fields=['attempts'])
-            remaining = config.max_attempts - otp.attempts
-            return False, f'Code incorrect. {remaining} tentative{"s" if remaining > 1 else ""} restante{"s" if remaining > 1 else ""}.', None
+                if not otp.check_code(raw_code):
+                    # Incrément atomique : pas de risque de race condition sur le compteur
+                    EmailOTP.objects.filter(pk=otp.pk).update(attempts=F('attempts') + 1)
+                    otp.refresh_from_db(fields=['attempts'])
+                    remaining = config.max_attempts - otp.attempts
+                    return False, f'Code incorrect. {remaining} tentative{"s" if remaining > 1 else ""} restante{"s" if remaining > 1 else ""}.', None
 
-        # Code correct → invalider l'OTP et enregistrer la session de confiance
-        otp.is_used = True
-        otp.save(update_fields=['is_used'])
-        TwoFactorUserSession.record(otp.user)
+                # Code correct → invalider l'OTP et enregistrer la session de confiance
+                otp.is_used = True
+                otp.save(update_fields=['is_used'])
+                TwoFactorUserSession.record(otp.user)
 
-        logger.info("OTP vérifié avec succès pour %s (session=%s)", otp.user.email, session_key)
-        return True, '', otp.user
+                logger.info("OTP vérifié avec succès pour %s (session=%s)", otp.user.email, session_key)
+                return True, '', otp.user
+
+        except Exception as exc:
+            logger.error("Erreur inattendue dans verify_otp : %s", exc, exc_info=True)
+            raise
 
     @staticmethod
     def _send_otp_email(user, raw_code: str, ip_address: str, config: TwoFactorConfig):

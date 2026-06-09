@@ -400,6 +400,7 @@ def login(request):
 def verify_otp(request):
     """Vérifie le code OTP 2FA et finalise la connexion si correct."""
     try:
+        import uuid as _uuid
         data = request.data
         session_key = data.get('session_key', '').strip()
         code = data.get('code', '').strip()
@@ -407,6 +408,22 @@ def verify_otp(request):
         if not session_key or not code:
             return Response(
                 {'error': 'session_key et code sont requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validation format UUID — évite une exception 500 sur session_key malformé
+        try:
+            _uuid.UUID(session_key)
+        except ValueError:
+            return Response(
+                {'error': 'Session invalide ou expirée.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Limite la longueur du code pour éviter une amplification DoS via PBKDF2
+        if len(code) > 8:
+            return Response(
+                {'error': 'Code invalide.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

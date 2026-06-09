@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
 import uuid
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
@@ -2162,21 +2163,25 @@ class TwoFactorConfig(models.Model):
     )
     otp_lifetime_seconds = models.PositiveIntegerField(
         default=86400,
+        validators=[MinValueValidator(300), MaxValueValidator(31_536_000)],
         verbose_name='Durée de la session 2FA (secondes)',
         help_text=(
             'Durée pendant laquelle l\'utilisateur n\'est pas redemandé après une vérification réussie. '
+            'Minimum 300 s (5 min), maximum 31 536 000 s (1 an). '
             'Exemples : 3600 = 1h, 86400 = 1 jour, 604800 = 7 jours, 2592000 = 30 jours.'
         ),
     )
     max_attempts = models.PositiveIntegerField(
         default=3,
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
         verbose_name='Tentatives max',
-        help_text='Nombre de codes incorrects avant invalidation du code.',
+        help_text='Nombre de codes incorrects avant invalidation du code (1 à 10).',
     )
     code_length = models.PositiveIntegerField(
         default=6,
+        validators=[MinValueValidator(4), MaxValueValidator(8)],
         verbose_name='Longueur du code',
-        help_text='Nombre de chiffres du code OTP (4 à 8 recommandé).',
+        help_text='Nombre de chiffres du code OTP (4 à 8).',
     )
 
     class Meta:
@@ -2277,8 +2282,6 @@ class EmailOTP(models.Model):
         # Générer le code en clair
         raw_code = str(secrets.randbelow(10 ** config.code_length)).zfill(config.code_length)
 
-        # Le code email est toujours valide 5 minutes (indépendant de la durée de session)
-        # Le code email est toujours valide 5 minutes (indépendant de la durée de session)
         otp = cls.objects.create(
             user=user,
             code_hash=make_password(raw_code),
