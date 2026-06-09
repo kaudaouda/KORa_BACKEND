@@ -71,17 +71,9 @@ def invalidate_cache_on_role_mapping_change(sender, instance, **kwargs):
         action_code = instance.permission_action.code if hasattr(instance, 'permission_action') and instance.permission_action else 'N/A'
         granted_value = instance.granted if hasattr(instance, 'granted') else 'N/A'
         
-        # Log détaillé avec print pour être sûr que ça s'affiche
-        print(f"\n{'='*80}")
-        print(f"[PermissionCache] SIGNAL DÉCLENCHÉ pour RolePermissionMapping")
-        print(f"  Rôle: {role.code}")
-        print(f"  Action: {action_code}")
-        print(f"  Granted: {granted_value}")
-        print(f"  App: {app_name}")
-        print(f"{'='*80}\n")
-        
-        logger.info(
-            "[PermissionCache]  Signal d\u00e9clench\u00e9 pour RolePermissionMapping: role=%s, action=%s, granted=%s, app_name=%s", role.code, action_code, granted_value, app_name
+        logger.debug(
+            "[PermissionCache] Signal d�clench� pour RolePermissionMapping: role=%s, action=%s, granted=%s, app_name=%s",
+            role.code, action_code, granted_value, app_name
         )
         
         # Récupérer tous les utilisateurs ayant ce rôle avec leurs processus

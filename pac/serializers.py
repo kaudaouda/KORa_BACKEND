@@ -3,6 +3,7 @@ Serializers pour l'application PAC
 """
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.db import transaction
 from .models import Pac, TraitementPac, PacSuivi, DetailsPac
 from parametre.models import Processus, Preuve, Media
 import logging
@@ -255,8 +256,7 @@ class TraitementPacSerializer(serializers.ModelSerializer):
                         return media.get_url()
                     return getattr(media, 'url_fichier', None)
         except Exception as e:
-            # En cas d'erreur, retourner None
-            print(f"Erreur dans get_preuve_media_url: {e}")
+            logger.debug("get_preuve_media_url error: %s", e)
         return None
 
 
@@ -472,18 +472,10 @@ class PacSuiviSerializer(serializers.ModelSerializer):
                 media = obj.preuve.medias.first()
                 if media:
                     if hasattr(media, 'get_url'):
-                        url = media.get_url()
-                        print(f"Debug SuiviSerializer get_preuve_media_url - URL trouvée via get_url(): {url}")
-                        return url
-                    url = getattr(media, 'url_fichier', None)
-                    print(f"Debug SuiviSerializer get_preuve_media_url - URL trouvée via url_fichier: {url}")
-                    return url
-                else:
-                    print(f"Debug SuiviSerializer get_preuve_media_url - Aucun média trouvé dans preuve.medias")
-            else:
-                print(f"Debug SuiviSerializer get_preuve_media_url - Pas de preuve ou pas de médias. Preuve: {obj.preuve}, Médias existent: {obj.preuve.medias.exists() if obj.preuve else False}")
+                        return media.get_url()
+                    return getattr(media, 'url_fichier', None)
         except Exception as e:
-            print(f"Debug SuiviSerializer get_preuve_media_url - Erreur: {e}")
+            logger.debug("PacSuiviSerializer.get_preuve_media_url error: %s", e)
         return None
 
     def get_preuve_media_urls(self, obj):
@@ -1021,6 +1013,7 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
                     )
         return value
 
+    @transaction.atomic
     def create(self, validated_data):
         """Créer un détail PAC avec génération automatique du numéro"""
         # Vérifier si c'est une copie d'amendement (flag from_amendment_copy)
@@ -1113,20 +1106,25 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
     
     def generate_numero_pac(self):
-        """Générer un numéro PAC unique en trouvant le maximum existant"""
+        """Générer un numéro PAC unique en trouvant le maximum existant.
+
+        Doit être appelé depuis un contexte @transaction.atomic afin que le
+        SELECT FOR UPDATE maintienne le verrou jusqu'à l'INSERT (Security by
+        Design — Complete Mediation, prévention TOCTOU).
+        """
         import re
-        
-        # Récupérer tous les numéros de PAC existants
-        existing_numbers = DetailsPac.objects.exclude(
+
+        # SELECT FOR UPDATE : bloque les lectures concurrentes jusqu'à la fin
+        # de la transaction englobante (le @transaction.atomic du create()).
+        existing_numbers = DetailsPac.objects.select_for_update().exclude(
             numero_pac__isnull=True
         ).exclude(
             numero_pac__exact=''
         ).values_list('numero_pac', flat=True)
-        
+
         max_num = 0
         for num_str in existing_numbers:
             if num_str:
-                # Extraire le numéro (ex: "PAC01" -> 1, "PAC5" -> 5, "PAC02" -> 2)
                 match = re.search(r'(\d+)', str(num_str))
                 if match:
                     try:
@@ -1134,16 +1132,16 @@ class DetailsPacCreateSerializer(serializers.ModelSerializer):
                         max_num = max(max_num, num)
                     except ValueError:
                         continue
-        
-        # Générer le prochain numéro (max_num + 1)
+
         next_num = max_num + 1
         numero = f"PAC{next_num:02d}"
-        
-        # Vérifier l'unicité (au cas où il y aurait un conflit)
+
+        # La boucle while est désormais purement défensive : le verrou empêche
+        # un doublon, mais on garde la vérification pour les cas legacy.
         while DetailsPac.objects.filter(numero_pac=numero).exists():
             next_num += 1
             numero = f"PAC{next_num:02d}"
-        
+
         logger.info("[DetailsPacCreateSerializer] Génération nouveau numéro: %s (max trouvé: %s)", numero, max_num)
         return numero
 

@@ -1155,7 +1155,7 @@ def users_invite(request):
         # Générer un token d'invitation basé sur le système de reset password
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        logger.info("Token d'invitation généré: uid=%s, token=%s...", uid, token[:20])
+        logger.info("Token d'invitation généré pour uid=%s", uid)
 
         frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
         raw_invite_url = f"{frontend_base}/set-password?uid={uid}&token={token}"
@@ -1236,16 +1236,17 @@ def users_invite(request):
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
-        logger.error("=" * 60)
-        logger.error("ERREUR EXCEPTION dans users_invite: %s", str(e))
-        logger.error("Type d'erreur: %s", type(e).__name__)
         import traceback
-        logger.error("Traceback complet:\n%s", traceback.format_exc())
-        logger.error("=" * 60)
-        SecureEmailLogger.log_email_sent(getattr(request, 'user', None) and getattr(request.user, 'email', ''), "KORA – Invitation utilisateur", False)
+        # Security by Design — Minimal Disclosure : str(e) jamais exposé au client
+        logger.error("ERREUR EXCEPTION dans users_invite: %s\n%s", str(e), traceback.format_exc())
+        SecureEmailLogger.log_email_sent(
+            getattr(request, 'user', None) and getattr(request.user, 'email', ''),
+            "KORA – Invitation utilisateur",
+            False,
+        )
         return Response({
             'success': False,
-            'error': f"Erreur lors de l'invitation de l'utilisateur: {str(e)}"
+            'error': "Erreur lors de l'invitation de l'utilisateur. Veuillez réessayer.",
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1255,18 +1256,25 @@ def admin_get_user_processus(request):
     """Vue pour l'admin Django : retourne les processus d'un utilisateur"""
     from django.contrib.auth.models import User
     from django.http import JsonResponse
-    
+    from parametre.permissions import can_manage_users
+
+    # Security by Design : Complete Mediation — toute demande vérifiée,
+    # même les endpoints "internes". Refus silencieux pour ne pas confirmer
+    # l'existence de données.
+    if not can_manage_users(request.user):
+        return JsonResponse({'processus': []}, safe=False)
+
     user_id = request.GET.get('user_id')
     if not user_id:
         return JsonResponse({'processus': []}, safe=False)
-    
+
     try:
         user = User.objects.get(id=user_id)
         processus_list = UserProcessus.objects.filter(
             user=user,
             is_active=True
         ).select_related('processus')
-        
+
         processus_data = []
         for up in processus_list:
             processus_data.append({
@@ -1274,11 +1282,11 @@ def admin_get_user_processus(request):
                 'nom': up.processus.nom,
                 'numero_processus': up.processus.numero_processus
             })
-        
+
         return JsonResponse({'processus': processus_data}, safe=False)
     except User.DoesNotExist:
         return JsonResponse({'processus': []}, safe=False)
     except Exception as e:
         logger.error("Erreur lors de la récupération des processus utilisateur: %s", e)
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': 'Impossible de récupérer les processus'}, status=500)
 

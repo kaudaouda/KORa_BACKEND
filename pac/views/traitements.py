@@ -387,15 +387,35 @@ def traitement_suivis(request, uuid):
 def suivi_create(request):
     """Créer un nouveau suivi"""
     try:
-        # Permettre la création de suivi lors de la copie d'amendement (from_amendment_copy=True)
-        from_amendment_copy = request.data.get('from_amendment_copy', False)
-        
-        # Vérifier si le traitement est dans un PAC validé avant la création
-        # SAUF si c'est une copie d'amendement (dans ce cas, on permet la création même si le PAC n'est pas validé)
+        # Security by Design — le flag from_amendment_copy est fourni par le client ;
+        # on ne l'accepte comme bypass que si le PAC est réellement un amendement
+        # (num_amendement > 0), sinon on l'ignore (Fail Secure).
+        client_claims_amendment_copy = bool(
+            request.data.get('from_amendment_copy', False) or
+            request.data.get('from_amendment_copy') == 'true'
+        )
+
         if 'traitement' in request.data:
             try:
-                traitement = TraitementPac.objects.select_related('details_pac', 'details_pac__pac').get(uuid=request.data['traitement'])
-                if not traitement.details_pac.pac.is_validated and not from_amendment_copy:
+                traitement = TraitementPac.objects.select_related(
+                    'details_pac__pac__processus'
+                ).get(uuid=request.data['traitement'])
+                pac = traitement.details_pac.pac
+
+                # Defense-in-depth : vérifier l'accès au processus même si
+                # PACSuiviCreatePermission l'a déjà contrôlé.
+                if not user_has_access_to_processus(request.user, pac.processus.uuid):
+                    return Response(
+                        {'error': 'Accès refusé à ce PAC'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+                # Le bypass n'est valide que si le PAC est vraiment un amendement
+                # (vérification serveur — le flag client ne suffit pas).
+                is_actual_amendment = pac.num_amendement > 0
+                bypass_validation = client_claims_amendment_copy and is_actual_amendment
+
+                if not pac.is_validated and not bypass_validation:
                     return Response({
                         'error': 'Le PAC doit être validé avant de pouvoir créer un suivi. Veuillez d\'abord valider tous les détails et traitements du PAC.'
                     }, status=status.HTTP_400_BAD_REQUEST)

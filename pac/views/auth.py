@@ -587,8 +587,7 @@ def refresh_token(request):
         except (InvalidToken, TokenError) as e:
             logger.warning("Refresh token invalide: %s", str(e))
             return Response({
-                'error': 'Refresh token invalide',
-                'details': str(e),
+                'error': 'Session expirée, veuillez vous reconnecter.',
                 'code': 'REFRESH_TOKEN_INVALID'
             }, status=status.HTTP_401_UNAUTHORIZED)
 
