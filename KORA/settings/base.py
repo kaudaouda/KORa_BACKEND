@@ -5,13 +5,35 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-SECRET_KEY = os.getenv('SECRET_KEY')
-JWT_SIGNING_KEY = os.getenv('JWT_SIGNING_KEY', SECRET_KEY)
+# Security by Design — Fail Secure :
+# Le serveur refuse de démarrer si les clés cryptographiques sont absentes ou trop courtes.
+# Un démarrage silencieux avec SECRET_KEY=None produit des JWT non signés ou non vérifiables.
+_SECRET_KEY = os.getenv('SECRET_KEY', '')
+if not _SECRET_KEY:
+    raise ImproperlyConfigured(
+        "SECRET_KEY est absente. Définissez SECRET_KEY dans le fichier .env. "
+        "Générez-en une avec : python -c \"from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())\""
+    )
+if len(_SECRET_KEY) < 50:
+    raise ImproperlyConfigured(
+        f"SECRET_KEY est trop courte ({len(_SECRET_KEY)} caractères, minimum 50). "
+        "Une clé trop courte est cryptographiquement faible."
+    )
+SECRET_KEY = _SECRET_KEY
+
+_JWT_SIGNING_KEY = os.getenv('JWT_SIGNING_KEY', SECRET_KEY)
+if not _JWT_SIGNING_KEY:
+    raise ImproperlyConfigured(
+        "JWT_SIGNING_KEY est absente et SECRET_KEY ne peut pas servir de fallback. "
+        "Définissez JWT_SIGNING_KEY dans le fichier .env."
+    )
+JWT_SIGNING_KEY = _JWT_SIGNING_KEY
 
 INSTALLED_APPS = [
     'django.contrib.admin',
