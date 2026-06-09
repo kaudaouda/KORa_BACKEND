@@ -75,6 +75,8 @@ def media_create(request):
         fichier = request.FILES.get('fichier')
         url_fichier = request.data.get('url_fichier')
         description = request.data.get('description', '')
+        if description and len(description) > 500:
+            return Response({'error': 'La description ne peut pas dépasser 500 caractères.'}, status=status.HTTP_400_BAD_REQUEST)
         # Sous-dossier de rangement (par app). Valeurs autorisées dans
         # parametre.media_paths.ALLOWED_APP_FOLDERS. Fallback: 'shared'.
         app_folder = request.data.get('app') or request.data.get('app_folder')
@@ -147,6 +149,8 @@ def media_update_description(request, uuid):
             return Response({'error': 'Média non trouvé'}, status=status.HTTP_404_NOT_FOUND)
 
         description = request.data.get('description', '')
+        if description and len(description) > 500:
+            return Response({'error': 'La description ne peut pas dépasser 500 caractères.'}, status=status.HTTP_400_BAD_REQUEST)
         media.description = description
         media.save()
 
@@ -196,6 +200,8 @@ def preuve_create_with_medias(request):
         media_uuids = request.data.get('medias', [])
         if not titre:
             return Response({'error': 'titre est requis'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(str(titre)) > 500:
+            return Response({'error': 'Le titre ne peut pas dépasser 500 caractères.'}, status=status.HTTP_400_BAD_REQUEST)
         preuve = Preuve.objects.create(titre=titre)
         if isinstance(media_uuids, list) and len(media_uuids) > 0:
             medias = list(Media.objects.filter(uuid__in=media_uuids))
