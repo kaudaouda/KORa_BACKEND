@@ -114,7 +114,7 @@ class DetailsPac(models.Model):
         help_text='Dysfonctionnement ou recommandation'
     )
     libelle = models.CharField(
-        max_length=500,
+        max_length=2000,
         null=True,
         blank=True,
         help_text='Libellé du détail'

@@ -2,7 +2,6 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views import View
 from rest_framework import status
@@ -1157,7 +1156,7 @@ def users_invite(request):
         token = default_token_generator.make_token(user)
         logger.info("Token d'invitation généré pour uid=%s", uid)
 
-        frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_base = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:5173')
         raw_invite_url = f"{frontend_base}/set-password?uid={uid}&token={token}"
         invite_url = EmailContentSanitizer.sanitize_url(raw_invite_url)
 

@@ -15,12 +15,14 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les utilisateurs"""
     full_name = serializers.SerializerMethodField()
     role_labels = serializers.SerializerMethodField()
+    user_roles = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'first_name', 'last_name', 'email', 'username',
-            'is_active', 'is_staff', 'is_superuser', 'date_joined', 'full_name', 'role_labels'
+            'is_active', 'is_staff', 'is_superuser', 'date_joined',
+            'full_name', 'role_labels', 'user_roles'
         ]
         read_only_fields = ['id', 'date_joined', 'is_staff', 'is_superuser']
 
@@ -36,6 +38,27 @@ class UserSerializer(serializers.ModelSerializer):
             .values_list('role__nom', flat=True)
             .distinct()
         )
+
+    def get_user_roles(self, obj):
+        # Security by Design — Minimal Disclosure : on n'expose que les champs
+        # nécessaires au frontend (permissions), pas les métadonnées d'attribution.
+        from parametre.models import UserProcessusRole
+        qs = (
+            UserProcessusRole.objects
+            .filter(user=obj, is_active=True)
+            .select_related('role', 'processus')
+        )
+        return [
+            {
+                'role': str(upr.role.uuid) if upr.role else None,
+                'role_code': upr.role.code if upr.role else None,
+                'role_nom': upr.role.nom if upr.role else None,
+                'processus': str(upr.processus.uuid) if upr.processus else None,
+                'processus_nom': upr.processus.nom if upr.processus else None,
+                'is_global': upr.is_global,
+            }
+            for upr in qs
+        ]
 
 
 class ProcessusSerializer(serializers.ModelSerializer):

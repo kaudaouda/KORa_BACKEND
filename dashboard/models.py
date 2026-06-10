@@ -16,7 +16,7 @@ class Objectives(models.Model):
         help_text="Numéro de l'objectif (ex: OB01)"
     )
     libelle = models.CharField(
-        max_length=500,
+        max_length=2000,
         help_text="Libellé de l'objectif (ex: Assurer à 70% la mise en œuvre du plan annuel)"
     )
     tableau_bord = models.ForeignKey(
@@ -93,7 +93,7 @@ class Indicateur(models.Model):
     """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     libelle = models.CharField(
-        max_length=500,
+        max_length=2000,
         help_text="Libellé de l'indicateur (ex: Taux de mise en œuvre des actions du plan ANAC 2025)"
     )
     objective_id = models.ForeignKey(
