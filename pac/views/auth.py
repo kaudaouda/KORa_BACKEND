@@ -268,13 +268,6 @@ def login(request):
         cfg = LoginSecurityConfig.get_config()
         if cfg.enabled:
             now = tz.now()
-            whitelist = cfg.get_whitelist()
-            if ip not in whitelist:
-                if LoginBlock.objects.filter(block_type='ip', value=ip, blocked_until__gt=now).exists():
-                    return Response(
-                        {'error': 'Accès temporairement bloqué. Réessayez plus tard.', 'code': 'IP_BLOCKED'},
-                        status=status.HTTP_429_TOO_MANY_REQUESTS,
-                    )
             if LoginBlock.objects.filter(block_type='email', value=email, blocked_until__gt=now).exists():
                 return Response(
                     {'error': 'Ce compte est temporairement verrouillé. Réessayez plus tard.', 'code': 'EMAIL_BLOCKED'},
@@ -318,22 +311,8 @@ def login(request):
             )
 
             # ── Créer/mettre à jour les blocs si seuils dépassés ─────────────
-            if cfg.enabled and ip not in whitelist:
+            if cfg.enabled:
                 window_start = tz.now() - timedelta(minutes=cfg.window_minutes)
-
-                ip_count = FailedLoginAttempt.objects.filter(
-                    ip_address=ip, created_at__gte=window_start
-                ).count()
-                if ip_count >= cfg.ip_max_attempts:
-                    LoginBlock.objects.update_or_create(
-                        block_type='ip', value=ip,
-                        defaults={
-                            'blocked_until':  tz.now() + timedelta(minutes=cfg.ip_block_duration_minutes),
-                            'attempts_count': ip_count,
-                            'is_manual':      False,
-                        }
-                    )
-                    logger.warning("[SECURITY] IP bloquée: %s (%s échecs)", ip, ip_count)
 
                 email_count = FailedLoginAttempt.objects.filter(
                     email_attempted=email, created_at__gte=window_start

@@ -1574,16 +1574,11 @@ class LoginSecurityConfigAdmin(admin.ModelAdmin):
             'fields': ('enabled',),
         }),
         ('Seuils de déclenchement', {
-            'fields': ('window_minutes', 'ip_max_attempts', 'email_max_attempts'),
+            'fields': ('window_minutes', 'email_max_attempts'),
             'description': 'Nombre d\'échecs dans la fenêtre glissante avant blocage.',
         }),
         ('Durées de blocage', {
-            'fields': ('ip_block_duration_minutes', 'email_block_duration_minutes'),
-        }),
-        ('Liste blanche', {
-            'fields': ('whitelist_ips',),
-            'description': 'Une IP par ligne. Ces IPs ne seront jamais bloquées.',
-            'classes': ('collapse',),
+            'fields': ('email_block_duration_minutes',),
         }),
     )
 

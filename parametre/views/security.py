@@ -162,62 +162,6 @@ def admin_security(request):
     })
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def admin_security_blocks(request):
-    """Liste des blocages actifs."""
-    from parametre.permissions import can_manage_users
-    if not can_manage_users(request.user):
-        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
-
-    from django.utils import timezone
-    now = timezone.now()
-    blocks = LoginBlock.objects.filter(blocked_until__gt=now).order_by('-created_at')
-    data = [
-        {
-            'id':             b.pk,
-            'block_type':     b.block_type,
-            'block_type_label': b.get_block_type_display(),
-            'value':          b.value,
-            'blocked_until':  b.blocked_until.isoformat(),
-            'attempts_count': b.attempts_count,
-            'is_manual':      b.is_manual,
-            'created_at':     b.created_at.isoformat(),
-        }
-        for b in blocks
-    ]
-    config = LoginSecurityConfig.get_config()
-    return Response({
-        'blocks': data,
-        'config': {
-            'enabled':                    config.enabled,
-            'ip_max_attempts':            config.ip_max_attempts,
-            'email_max_attempts':         config.email_max_attempts,
-            'window_minutes':             config.window_minutes,
-            'ip_block_duration_minutes':  config.ip_block_duration_minutes,
-            'email_block_duration_minutes': config.email_block_duration_minutes,
-        },
-    })
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def admin_security_unblock(request, block_id):
-    """Débloquer manuellement un blocage."""
-    from parametre.permissions import can_manage_users
-    if not can_manage_users(request.user):
-        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
-
-    try:
-        block = LoginBlock.objects.get(pk=block_id)
-        value = block.value
-        block.delete()
-        logger.info("[SECURITY] Déblocage manuel de '%s' par %s", value, request.user.username)
-        return Response({'success': True})
-    except LoginBlock.DoesNotExist:
-        return Response({'error': 'Blocage introuvable.'}, status=status.HTTP_404_NOT_FOUND)
-
-
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def admin_security_config(request):
@@ -233,9 +177,8 @@ def admin_security_config(request):
 
     # PATCH
     allowed = {
-        'enabled', 'ip_max_attempts', 'email_max_attempts',
-        'window_minutes', 'ip_block_duration_minutes',
-        'email_block_duration_minutes', 'whitelist_ips',
+        'enabled', 'email_max_attempts',
+        'window_minutes', 'email_block_duration_minutes',
     }
     errors = {}
     for field in allowed & set(request.data.keys()):
@@ -243,10 +186,6 @@ def admin_security_config(request):
         if field == 'enabled':
             if not isinstance(value, bool):
                 errors[field] = 'Doit être un booléen.'
-                continue
-        elif field == 'whitelist_ips':
-            if not isinstance(value, str):
-                errors[field] = 'Doit être une chaîne.'
                 continue
         else:
             try:
@@ -269,12 +208,9 @@ def admin_security_config(request):
 def _serialize_config(config):
     return {
         'enabled':                      config.enabled,
-        'ip_max_attempts':              config.ip_max_attempts,
         'email_max_attempts':           config.email_max_attempts,
         'window_minutes':               config.window_minutes,
-        'ip_block_duration_minutes':    config.ip_block_duration_minutes,
         'email_block_duration_minutes': config.email_block_duration_minutes,
-        'whitelist_ips':                config.whitelist_ips,
     }
 
 
