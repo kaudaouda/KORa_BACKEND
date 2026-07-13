@@ -78,33 +78,39 @@ class Command(BaseCommand):
                 return
 
         # ── 3. Utilisateurs eligibles ────────────────────────────────────────
-        normal_roles = Role.objects.filter(
-            code__in=['contributeur', 'responsable_processus'],
-            is_active=True,
-        )
-        admin_role = Role.objects.filter(code='admin', is_active=True).first()
+        # Les rôles éligibles sont ceux avec receive_reminders=True (configuré en BDD).
+        # Les rôles système (admin, superviseur_smi) ont receive_reminders=False
+        # et reçoivent uniquement l'email récapitulatif admin.
+        eligible_roles = Role.objects.filter(receive_reminders=True, is_active=True)
 
-        if not normal_roles.exists():
+        if not eligible_roles.exists():
             self.stderr.write(self.style.ERROR(
-                "Aucun role 'contributeur' ou 'responsable_processus' trouve."
+                "Aucun rôle avec receive_reminders=True trouvé.\n"
+                "   Activez le flag sur au moins un rôle ou exécutez: python manage.py seed_roles"
             ))
             return
+
+        eligible_role_names = ', '.join(eligible_roles.values_list('nom', flat=True))
+
+        system_roles = Role.objects.filter(receive_reminders=False, is_active=True)
 
         users_qs = User.objects.filter(
             is_active=True,
             email__isnull=False,
-            user_processus_roles__role__in=normal_roles,
+            user_processus_roles__role__in=eligible_roles,
             user_processus_roles__is_active=True,
         )
-        if admin_role:
+        if system_roles.exists():
             users_qs = users_qs.exclude(
-                user_processus_roles__role=admin_role,
+                user_processus_roles__role__in=system_roles,
                 user_processus_roles__is_active=True,
             )
         users_qs = users_qs.distinct()
 
         users_count = users_qs.count()
-        self.stdout.write(self.style.SUCCESS(f"{users_count} utilisateur(s) eligible(s)"))
+        self.stdout.write(self.style.SUCCESS(
+            f"{users_count} utilisateur(s) éligible(s) (rôles: {eligible_role_names}) — rôles système exclus"
+        ))
 
         if users_count == 0:
             self.stdout.write(self.style.WARNING("Aucun utilisateur eligible. Fin."))

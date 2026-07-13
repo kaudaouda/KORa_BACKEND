@@ -1531,6 +1531,14 @@ class Role(HasActiveStatus):
         null=True,
         help_text="Description du rôle et de ses permissions"
     )
+    receive_reminders = models.BooleanField(
+        default=False,
+        help_text=(
+            "Si True, les utilisateurs ayant ce rôle reçoivent les emails "
+            "de rappel individuels (PAC, CDR, etc.). "
+            "Laisser False pour les rôles système (admin, superviseur)."
+        )
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

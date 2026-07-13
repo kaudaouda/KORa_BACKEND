@@ -819,10 +819,10 @@ class RoleAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les rôles"""
     
     list_display = [
-        'code', 'nom', 'description', 'is_active', 'created_at', 'updated_at'
+        'code', 'nom', 'description', 'is_active', 'receive_reminders', 'created_at', 'updated_at'
     ]
     list_filter = [
-        'is_active', 'created_at', 'updated_at'
+        'is_active', 'receive_reminders', 'created_at', 'updated_at'
     ]
     search_fields = [
         'code', 'nom', 'description'
@@ -831,13 +831,13 @@ class RoleAdmin(admin.ModelAdmin):
         'uuid', 'created_at', 'updated_at'
     ]
     ordering = ['nom']
-    
+
     fieldsets = (
         ('Informations générales', {
             'fields': ('uuid', 'code', 'nom', 'description')
         }),
         ('Statut', {
-            'fields': ('is_active',)
+            'fields': ('is_active', 'receive_reminders')
         }),
         ('Métadonnées', {
             'fields': ('created_at', 'updated_at'),

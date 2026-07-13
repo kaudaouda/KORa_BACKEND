@@ -43,6 +43,7 @@ class Command(BaseCommand):
                     'Responsable d\'un processus : lecture, modification et suppression '
                     'des sous-elements (sans creation ni validation des entites principales)'
                 ),
+                'receive_reminders': True,
             },
             {
                 'code': 'PILOTE DE PROCESSUS',
@@ -51,16 +52,19 @@ class Command(BaseCommand):
                     'Pilote d\'un processus : lecture et modification partielle '
                     'des sous-elements, sans suppression globale ni acces aux elements structures'
                 ),
+                'receive_reminders': True,
             },
             {
                 'code': 'CO-PILOTE DE APROCESSUS',
                 'nom': 'Co-pilote de processus',
                 'description': 'Co-pilote d\'un processus : lecture seule sur toutes les applications',
+                'receive_reminders': True,
             },
             {
                 'code': 'admin',
                 'nom': 'Admin',
                 'description': 'Role administrateur avec tous les droits (creation, suppression, validation, etc.)',
+                'receive_reminders': False,
             },
             {
                 'code': 'superviseur_smi',
@@ -70,6 +74,7 @@ class Command(BaseCommand):
                     'Peut etre attribue en mode global (is_global=True) pour couvrir tous les processus '
                     'sans assignation individuelle. Droits complets sur toutes les applications.'
                 ),
+                'receive_reminders': False,
             },
         ]
 
@@ -87,6 +92,7 @@ class Command(BaseCommand):
                     'nom': role_data['nom'],
                     'description': role_data['description'],
                     'is_active': True,
+                    'receive_reminders': role_data['receive_reminders'],
                 }
             )
 
@@ -103,6 +109,9 @@ class Command(BaseCommand):
                     updated = True
                 if role.description != role_data['description']:
                     role.description = role_data['description']
+                    updated = True
+                if role.receive_reminders != role_data['receive_reminders']:
+                    role.receive_reminders = role_data['receive_reminders']
                     updated = True
                 if updated:
                     role.save()
