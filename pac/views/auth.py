@@ -538,9 +538,7 @@ def refresh_token(request):
             response = Response({
                 'authenticated': False,
             }, status=status.HTTP_200_OK)
-            response.delete_cookie('access_token')
-            response.delete_cookie('refresh_token')
-            return response
+            return AuthService.clear_auth_cookies(response)
 
         refresh_token_value = request.COOKIES.get('refresh_token')
 
@@ -590,9 +588,7 @@ def user_profile(request):
             response = Response({
                 'authenticated': False,
             }, status=status.HTTP_200_OK)
-            response.delete_cookie('access_token')
-            response.delete_cookie('refresh_token')
-            return response
+            return AuthService.clear_auth_cookies(response)
 
         logger.debug("user_profile appelé pour user: %s", request.user)
         serializer = UserSerializer(request.user)
@@ -1644,9 +1640,7 @@ def recaptcha_config(request):
         if request.user.is_anonymous and request.COOKIES.get('access_token'):
             logger.warning("recaptcha_config: utilisateur anonyme avec access_token -> nettoyage cookies")
             response = Response(config, status=status.HTTP_200_OK)
-            response.delete_cookie('access_token')
-            response.delete_cookie('refresh_token')
-            return response
+            return AuthService.clear_auth_cookies(response)
 
         return Response(config, status=status.HTTP_200_OK)
 
