@@ -1531,6 +1531,14 @@ class Role(HasActiveStatus):
         null=True,
         help_text="Description du rôle et de ses permissions"
     )
+    receive_reminders = models.BooleanField(
+        default=False,
+        help_text=(
+            "Si True, les utilisateurs ayant ce rôle reçoivent les emails "
+            "de rappel individuels (PAC, CDR, etc.). "
+            "Laisser False pour les rôles système (admin, superviseur)."
+        )
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1873,11 +1881,6 @@ class LoginSecurityConfig(models.Model):
         verbose_name="Blocage actif",
         help_text="Désactiver pour suspendre toute protection sans supprimer la config.",
     )
-    ip_max_attempts = models.PositiveIntegerField(
-        default=10,
-        verbose_name="Seuil IP (tentatives)",
-        help_text="Nombre d'échecs depuis la même IP avant blocage.",
-    )
     email_max_attempts = models.PositiveIntegerField(
         default=5,
         verbose_name="Seuil email (tentatives)",
@@ -1888,20 +1891,10 @@ class LoginSecurityConfig(models.Model):
         verbose_name="Fenêtre glissante (min)",
         help_text="Durée de la fenêtre de comptage des échecs.",
     )
-    ip_block_duration_minutes = models.PositiveIntegerField(
-        default=30,
-        verbose_name="Durée blocage IP (min)",
-    )
     email_block_duration_minutes = models.PositiveIntegerField(
         default=60,
         verbose_name="Durée blocage email (min)",
     )
-    whitelist_ips = models.TextField(
-        blank=True, default='',
-        verbose_name="IPs en liste blanche",
-        help_text="Une IP par ligne. Ces IPs ne seront jamais bloquées (ex: serveurs internes).",
-    )
-
     class Meta:
         db_table = 'login_security_config'
         verbose_name = 'Configuration sécurité login'
@@ -1915,10 +1908,6 @@ class LoginSecurityConfig(models.Model):
     def get_config(cls):
         obj, _ = cls.objects.get_or_create(id=1)
         return obj
-
-    def get_whitelist(self):
-        return {ip.strip() for ip in self.whitelist_ips.splitlines() if ip.strip()}
-
 
 class LoginBlock(models.Model):
     """Blocage actif d'une IP ou d'un email."""

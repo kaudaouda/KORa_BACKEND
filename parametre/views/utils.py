@@ -83,8 +83,8 @@ def get_client_ip(request):
     Sans proxy (dev) : retourne REMOTE_ADDR directement, XFF ignoré.
     Avec 1 proxy (nginx) : XFF="client, proxy" → idx=0 → "client".
 
-    Ce comportement est identique à IPBlockMiddleware._get_ip() pour garantir
-    que les mêmes IPs sont bloquées par le middleware et loguées dans les vues.
+    Ce comportement est identique à shared.middleware._get_ip() pour garantir
+    la cohérence des IPs loguées dans les vues.
     """
     trusted_proxy_count = getattr(settings, 'TRUSTED_PROXY_COUNT', 0)
     if trusted_proxy_count > 0:

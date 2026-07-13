@@ -1,0 +1,29 @@
+  ---
+  1. Démarrage Django
+
+  Quand Django démarre, il appelle ParametreConfig.ready() dans parametre/apps.py. C'est le point d'entrée de tout le système.
+
+  ---
+  2. APScheduler démarre en arrière-plan
+
+  Un thread séparé (BackgroundScheduler) se lance dans le même processus que Django. Il tourne en permanence, en arrière-plan,
+  sans bloquer les requêtes HTTP.
+
+  ---
+  3. Les jobs sont stockés en base de données
+
+  APScheduler utilise DjangoJobStore — les jobs et leurs horaires sont stockés dans la table django_apscheduler_djangojob.
+  C'est ce qui permet de les modifier depuis l'interface admin sans redéployer.
+
+  ---
+  4. Les 4 jobs planifiés
+
+   ---
+  5. Ce que fait chaque job concrètement
+
+  Chaque job appelle une management command Django (call_command(...)). Par exemple send_reminders_daily appelle
+  send_reminders_secure qui :
+  1. Récupère tous les utilisateurs actifs avec un email
+  2. Pour chaque utilisateur, calcule ses notifications d'échéances PAC
+  3. Déduplique (évite d'envoyer deux fois le même email le même jour via ReminderEmailLog)
+  4. Envoie l'email HTML

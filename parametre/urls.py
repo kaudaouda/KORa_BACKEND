@@ -17,8 +17,6 @@ urlpatterns = [
     path('admin/scheduler/jobs/<str:job_id>/update/', views.admin_scheduler_job_update, name='admin_scheduler_job_update'),
     path('admin/scheduler/jobs/<str:job_id>/trigger/', views.admin_scheduler_job_trigger, name='admin_scheduler_job_trigger'),
     path('admin/scheduler/executions/', views.admin_scheduler_executions, name='admin_scheduler_executions'),
-    path('admin/security/blocks/', views.admin_security_blocks, name='admin_security_blocks'),
-    path('admin/security/blocks/<int:block_id>/unblock/', views.admin_security_unblock, name='admin_security_unblock'),
     path('admin/two-factor/config/', views.two_factor_admin_config, name='two_factor_admin_config'),
     
     # ==================== PARAMÈTRES ====================

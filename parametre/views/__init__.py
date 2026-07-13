@@ -7,7 +7,7 @@ from .email import email_settings_detail, email_settings_update, test_email_conf
 from .media import media_create, media_update_description, media_list, preuve_create_with_medias, preuve_add_medias, preuve_remove_media, preuves_list
 from .users import roles_list, roles_all_list, role_create, role_update, role_delete, user_processus_list, user_processus_create, user_processus_update, user_processus_delete, user_processus_role_list, user_processus_role_create, user_processus_role_update, user_processus_role_delete, users_list, admin_user_detail, admin_user_toggle_active, users_create, users_invite, admin_get_user_processus
 from .app_config import application_config_list, application_config_toggle, app_status_stream, app_status
-from .security import admin_security, admin_security_blocks, admin_security_unblock, admin_security_config, admin_throttle_config
+from .security import admin_security, admin_security_config, admin_throttle_config
 from .scheduler import admin_scheduler_jobs, admin_scheduler_job_update, admin_scheduler_job_trigger, admin_scheduler_executions
 from .recaptcha import recaptcha_config_public, recaptcha_admin_config, recaptcha_admin_test
 from .two_factor import two_factor_admin_config

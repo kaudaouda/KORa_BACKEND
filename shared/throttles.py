@@ -19,7 +19,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle, Simple
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _get_ip(request):
-    # Security by Design — même logique que IPBlockMiddleware._get_ip() :
+    # Security by Design — même logique que shared.middleware._get_ip() :
     # on lit TRUSTED_PROXY_COUNT pour éviter que le client contrôle son IP
     # en forgeant X-Forwarded-For (bypass du rate-limiting sinon possible).
     from django.conf import settings
@@ -59,21 +59,6 @@ def _get_throttle_config():
     return result
 
 
-def _is_whitelisted(ip):
-    """Vérifie la liste blanche LoginSecurityConfig (partagée avec IPBlockMiddleware)."""
-    from django.core.cache import cache
-    config = cache.get('ip_block_config')
-    if config is None:
-        try:
-            from parametre.models import LoginSecurityConfig
-            cfg = LoginSecurityConfig.get_config()
-            config = {'enabled': cfg.enabled, 'whitelist': cfg.get_whitelist()}
-        except Exception:
-            config = {'enabled': False, 'whitelist': []}
-        cache.set('ip_block_config', config, 60)
-    return ip in config.get('whitelist', [])
-
-
 # ── Classes de throttle ────────────────────────────────────────────────────────
 
 class KoraAnonThrottle(AnonRateThrottle):
@@ -86,11 +71,6 @@ class KoraAnonThrottle(AnonRateThrottle):
     def get_ident(self, request):
         return _get_ip(request)
 
-    def allow_request(self, request, view):
-        if _is_whitelisted(_get_ip(request)):
-            return True
-        return super().allow_request(request, view)
-
 
 class KoraUserThrottle(UserRateThrottle):
     """Limite les requêtes authentifiées par user."""
@@ -98,11 +78,6 @@ class KoraUserThrottle(UserRateThrottle):
     def get_rate(self):
         cfg = _get_throttle_config()
         return cfg['user_rate'] if cfg['enabled'] else None
-
-    def allow_request(self, request, view):
-        if _is_whitelisted(_get_ip(request)):
-            return True
-        return super().allow_request(request, view)
 
 
 class KoraSensitiveThrottle(SimpleRateThrottle):
@@ -124,8 +99,3 @@ class KoraSensitiveThrottle(SimpleRateThrottle):
         if not ident:
             return None
         return self.cache_format % {'scope': self.scope, 'ident': ident}
-
-    def allow_request(self, request, view):
-        if _is_whitelisted(_get_ip(request)):
-            return True
-        return super().allow_request(request, view)

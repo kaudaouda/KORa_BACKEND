@@ -1,0 +1,1 @@
+ne pas afficher coté frontend ni dans les logs du backend : "CSRF failled : origin checking failed : http://kora.anac.ci
