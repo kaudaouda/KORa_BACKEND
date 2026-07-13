@@ -1,6 +1,7 @@
 """
 Services d'authentification partagés
 """
+import os
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.response import Response
 from rest_framework import status
@@ -78,7 +79,8 @@ class AuthService:
         Returns:
             Response: Response avec cookies définis
         """
-        secure = not settings.DEBUG
+        secure = os.getenv('AUTH_COOKIE_SECURE', 'True') == 'True'
+        cookie_domain = os.getenv('AUTH_COOKIE_DOMAIN') or None
         response.set_cookie(
             'access_token',
             access_token,
@@ -86,6 +88,7 @@ class AuthService:
             httponly=True,
             secure=secure,
             samesite='Lax',
+
             path='/'
         )
         response.set_cookie(
@@ -95,6 +98,7 @@ class AuthService:
             httponly=True,
             secure=secure,
             samesite='Lax',
+            domain=cookie_domain,
             path='/'
         )
         return response
@@ -110,6 +114,6 @@ class AuthService:
         Returns:
             Response: Response avec cookies supprimés
         """
-        response.delete_cookie('access_token', path='/', samesite='Lax')
-        response.delete_cookie('refresh_token', path='/', samesite='Lax')
+        response.delete_cookie('access_token', path='/', samesite='Lax', domain=os.getenv('AUTH_COOKIE_DOMAIN') or None)
+        response.delete_cookie('refresh_token', path='/', samesite='Lax', domain=os.getenv('AUTH_COOKIE_DOMAIN') or None)
         return response
