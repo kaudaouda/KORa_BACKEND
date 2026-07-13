@@ -8,3 +8,4 @@ apscheduler==3.10.4
 django-apscheduler==0.7.0
 cryptography==47.0.0
 user-agents==2.2.0
+gunicorn==23.0.0

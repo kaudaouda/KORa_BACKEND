@@ -6,7 +6,7 @@ import os
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', 'backend-kora.anac.ci']
 
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
