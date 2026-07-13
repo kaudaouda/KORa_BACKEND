@@ -507,6 +507,13 @@ def logout(request):
                 user_agent=request.META.get('HTTP_USER_AGENT'),
             )
 
+        # Invalider aussi la session Django (admin) pour éviter la réauthentification
+        # via SessionAuthentication après la suppression des cookies JWT.
+        try:
+            request.session.flush()
+        except Exception:
+            pass
+
         response = Response({
             'message': 'Déconnexion réussie'
         }, status=status.HTTP_200_OK)
