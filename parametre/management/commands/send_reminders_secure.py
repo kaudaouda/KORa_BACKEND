@@ -94,49 +94,44 @@ class Command(BaseCommand):
                 return
 
         # ===== ÉTAPE 3 : Récupération des utilisateurs éligibles =====
-        # Séparer les admins des utilisateurs normaux
-        # Les admins ne reçoivent QUE l'email récapitulatif admin
-        # Les utilisateurs normaux (contributeur, responsable_processus) reçoivent l'email de rappel
-        
-        # Récupérer le rôle admin
-        admin_role = Role.objects.filter(code='admin', is_active=True).first()
-        
-        # Récupérer les rôles pour les utilisateurs normaux
-        normal_user_role_codes = ['contributeur', 'responsable_processus']
-        normal_user_roles = Role.objects.filter(
-            code__in=normal_user_role_codes,
-            is_active=True
-        )
-        
-        if not normal_user_roles.exists():
+        # Les rôles éligibles sont ceux avec receive_reminders=True (configuré en BDD).
+        # Les rôles système (admin, superviseur_smi) ont receive_reminders=False
+        # et reçoivent uniquement l'email récapitulatif admin (étape 5.2).
+
+        eligible_roles = Role.objects.filter(receive_reminders=True, is_active=True)
+
+        if not eligible_roles.exists():
             self.stderr.write(self.style.ERROR(
-                "Aucun rôle 'contributeur' ou 'responsable_processus' trouvé dans la base de données.\n"
-                "   Veuillez exécuter: python manage.py seed_roles"
+                "Aucun rôle avec receive_reminders=True trouvé.\n"
+                "   Activez le flag sur au moins un rôle ou exécutez: python manage.py seed_roles"
             ))
             return
-        
-        # Récupérer les utilisateurs NORMaux (contributeur, responsable_processus) qui recevront l'email de rappel
-        # EXCLURE les admins de cette liste
+
+        eligible_role_names = ', '.join(eligible_roles.values_list('nom', flat=True))
+
+        # Rôles système exclus des rappels individuels (ils reçoivent le récapitulatif admin)
+        system_roles = Role.objects.filter(receive_reminders=False, is_active=True)
+
         users_with_roles = User.objects.filter(
             is_active=True,
             email__isnull=False
         ).exclude(email='').filter(
-            user_processus_roles__role__in=normal_user_roles,
+            user_processus_roles__role__in=eligible_roles,
             user_processus_roles__is_active=True
         )
-        
-        # Exclure les utilisateurs qui ont AUSSI le rôle admin
-        if admin_role:
+
+        # Exclure les utilisateurs qui ont un rôle système actif
+        if system_roles.exists():
             users_with_roles = users_with_roles.exclude(
-                user_processus_roles__role=admin_role,
+                user_processus_roles__role__in=system_roles,
                 user_processus_roles__is_active=True
             )
-        
+
         users_with_roles = users_with_roles.distinct()
-        
+
         users_count = users_with_roles.count()
         self.stdout.write(self.style.SUCCESS(
-            f"{users_count} utilisateur(s) avec les rôles 'contributeur' ou 'responsable_processus' trouvé(s) (admins exclus)"
+            f"{users_count} utilisateur(s) éligible(s) (rôles: {eligible_role_names}) — rôles système exclus"
         ))
         
         if users_count == 0:

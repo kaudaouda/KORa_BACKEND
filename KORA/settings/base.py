@@ -59,7 +59,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
-    'shared.middleware.IPBlockMiddleware',
     'shared.middleware.AdminLoginRateLimitMiddleware',
     'shared.cors_middleware.CORSContentTypeMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -130,7 +129,7 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
 
 # Nombre de proxies de confiance devant Django (0 = dev sans proxy, 1 = 1 nginx, etc.)
-# Utilisé par IPBlockMiddleware._get_ip() pour lire le bon XFF index.
+# Utilisé par shared.middleware._get_ip() et shared.throttles._get_ip() pour lire le bon XFF index.
 TRUSTED_PROXY_COUNT = int(os.getenv('TRUSTED_PROXY_COUNT', '0'))
 
 STATIC_URL = 'static/'

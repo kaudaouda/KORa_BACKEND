@@ -819,10 +819,10 @@ class RoleAdmin(admin.ModelAdmin):
     """Configuration de l'interface d'administration pour les rôles"""
     
     list_display = [
-        'code', 'nom', 'description', 'is_active', 'created_at', 'updated_at'
+        'code', 'nom', 'description', 'is_active', 'receive_reminders', 'created_at', 'updated_at'
     ]
     list_filter = [
-        'is_active', 'created_at', 'updated_at'
+        'is_active', 'receive_reminders', 'created_at', 'updated_at'
     ]
     search_fields = [
         'code', 'nom', 'description'
@@ -831,13 +831,13 @@ class RoleAdmin(admin.ModelAdmin):
         'uuid', 'created_at', 'updated_at'
     ]
     ordering = ['nom']
-    
+
     fieldsets = (
         ('Informations générales', {
             'fields': ('uuid', 'code', 'nom', 'description')
         }),
         ('Statut', {
-            'fields': ('is_active',)
+            'fields': ('is_active', 'receive_reminders')
         }),
         ('Métadonnées', {
             'fields': ('created_at', 'updated_at'),
@@ -1574,16 +1574,11 @@ class LoginSecurityConfigAdmin(admin.ModelAdmin):
             'fields': ('enabled',),
         }),
         ('Seuils de déclenchement', {
-            'fields': ('window_minutes', 'ip_max_attempts', 'email_max_attempts'),
+            'fields': ('window_minutes', 'email_max_attempts'),
             'description': 'Nombre d\'échecs dans la fenêtre glissante avant blocage.',
         }),
         ('Durées de blocage', {
-            'fields': ('ip_block_duration_minutes', 'email_block_duration_minutes'),
-        }),
-        ('Liste blanche', {
-            'fields': ('whitelist_ips',),
-            'description': 'Une IP par ligne. Ces IPs ne seront jamais bloquées.',
-            'classes': ('collapse',),
+            'fields': ('email_block_duration_minutes',),
         }),
     )
 

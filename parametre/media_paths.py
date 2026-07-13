@@ -66,6 +66,7 @@ ALLOWED_MIME_TYPES = {
 
 # Magic bytes attendus par extension (8 premiers octets suffisent).
 # Les formats texte (.txt, .csv) n'ont pas de signature binaire fiable.
+
 _EXT_MAGIC = {
     '.pdf':  [b'%PDF'],
     '.jpg':  [b'\xff\xd8\xff'],
