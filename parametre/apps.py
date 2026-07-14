@@ -20,9 +20,11 @@ class ParametreConfig(AppConfig):
         # Signaux de sécurité — chargés inconditionnellement (pas liés au scheduler)
         from . import signals  # noqa: F401
 
-        # Ne démarrer le scheduler que dans le sous-process de développement (RUN_MAIN)
-        # ou dans un vrai serveur de production — jamais lors des commandes de management.
-        if os.environ.get('RUN_MAIN') != 'true':
+        # Ne démarrer le scheduler que dans un vrai serveur web (devserver ou Gunicorn),
+        # jamais lors des commandes de management.
+        is_devserver = os.environ.get('RUN_MAIN') == 'true'
+        is_gunicorn  = sys.argv[0].endswith('gunicorn') if sys.argv else False
+        if not is_devserver and not is_gunicorn:
             return
 
         skip_commands = {
