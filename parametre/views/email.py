@@ -133,7 +133,7 @@ def test_email_configuration(request):
     try:
         from django.core.mail import send_mail
         from django.conf import settings
-        from .utils.email_security import EmailValidator, EmailContentSanitizer, SecureEmailLogger
+        from ..utils.email_security import EmailValidator, EmailContentSanitizer, SecureEmailLogger
         
         email_settings = EmailSettings.get_solo()
         

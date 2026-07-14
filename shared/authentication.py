@@ -88,7 +88,7 @@ class AuthService:
             httponly=True,
             secure=secure,
             samesite='Lax',
-
+            domain=cookie_domain,
             path='/'
         )
         response.set_cookie(
