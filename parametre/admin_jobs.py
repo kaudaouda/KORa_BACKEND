@@ -1,11 +1,15 @@
 """
 Configuration personnalisée de l'admin Django pour les jobs du scheduler
 """
+import logging
+import pickle
+
 from django.contrib import admin
 from django_apscheduler.models import DjangoJob, DjangoJobExecution
 from django import forms
 from apscheduler.triggers.cron import CronTrigger
-import pickle
+
+logger = logging.getLogger(__name__)
 
 # Désenregistrer l'admin par défaut de DjangoJob s'il existe
 try:
@@ -68,37 +72,45 @@ class DjangoJobForm(forms.ModelForm):
     
     def save(self, commit=True):
         instance = super().save(commit=False)
-        
-        # Mettre à jour le trigger dans job_state avec les nouvelles valeurs
+
+        new_hour   = self.cleaned_data['cron_hour']
+        new_minute = self.cleaned_data['cron_minute']
+        new_trigger = CronTrigger(hour=new_hour, minute=new_minute)
+
+        # 1. Mettre à jour le pickle en DB (fallback si le scheduler n'est pas actif)
         if instance.job_state:
             try:
-                if isinstance(instance.job_state, bytes):
-                    job_state = pickle.loads(instance.job_state)
-                else:
-                    job_state = instance.job_state
-                
+                job_state = (
+                    pickle.loads(instance.job_state)
+                    if isinstance(instance.job_state, bytes)
+                    else instance.job_state
+                )
                 if isinstance(job_state, dict):
-                    # Créer un nouveau trigger avec les valeurs du formulaire
-                    new_trigger = CronTrigger(
-                        hour=self.cleaned_data['cron_hour'],
-                        minute=self.cleaned_data['cron_minute']
-                    )
-                    
-                    # Mettre à jour le trigger dans job_state
                     job_state['trigger'] = new_trigger
-                    
-                    # Sérialiser à nouveau job_state
                     instance.job_state = pickle.dumps(job_state)
-                    
-                    print(f"✅ Trigger mis à jour: hour={self.cleaned_data['cron_hour']}, minute={self.cleaned_data['cron_minute']}")
             except Exception as e:
-                print(f"❌ Erreur lors de la mise à jour du trigger: {e}")
-                import traceback
-                traceback.print_exc()
-        
+                logger.error("Erreur mise à jour pickle trigger %s: %s", instance.id, e)
+
         if commit:
             instance.save()
-        
+
+        # 2. Mettre à jour le scheduler en mémoire via reschedule_job.
+        #    Cela recalcule next_run_time ET persiste le bon pickle via DjangoJobStore,
+        #    ce qui évite que le scheduler en mémoire réécrase le pickle DB au prochain fire.
+        try:
+            from parametre.scheduler import scheduler as _live
+            if _live and _live.running:
+                _live.reschedule_job(instance.id, trigger=new_trigger)
+                logger.info("Scheduler mis à jour: %s → %02dh%02d", instance.id, new_hour, new_minute)
+            else:
+                logger.warning(
+                    "Trigger DB mis à jour pour %s, mais scheduler non actif dans ce worker — "
+                    "le changement sera pris en compte au prochain redémarrage de Gunicorn.",
+                    instance.id,
+                )
+        except Exception as e:
+            logger.warning("Impossible de mettre à jour le scheduler live pour %s: %s", instance.id, e)
+
         return instance
 
 
