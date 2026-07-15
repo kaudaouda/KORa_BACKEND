@@ -159,7 +159,17 @@ def _serialize_job(job):
 def _can_access_scheduler_admin(user):
     """Seul le superadmin Django (is_staff + is_superuser) peut gérer le scheduler."""
     from parametre.permissions import can_manage_users
-    return can_manage_users(user)
+    result = can_manage_users(user)
+    # DIAG TEMPORAIRE — à retirer une fois le bug 403 scheduler résolu.
+    logger.warning(
+        "[SCHEDULER][DIAG] user=%r is_authenticated=%s is_staff=%s is_superuser=%s can_manage_users=%s",
+        user,
+        getattr(user, 'is_authenticated', None),
+        getattr(user, 'is_staff', None),
+        getattr(user, 'is_superuser', None),
+        result,
+    )
+    return result
 
 
 @api_view(['GET'])
