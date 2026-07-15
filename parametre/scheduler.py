@@ -1,11 +1,11 @@
 """
 Configuration du scheduler APScheduler pour les notifications automatiques.
 
-IMPORTANT — contrainte mono-process :
-  Ce scheduler tourne en thread dans le process Django (APScheduler BackgroundScheduler).
-  En déploiement multi-workers (Gunicorn N workers), chaque worker démarrerait
-  son propre scheduler. Un lock PID-file empêche ce double-fire.
-  Si tu passes un jour à plusieurs workers, migrer vers django-q2 ou Celery Beat.
+Architecture production : le scheduler tourne comme service systemd séparé
+(python manage.py run_scheduler), indépendamment des workers Gunicorn.
+Les workers Gunicorn communiquent avec lui via des fichiers de commandes JSON
+déposés dans /tmp (préfixe kora_cmd_*.json) et lus toutes les 30 secondes
+par le job _kora_command_poller.
 """
 import atexit
 import logging
@@ -146,13 +146,92 @@ def flush_expired_tokens_job():
 
 
 # ─────────────────────────────────────────────
+# IPC cross-process (Gunicorn ↔ scheduler service)
+# ─────────────────────────────────────────────
+
+# Préfixe des fichiers de commandes déposés par les workers Gunicorn.
+_CMD_PREFIX = 'kora_cmd_'
+
+
+def write_scheduler_command(action, job_id, **kwargs):
+    """
+    Dépose un fichier de commande JSON dans /tmp pour le scheduler service.
+    Appelé depuis les workers Gunicorn (endpoints admin).
+
+    Actions supportées : 'reschedule' (+ hour, minute), 'trigger'.
+    """
+    import json
+    import uuid
+    cmd = {'action': action, 'job_id': job_id, **kwargs}
+    cmd_file = os.path.join(tempfile.gettempdir(), f'{_CMD_PREFIX}{uuid.uuid4().hex}.json')
+    try:
+        with open(cmd_file, 'w') as f:
+            json.dump(cmd, f)
+        logger.debug("Commande scheduler écrite: %s → %s", action, cmd_file)
+    except Exception as e:
+        logger.error("Impossible d'écrire la commande scheduler: %s", e)
+        raise
+
+
+def _poll_scheduler_commands():
+    """
+    Job interne : lit les fichiers de commandes déposés par les workers Gunicorn
+    et les applique au scheduler en mémoire.
+    Tourne toutes les 30 secondes dans le process scheduler service.
+    """
+    import glob
+    import json
+    from apscheduler.triggers.cron import CronTrigger
+
+    pattern = os.path.join(tempfile.gettempdir(), f'{_CMD_PREFIX}*.json')
+    for cmd_file in sorted(glob.glob(pattern)):
+        cmd = None
+        try:
+            with open(cmd_file) as f:
+                cmd = json.load(f)
+            os.remove(cmd_file)
+        except Exception as e:
+            logger.error("Erreur lecture commande %s: %s", cmd_file, e)
+            try:
+                os.remove(cmd_file)
+            except Exception:
+                pass
+            continue
+
+        action = cmd.get('action')
+        job_id = cmd.get('job_id')
+
+        try:
+            if action == 'reschedule':
+                h = int(cmd['hour'])
+                m = int(cmd['minute'])
+                scheduler.reschedule_job(job_id, trigger=CronTrigger(hour=h, minute=m))
+                logger.info("Job %s reprogrammé à %02dh%02d (commande externe)", job_id, h, m)
+            elif action == 'trigger':
+                job = scheduler.get_job(job_id)
+                if job:
+                    import threading
+                    threading.Thread(target=job.func, daemon=True).start()
+                    logger.info("Job %s déclenché manuellement (commande externe)", job_id)
+                else:
+                    logger.warning("Trigger demandé pour job inconnu: %s", job_id)
+            else:
+                logger.warning("Action inconnue dans commande scheduler: %s", action)
+        except Exception as e:
+            logger.error("Erreur exécution commande %s/%s: %s", action, job_id, e)
+
+
+# ─────────────────────────────────────────────
 # Démarrage / arrêt
 # ─────────────────────────────────────────────
 
-def start_scheduler():
+def start_scheduler(standalone=False):
     """
     Démarre le scheduler pour les notifications automatiques.
-    Refuse de démarrer si un autre process détient déjà le lock.
+
+    standalone=True : mode service systemd dédié — écrit le PID sans vérifier
+                      si un autre process le détient (systemd garantit l'unicité).
+    standalone=False : mode legacy (désormais inutilisé) — vérifie le lock PID.
     """
     global scheduler
 
@@ -160,9 +239,18 @@ def start_scheduler():
         logger.warning("Scheduler deja en cours d'execution dans ce process")
         return scheduler
 
-    if not acquire_scheduler_lock():
-        logger.info("Scheduler non demarré — lock détenu par un autre process")
-        return None
+    if standalone:
+        # Service dédié : écrire le PID directement, systemd empêche les doublons.
+        try:
+            with open(SCHEDULER_LOCK_FILE, 'w') as f:
+                f.write(str(os.getpid()))
+            logger.info("Scheduler standalone — PID %s enregistré", os.getpid())
+        except IOError as e:
+            logger.warning("Impossible d'écrire le fichier PID: %s", e)
+    else:
+        if not acquire_scheduler_lock():
+            logger.info("Scheduler non demarré — lock détenu par un autre process")
+            return None
 
     try:
         scheduler = BackgroundScheduler()
@@ -287,6 +375,19 @@ def start_scheduler():
                 logger.info("Job %s present en DB, DjangoJobStore doit le charger", job_id_flush_tokens)
         else:
             logger.info("Job %s deja charge depuis la DB", job_id_flush_tokens)
+
+        # Job interne : lit les commandes déposées par les workers Gunicorn toutes les 30 s.
+        # Ne pas stocker dans DjangoJobStore (jobstore par défaut) — on utilise 'memory'.
+        scheduler.add_jobstore('memory', alias='memory')
+        scheduler.add_job(
+            _poll_scheduler_commands,
+            trigger='interval', seconds=30,
+            id='_kora_command_poller',
+            jobstore='memory',
+            replace_existing=True,
+            max_instances=1, coalesce=True,
+        )
+        logger.info("Job poller de commandes enregistré (interval 30s)")
 
         if not scheduler.running:
             raise RuntimeError("Le scheduler n'est pas actif apres le demarrage")
