@@ -65,41 +65,74 @@ from .utils import (
 
 
 
+def _read_cron_fields(trigger):
+    """Extrait (hour, minute) depuis un CronTrigger APScheduler."""
+    from apscheduler.triggers.cron import CronTrigger
+    if not isinstance(trigger, CronTrigger):
+        return None, None
+    hour = minute = None
+    for field in trigger.fields:
+        field_str = str(field)
+        if field.name == 'hour' and field_str != '*':
+            try:
+                hour = int(field_str)
+            except ValueError:
+                if '=' in field_str:
+                    try:
+                        hour = int(field_str.split('=')[1].strip("'"))
+                    except (ValueError, IndexError):
+                        pass
+        elif field.name == 'minute' and field_str != '*':
+            try:
+                minute = int(field_str)
+            except ValueError:
+                if '=' in field_str:
+                    try:
+                        minute = int(field_str.split('=')[1].strip("'"))
+                    except (ValueError, IndexError):
+                        pass
+    return hour, minute
+
+
 def _extract_job_info(job):
-    """Extrait name, hour, minute depuis un DjangoJob via l'API APScheduler (sans pickle)."""
+    """
+    Extrait (hour, minute, name) depuis un DjangoJob.
+
+    Priorité 1 : scheduler live en mémoire (disponible uniquement dans le process
+                 du service kora-scheduler, pas dans les workers Gunicorn).
+    Priorité 2 : pickle job_state stocké dans la DB — toujours disponible.
+    """
+    import pickle
     from apscheduler.triggers.cron import CronTrigger
     from parametre.scheduler import scheduler as _scheduler
 
     name = hour = minute = None
+
+    # Priorité 1 : scheduler live
     try:
         if _scheduler and _scheduler.running:
             live_job = _scheduler.get_job(job.id)
             if live_job:
                 name = live_job.name
-                trigger = live_job.trigger
-                if isinstance(trigger, CronTrigger):
-                    for field in trigger.fields:
-                        field_str = str(field)
-                        if field.name == 'hour' and field_str != '*':
-                            try:
-                                hour = int(field_str)
-                            except ValueError:
-                                if '=' in field_str:
-                                    try:
-                                        hour = int(field_str.split('=')[1].strip("'"))
-                                    except (ValueError, IndexError):
-                                        pass
-                        elif field.name == 'minute' and field_str != '*':
-                            try:
-                                minute = int(field_str)
-                            except ValueError:
-                                if '=' in field_str:
-                                    try:
-                                        minute = int(field_str.split('=')[1].strip("'"))
-                                    except (ValueError, IndexError):
-                                        pass
+                hour, minute = _read_cron_fields(live_job.trigger)
+                return hour, minute, name
     except Exception:
         pass
+
+    # Priorité 2 : pickle en DB
+    if job.job_state:
+        try:
+            job_state = (
+                pickle.loads(job.job_state)
+                if isinstance(job.job_state, bytes)
+                else job.job_state
+            )
+            if isinstance(job_state, dict):
+                name = job_state.get('name') or job.id
+                hour, minute = _read_cron_fields(job_state.get('trigger'))
+        except Exception:
+            pass
+
     return hour, minute, name
 
 
@@ -123,12 +156,17 @@ def _serialize_job(job):
     }
 
 
+def _can_access_scheduler_admin(user):
+    """Seul le superadmin Django (is_staff + is_superuser) peut gérer le scheduler."""
+    from parametre.permissions import can_manage_users
+    return can_manage_users(user)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def admin_scheduler_jobs(request):
     """Liste des jobs du scheduler avec trigger info et dernière exécution."""
-    from parametre.permissions import can_manage_users
-    if not can_manage_users(request.user):
+    if not _can_access_scheduler_admin(request.user):
         return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
 
     from django_apscheduler.models import DjangoJob
@@ -145,17 +183,22 @@ def admin_scheduler_jobs(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def admin_scheduler_job_update(request, job_id):
-    """Modifie l'heure/minute cron d'un job."""
-    from parametre.permissions import can_manage_users
-    if not can_manage_users(request.user):
-        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+    """
+    Modifie l'heure/minute cron d'un job.
 
-    from django_apscheduler.models import DjangoJob
+    Architecture : le scheduler tourne dans un service systemd séparé. Ce worker
+    Gunicorn ne peut pas appeler reschedule_job() directement. Il :
+      1. Met à jour le pickle du DjangoJob en DB (rend le GET immédiatement cohérent).
+      2. Dépose un fichier de commande JSON dans /tmp.
+    Le service scheduler lit ce fichier dans les 30 secondes et applique le changement.
+    """
+    import pickle
     from apscheduler.triggers.cron import CronTrigger
-    from parametre.scheduler import scheduler as _scheduler
+    from django_apscheduler.models import DjangoJob
+    from parametre.scheduler import write_scheduler_command
 
-    if not _scheduler or not _scheduler.running:
-        return Response({'error': 'Scheduler non actif.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if not _can_access_scheduler_admin(request.user):
+        return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         job = DjangoJob.objects.get(id=job_id)
@@ -178,45 +221,72 @@ def admin_scheduler_job_update(request, job_id):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
+    new_trigger = CronTrigger(hour=hour, minute=minute)
+
+    # 1. Mettre à jour le pickle en DB pour cohérence immédiate du GET.
+    if job.job_state:
+        try:
+            job_state = (
+                pickle.loads(job.job_state)
+                if isinstance(job.job_state, bytes)
+                else job.job_state
+            )
+            if isinstance(job_state, dict):
+                job_state['trigger'] = new_trigger
+                job.job_state = pickle.dumps(job_state)
+                job.save(update_fields=['job_state'])
+        except Exception as e:
+            logger.warning("[SCHEDULER] Mise à jour pickle DB échouée pour %s: %s", job_id, e)
+
+    # 2. Signaler au service scheduler de reschedule_job dans les 30 s.
     try:
-        _scheduler.reschedule_job(job_id, trigger=CronTrigger(hour=hour, minute=minute))
-        logger.info("[SCHEDULER] Job %s reprogrammé à %02d:%02d", job_id, hour, minute)
-        job.refresh_from_db()
-        return Response(_serialize_job(job))
+        write_scheduler_command('reschedule', job_id, hour=hour, minute=minute)
+        logger.info("[SCHEDULER] Commande reschedule envoyée: %s → %02dh%02d", job_id, hour, minute)
     except Exception as e:
-        logger.error("[SCHEDULER] Erreur reprogrammation job %s: %s", job_id, e, exc_info=True)
-        return Response({'error': "Une erreur inattendue s'est produite. Veuillez réessayer."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error("[SCHEDULER] Impossible d'envoyer la commande reschedule: %s", e)
+        return Response(
+            {'error': 'Impossible de contacter le service scheduler.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    job.refresh_from_db()
+    return Response(_serialize_job(job))
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def admin_scheduler_job_trigger(request, job_id):
-    """Déclenche manuellement un job dans un thread séparé."""
-    from parametre.permissions import can_manage_users
-    if not can_manage_users(request.user):
+    """
+    Déclenche manuellement un job.
+    Dépose une commande 'trigger' lue par le service scheduler dans les 30 s.
+    """
+    from django_apscheduler.models import DjangoJob
+    from parametre.scheduler import write_scheduler_command
+
+    if not _can_access_scheduler_admin(request.user):
         return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
 
-    from parametre.scheduler import scheduler as _scheduler
-    import threading
+    if not DjangoJob.objects.filter(id=job_id).exists():
+        return Response({'error': 'Job introuvable.'}, status=status.HTTP_404_NOT_FOUND)
 
-    if not _scheduler or not _scheduler.running:
-        return Response({'error': 'Le scheduler n\'est pas actif.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    try:
+        write_scheduler_command('trigger', job_id)
+        logger.info("[SCHEDULER] Commande trigger envoyée pour %s par %s", job_id, request.user.username)
+    except Exception as e:
+        logger.error("[SCHEDULER] Impossible d'envoyer la commande trigger: %s", e)
+        return Response(
+            {'error': 'Impossible de contacter le service scheduler.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
-    job = _scheduler.get_job(job_id)
-    if not job:
-        return Response({'error': 'Job introuvable dans le scheduler.'}, status=status.HTTP_404_NOT_FOUND)
-
-    threading.Thread(target=job.func, daemon=True).start()
-    logger.info("[SCHEDULER] Job %s déclenché manuellement par %s", job_id, request.user.username)
-    return Response({'message': f'Job « {job.name} » déclenché.'})
+    return Response({'message': f'Job « {job_id} » sera déclenché dans moins de 30 secondes.'})
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def admin_scheduler_executions(request):
     """Historique des 100 dernières exécutions."""
-    from parametre.permissions import can_manage_users
-    if not can_manage_users(request.user):
+    if not _can_access_scheduler_admin(request.user):
         return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
 
     from django_apscheduler.models import DjangoJobExecution
