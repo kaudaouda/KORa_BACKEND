@@ -4,14 +4,15 @@ Configuration du scheduler APScheduler pour les notifications automatiques.
 Architecture production : le scheduler tourne comme service systemd séparé
 (python manage.py run_scheduler), indépendamment des workers Gunicorn.
 Les workers Gunicorn communiquent avec lui via des fichiers de commandes JSON
-déposés dans /tmp (préfixe kora_cmd_*.json) et lus toutes les 30 secondes
-par le job _kora_command_poller.
+déposés dans /tmp (préfixe kora_cmd_*.json) et lus toutes les 30 secondes par
+un thread dédié (_poller_loop), volontairement hors d'APScheduler.
 """
 import atexit
 import logging
 import os
 import platform
 import tempfile
+import threading
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from django_apscheduler.jobstores import DjangoJobStore, register_events
@@ -175,9 +176,10 @@ def write_scheduler_command(action, job_id, **kwargs):
 
 def _poll_scheduler_commands():
     """
-    Job interne : lit les fichiers de commandes déposés par les workers Gunicorn
-    et les applique au scheduler en mémoire.
-    Tourne toutes les 30 secondes dans le process scheduler service.
+    Lit les fichiers de commandes déposés par les workers Gunicorn et les
+    applique au scheduler en mémoire. Appelé toutes les 30 secondes par
+    _poller_loop, un thread dédié — volontairement HORS d'APScheduler (voir
+    _poller_loop pour le pourquoi).
     """
     import glob
     import json
@@ -200,25 +202,55 @@ def _poll_scheduler_commands():
 
         action = cmd.get('action')
         job_id = cmd.get('job_id')
+        logger.info("[SCHEDULER] Commande détectée: action=%s job_id=%s", action, job_id)
 
         try:
             if action == 'reschedule':
                 h = int(cmd['hour'])
                 m = int(cmd['minute'])
                 scheduler.reschedule_job(job_id, trigger=CronTrigger(hour=h, minute=m))
-                logger.info("Job %s reprogrammé à %02dh%02d (commande externe)", job_id, h, m)
+                # Relire le job en mémoire pour confirmer que le changement a bien
+                # été appliqué au scheduler actif (pas seulement écrit en DB).
+                updated_job = scheduler.get_job(job_id)
+                next_run = updated_job.next_run_time if updated_job else None
+                logger.info(
+                    "[SCHEDULER] Job '%s' reprogrammé → %02dh%02d | prochaine exécution confirmée: %s",
+                    job_id, h, m, next_run,
+                )
             elif action == 'trigger':
                 job = scheduler.get_job(job_id)
                 if job:
-                    import threading
                     threading.Thread(target=job.func, daemon=True).start()
-                    logger.info("Job %s déclenché manuellement (commande externe)", job_id)
+                    logger.info("[SCHEDULER] Job '%s' déclenché manuellement (commande externe)", job_id)
                 else:
                     logger.warning("Trigger demandé pour job inconnu: %s", job_id)
             else:
                 logger.warning("Action inconnue dans commande scheduler: %s", action)
         except Exception as e:
             logger.error("Erreur exécution commande %s/%s: %s", action, job_id, e)
+
+
+# Le poller de commandes tourne dans un thread Python dédié, PAS comme job
+# APScheduler. Raison : django_apscheduler attache un listener global sur
+# EVENT_JOB_EXECUTED dès qu'un jobstore DjangoJobStore/DjangoMemoryJobStore
+# démarre ; ce listener tente de logguer CHAQUE exécution de job (toutes
+# jobstores confondues) dans DjangoJobExecution via une FK vers DjangoJob(id).
+# Le poller vivait dans un jobstore 'memory' (MemoryJobStore standard, sans
+# ligne DjangoJob correspondante) : chaque cycle de 30s levait une
+# IntegrityError avalée par django_apscheduler et journalisée comme
+# "Job '_kora_command_poller' no longer exists!". En sortant complètement le
+# poller du scheduler APScheduler, aucun JobExecutionEvent n'est jamais émis
+# pour lui et l'avertissement disparaît à la racine.
+_poller_stop_event = None
+_poller_thread = None
+
+
+def _poller_loop(stop_event):
+    while not stop_event.wait(30):
+        try:
+            _poll_scheduler_commands()
+        except Exception as e:
+            logger.error("Erreur dans la boucle du poller de commandes: %s", e, exc_info=True)
 
 
 # ─────────────────────────────────────────────
@@ -376,18 +408,16 @@ def start_scheduler(standalone=False):
         else:
             logger.info("Job %s deja charge depuis la DB", job_id_flush_tokens)
 
-        # Job interne : lit les commandes déposées par les workers Gunicorn toutes les 30 s.
-        # Ne pas stocker dans DjangoJobStore (jobstore par défaut) — on utilise 'memory'.
-        scheduler.add_jobstore('memory', alias='memory')
-        scheduler.add_job(
-            _poll_scheduler_commands,
-            trigger='interval', seconds=30,
-            id='_kora_command_poller',
-            jobstore='memory',
-            replace_existing=True,
-            max_instances=1, coalesce=True,
+        # Poller de commandes : thread dédié, hors APScheduler (voir _poller_loop
+        # pour le pourquoi — évite le warning "no longer exists!" de django_apscheduler).
+        global _poller_stop_event, _poller_thread
+        _poller_stop_event = threading.Event()
+        _poller_thread = threading.Thread(
+            target=_poller_loop, args=(_poller_stop_event,),
+            name='kora-scheduler-command-poller', daemon=True,
         )
-        logger.info("Job poller de commandes enregistré (interval 30s)")
+        _poller_thread.start()
+        logger.info("Poller de commandes démarré en thread dédié (intervalle 30s)")
 
         if not scheduler.running:
             raise RuntimeError("Le scheduler n'est pas actif apres le demarrage")
@@ -416,8 +446,14 @@ def start_scheduler(standalone=False):
 
 
 def _shutdown():
-    """Arrêt propre du scheduler + libération du lock."""
-    global scheduler
+    """Arrêt propre du scheduler + du poller de commandes + libération du lock."""
+    global scheduler, _poller_stop_event, _poller_thread
+    if _poller_stop_event:
+        _poller_stop_event.set()
+    if _poller_thread and _poller_thread.is_alive():
+        _poller_thread.join(timeout=5)
+    _poller_stop_event = None
+    _poller_thread = None
     if scheduler and scheduler.running:
         scheduler.shutdown()
         logger.info("Scheduler arrete")
