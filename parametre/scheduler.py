@@ -305,41 +305,11 @@ def start_scheduler(standalone=False):
         job_id_dashboard = 'send_dashboard_reminders_daily'
         job_id_cdr       = 'send_cdr_reminders_daily'
 
-        # Correction des triggers invalides : si un job a été chargé depuis la DB
-        # avec un trigger qui ne correspond pas aux valeurs attendues (ex. créé avec
-        # l'heure de démarrage par une ancienne version du code), on le replanifie
-        # immédiatement avec les valeurs correctes.  reschedule_job met à jour à la
-        # fois le scheduler en mémoire ET le pickle en DB via DjangoJobStore.
-        from apscheduler.triggers.cron import CronTrigger as _CT
-        _EXPECTED_DAILY = {
-            job_id_reminders: (8,  0),
-            job_id_dashboard:  (8, 30),
-            job_id_cdr:        (9,  0),
-        }
-        for _jid, (_exp_h, _exp_m) in _EXPECTED_DAILY.items():
-            if _jid not in existing_jobs:
-                continue
-            _live = scheduler.get_job(_jid)
-            if not _live or not isinstance(_live.trigger, _CT):
-                continue
-            _cur_h = _cur_m = None
-            for _f in _live.trigger.fields:
-                if _f.name == 'hour'   and str(_f) != '*':
-                    try: _cur_h = int(str(_f))
-                    except ValueError: pass
-                elif _f.name == 'minute' and str(_f) != '*':
-                    try: _cur_m = int(str(_f))
-                    except ValueError: pass
-            if _cur_h != _exp_h or _cur_m != _exp_m:
-                logger.warning(
-                    "Trigger invalide pour %s: cron[hour=%s, minute=%s] attendu %02dh%02d — correction automatique",
-                    _jid, _cur_h, _cur_m, _exp_h, _exp_m,
-                )
-                try:
-                    scheduler.reschedule_job(_jid, trigger=_CT(hour=_exp_h, minute=_exp_m))
-                    logger.info("Trigger %s corrige → %02dh%02d", _jid, _exp_h, _exp_m)
-                except Exception as _e:
-                    logger.error("Echec correction trigger %s: %s", _jid, _e)
+        # Pas de "correction" de trigger au démarrage : le DjangoJob en base
+        # (celui que modifie admin_scheduler_job_update depuis l'admin/frontend)
+        # est la SEULE source de vérité. DjangoJobStore l'a déjà chargé fidèlement
+        # ci-dessus — le réécrire vers une heure codée en dur écraserait toute
+        # heure configurée manuellement à chaque redémarrage du service.
 
         from django_apscheduler.models import DjangoJob
 
