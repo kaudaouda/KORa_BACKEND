@@ -10,8 +10,15 @@ _allowed_hosts_env = os.getenv('DJANGO_ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()]
 
 # ── Cookies & HTTPS ───────────────────────────────────────────────────────────
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+# Security by Design — configurable via env, pas hardcodé à True : tant que ce
+# déploiement tourne en HTTP simple (pas de certificat TLS), un cookie "Secure"
+# est silencieusement rejeté par tout navigateur conforme. Django authentifie
+# bien l'utilisateur (302 sur le POST /login/) mais le cookie de session n'atteint
+# jamais le navigateur, qui revient donc aussitôt sur la page de connexion sans
+# aucun message d'erreur. Repasser à True (valeur par défaut) dès que le HTTPS
+# est activé — voir SECURE_SSL_REDIRECT, qui suit le même pattern.
+SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'True') == 'True'
+CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'True') == 'True'
 SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
 SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
