@@ -39,6 +39,18 @@ class JWTCookieMiddleware(MiddlewareMixin):
         """
         access_token = request.COOKIES.get('access_token')
 
+        # Security by Design — ne jamais authentifier via cookie JWT sur l'admin
+        # Django : le cookie access_token est posé avec domain=.anac.ci (voir
+        # shared/authentication.py), donc visible depuis n'importe quel sous-domaine.
+        # Sans cette exclusion, un login sur le frontend (kora.anac.ci) donnait
+        # automatiquement accès à l'admin Django (backend-kora.anac.ci) sans jamais
+        # passer par son propre formulaire de connexion ni créer de session —
+        # has_permission() de l'admin se contente de lire request.user.is_staff,
+        # peu importe comment il a été posé.
+        admin_prefix = f"/{os.getenv('DJANGO_ADMIN_URL', 'admin/')}"
+        if request.path.startswith(admin_prefix):
+            return
+
         if access_token and not request.user.is_authenticated:
             try:
                 token = AccessToken(access_token)
