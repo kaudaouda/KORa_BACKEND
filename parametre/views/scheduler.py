@@ -96,17 +96,23 @@ def _read_cron_fields(trigger):
 
 def _extract_job_info(job):
     """
-    Extrait (hour, minute, name) depuis un DjangoJob.
+    Extrait (hour, minute, name, trigger) depuis un DjangoJob.
 
     Priorité 1 : scheduler live en mémoire (disponible uniquement dans le process
                  du service kora-scheduler, pas dans les workers Gunicorn).
     Priorité 2 : pickle job_state stocké dans la DB — toujours disponible.
+
+    Le trigger est renvoyé en plus de (hour, minute) pour permettre de calculer
+    next_run_time à la volée (voir _serialize_job) : la colonne DjangoJob.next_run_time
+    n'est resynchronisée que par le service scheduler séparé, de façon asynchrone
+    (jusqu'à 30s de délai, et pas du tout si ce service est indisponible) —
+    la calculer depuis le trigger réel évite tout affichage périmé.
     """
     import pickle
     from apscheduler.triggers.cron import CronTrigger
     from parametre.scheduler import scheduler as _scheduler
 
-    name = hour = minute = None
+    name = hour = minute = trigger = None
 
     # Priorité 1 : scheduler live
     try:
@@ -114,8 +120,9 @@ def _extract_job_info(job):
             live_job = _scheduler.get_job(job.id)
             if live_job:
                 name = live_job.name
-                hour, minute = _read_cron_fields(live_job.trigger)
-                return hour, minute, name
+                trigger = live_job.trigger
+                hour, minute = _read_cron_fields(trigger)
+                return hour, minute, name, trigger
     except Exception:
         pass
 
@@ -129,16 +136,28 @@ def _extract_job_info(job):
             )
             if isinstance(job_state, dict):
                 name = job_state.get('name') or job.id
-                hour, minute = _read_cron_fields(job_state.get('trigger'))
+                trigger = job_state.get('trigger')
+                hour, minute = _read_cron_fields(trigger)
         except Exception:
             pass
 
-    return hour, minute, name
+    return hour, minute, name, trigger
 
 
 def _serialize_job(job):
     from django_apscheduler.models import DjangoJobExecution
-    hour, minute, name = _extract_job_info(job)
+    from django.utils import timezone
+    hour, minute, name, trigger = _extract_job_info(job)
+
+    next_run_time = job.next_run_time
+    if trigger is not None:
+        try:
+            computed = trigger.get_next_fire_time(None, timezone.now())
+            if computed is not None:
+                next_run_time = computed
+        except Exception:
+            pass
+
     last_exec = (
         DjangoJobExecution.objects
         .filter(job=job)
@@ -149,7 +168,7 @@ def _serialize_job(job):
     return {
         'id':            job.id,
         'name':          name or job.id,
-        'next_run_time': job.next_run_time,
+        'next_run_time': next_run_time,
         'hour':          hour,
         'minute':        minute,
         'last_execution': last_exec,
@@ -180,10 +199,10 @@ def admin_scheduler_jobs(request):
         return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
 
     from django_apscheduler.models import DjangoJob
-    from parametre.scheduler import scheduler as _scheduler
+    from parametre.scheduler import is_scheduler_service_running
 
     jobs = DjangoJob.objects.all().order_by('id')
-    scheduler_running = bool(_scheduler and _scheduler.running)
+    scheduler_running = is_scheduler_service_running()
     return Response({
         'scheduler_running': scheduler_running,
         'jobs': [_serialize_job(j) for j in jobs],
@@ -203,9 +222,8 @@ def admin_scheduler_job_update(request, job_id):
     Le service scheduler lit ce fichier dans les 30 secondes et applique le changement.
     """
     import pickle
-    from apscheduler.triggers.cron import CronTrigger
     from django_apscheduler.models import DjangoJob
-    from parametre.scheduler import write_scheduler_command
+    from parametre.scheduler import write_scheduler_command, rebuild_cron_trigger
 
     if not _can_access_scheduler_admin(request.user):
         return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
@@ -231,9 +249,10 @@ def admin_scheduler_job_update(request, job_id):
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-    new_trigger = CronTrigger(hour=hour, minute=minute)
-
     # 1. Mettre à jour le pickle en DB pour cohérence immédiate du GET.
+    #    rebuild_cron_trigger préserve les champs existants du trigger (day_of_week,
+    #    day, month...) : sans ça, un simple changement d'heure sur un job
+    #    hebdomadaire le transformerait silencieusement en job quotidien.
     if job.job_state:
         try:
             job_state = (
@@ -242,7 +261,7 @@ def admin_scheduler_job_update(request, job_id):
                 else job.job_state
             )
             if isinstance(job_state, dict):
-                job_state['trigger'] = new_trigger
+                job_state['trigger'] = rebuild_cron_trigger(job_state.get('trigger'), hour, minute)
                 job.job_state = pickle.dumps(job_state)
                 job.save(update_fields=['job_state'])
         except Exception as e:

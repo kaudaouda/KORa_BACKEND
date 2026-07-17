@@ -16,6 +16,7 @@ import threading
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from django_apscheduler.jobstores import DjangoJobStore, register_events
+from django.utils import timezone
 from django.core.management import call_command
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,59 @@ scheduler = None
 
 # Chemin du fichier PID — un seul scheduler actif à la fois
 SCHEDULER_LOCK_FILE = os.path.join(tempfile.gettempdir(), 'kora_scheduler.pid')
+
+
+def rebuild_cron_trigger(existing_trigger, hour, minute):
+    """
+    Reconstruit un CronTrigger en ne remplaçant que hour/minute, en préservant
+    tous les autres champs (day_of_week, day, month...) de l'ancien trigger.
+
+    Sans ça, `CronTrigger(hour=hour, minute=minute)` recrée un trigger entièrement
+    neuf où tout champ non précisé retombe à sa valeur par défaut ('*') : modifier
+    juste l'heure d'un job hebdomadaire (day_of_week='sun') le transforme
+    silencieusement en job quotidien. Vécu en prod sur flush_expired_tokens_weekly.
+    """
+    from apscheduler.triggers.cron import CronTrigger
+    if isinstance(existing_trigger, CronTrigger):
+        kwargs = {field.name: str(field) for field in existing_trigger.fields}
+        kwargs['hour'] = hour
+        kwargs['minute'] = minute
+        return CronTrigger(**kwargs)
+    return CronTrigger(hour=hour, minute=minute)
+
+
+def sync_job_next_run_time(job_id, trigger, *, scheduler_instance=None, next_run_time=None):
+    """Met à jour le champ next_run_time du DjangoJob et le scheduler associé."""
+    from django_apscheduler.models import DjangoJob
+
+    if next_run_time is None:
+        if scheduler_instance and scheduler_instance.running:
+            try:
+                job = scheduler_instance.get_job(job_id)
+                if job and job.next_run_time:
+                    next_run_time = job.next_run_time
+            except Exception:
+                next_run_time = None
+
+        if next_run_time is None:
+            try:
+                next_run_time = trigger.get_next_fire_time(None, timezone.now())
+            except Exception as exc:
+                logger.warning("Impossible de calculer next_run_time pour %s: %s", job_id, exc)
+                next_run_time = None
+
+    try:
+        job = DjangoJob.objects.get(id=job_id)
+        if next_run_time is not None:
+            job.next_run_time = next_run_time
+            job.save(update_fields=['next_run_time'])
+            logger.info("next_run_time synchronisé pour %s: %s", job_id, next_run_time)
+    except DjangoJob.DoesNotExist:
+        logger.debug("Impossible de synchroniser next_run_time pour job inconnu: %s", job_id)
+    except Exception as exc:
+        logger.warning("Erreur synchronisation next_run_time pour %s: %s", job_id, exc)
+
+    return next_run_time
 
 
 # ─────────────────────────────────────────────
@@ -87,6 +141,30 @@ def acquire_scheduler_lock():
     except IOError as e:
         logger.warning("Impossible d'ecrire le fichier lock scheduler: %s — demarrage sans lock", e)
         return True  # fail-open
+
+
+def is_scheduler_service_running():
+    """
+    Indique si le service scheduler standalone tourne, en le vérifiant
+    indépendamment du process appelant.
+
+    Le scheduler tourne dans le service systemd `kora-scheduler`, jamais dans
+    les workers Gunicorn (voir docstring de module) : `scheduler.running` n'est
+    donc vrai QUE dans le process du service lui-même. Un worker Gunicorn qui
+    consulte directement cette variable la trouve toujours à None/False, même
+    quand le service tourne parfaitement — d'où ce fallback sur le fichier PID
+    partagé, qui lui est visible de tous les process.
+    """
+    if scheduler and scheduler.running:
+        return True
+    if os.path.exists(SCHEDULER_LOCK_FILE):
+        try:
+            with open(SCHEDULER_LOCK_FILE) as f:
+                pid = int(f.read().strip())
+            return _is_pid_alive(pid)
+        except (ValueError, IOError, OSError):
+            return False
+    return False
 
 
 def release_scheduler_lock():
@@ -183,7 +261,6 @@ def _poll_scheduler_commands():
     """
     import glob
     import json
-    from apscheduler.triggers.cron import CronTrigger
 
     pattern = os.path.join(tempfile.gettempdir(), f'{_CMD_PREFIX}*.json')
     for cmd_file in sorted(glob.glob(pattern)):
@@ -208,11 +285,15 @@ def _poll_scheduler_commands():
             if action == 'reschedule':
                 h = int(cmd['hour'])
                 m = int(cmd['minute'])
-                scheduler.reschedule_job(job_id, trigger=CronTrigger(hour=h, minute=m))
-                # Relire le job en mémoire pour confirmer que le changement a bien
-                # été appliqué au scheduler actif (pas seulement écrit en DB).
+                current_job = scheduler.get_job(job_id)
+                base_trigger = current_job.trigger if current_job else None
+                new_trigger = rebuild_cron_trigger(base_trigger, h, m)
+                scheduler.reschedule_job(job_id, trigger=new_trigger)
                 updated_job = scheduler.get_job(job_id)
                 next_run = updated_job.next_run_time if updated_job else None
+                sync_job_next_run_time(job_id, new_trigger, scheduler_instance=scheduler, next_run_time=next_run)
+                # Relire le job en mémoire pour confirmer que le changement a bien
+                # été appliqué au scheduler actif (pas seulement écrit en DB).
                 logger.info(
                     "[SCHEDULER] Job '%s' reprogrammé → %02dh%02d | prochaine exécution confirmée: %s",
                     job_id, h, m, next_run,
